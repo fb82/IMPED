@@ -1,0 +1,6 @@
+[submodule "src/pickled_hdf5"]
+	path = src/pickled_hdf5
+	url = https://github.com/fb82/pickled-HDF5.git
+[submodule "src/hz"]
+	path = src/hz
+	url = https://github.com/fb82/HarrisZ.git
