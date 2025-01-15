@@ -9,9 +9,8 @@ from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
 import cv2
 import numpy as np
 import hz.hz as hz
-
-
 from PIL import Image
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -107,9 +106,10 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False)
             run_pipeline(pair, pipeline, db, force=force)
 
                 
-def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
+def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):        
     if not pipe_data:
         pipe_data['img'] = [pair[0], pair[1]]
+        pipe_data['warp'] = [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
         
     for pipe_module in pipeline:
         if pipe_name == '':
@@ -147,7 +147,12 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
             out_data, is_found = db.get(data_key)                    
             if (not is_found) or force:
                 start_time = time.time()
-                out_data = pipe_module.run(**pipe_data)
+
+                if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
+                    out_data = pipe_module.run(pipe_data=pipe_data, pipe_name=pipe_name, db=db, force=force)
+                else:
+                    out_data = pipe_module.run(**pipe_data)
+
                 stop_time = time.time()
                 out_data['running_time'] = stop_time - start_time
                 db.add(data_key, out_data)
@@ -178,28 +183,41 @@ def homo2laf(c, H, s):
     return kp.unsqueeze(0)
 
 
+def set_args(id_string, args, args_):
+        
+    if args:
+        for k, v in args.items():
+            args_[k] = v
+            id_string = id_string + '_' + k + '_' + str(v)
+
+    id_string = id_string.lower()
+    
+    return id_string, args_    
+
+
 class sift_module:
     def __init__(self, **args):
-        self.upright = False
-        self.num_features = 8000
         self.single_image = True
-        
-        for k, v in args.items():
-           setattr(self, k, v)
+        self.pipeliner = False                
+        self.args = {
+            'upright': False,
+            'params': {'nfeatures': 8000, 'contrastThreshold': -10000, 'edgeThreshold': 10000}
+        }
 
-        self.detector = cv2.SIFT_create(self.num_features, contrastThreshold=-10000, edgeThreshold=10000)
+        self.id_string, self.args = set_args('sift', args, self.args)
+        self.detector = cv2.SIFT_create(**self.args['params'])
 
 
-    def get_id(self):
-        return ('sift_upright_' + str(self.upright) + '_nfeat_' + str(self.num_features)).lower()
+    def get_id(self): 
+        return self.id_string
 
 
     def run(self, **args):    
         
-        im1 = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
-        kp = self.detector.detect(im1, None)
+        im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
+        kp = self.detector.detect(im, None)
 
-        if self.upright:
+        if self.args['upright']:
             idx = np.unique(np.asarray([[k.pt[0], k.pt[1]] for k in kp]), axis=0, return_index=True)[1]
             kp = [kp[ii] for ii in idx]
             for ii in range(len(kp)):
@@ -213,78 +231,77 @@ class sift_module:
 
 class keynet_module:
     def __init__(self, **args):
-        self.num_features = 8000
-        self.single_image = True
+        self.single_image = True        
+        self.pipeliner = False        
+        self.args = {
+            'params': {'num_features': 8000}
+        }
         
-        for k, v in args.items():
-           setattr(self, k, v)
+        self.id_string, self.args = set_args('keynet', args, self.args)
+        self.detector = K.feature.KeyNetDetector(**self.args['params']).to(device)
 
-        self.detector = K.feature.KeyNetDetector(num_features=self.num_features).to(device)
-        
-        
+
     def get_id(self):
-        return ('keynet_nfeat_' + str(self.num_features)).lower()
-
-    
-    def run(self, **args):    
-        kp, val = self.detector(K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0))
+        return self.id_string
         
+    
+    def run(self, **args):  
+        img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        kp, _ = self.detector(img)        
         kp, H, s = laf2homo(kp.squeeze(0).detach().to(device))
-        val = val.squeeze(0).detach().to(device)
-    
-        return {'kp': kp, 'H': H, 's': s, 'val': val}
-
-
-class hz_plus_module:
-    def __init__(self, **args):
-        self.num_features = 8000
-        self.single_image = True
-        self.block_memory = 16*10**6 
-        
-        for k, v in args.items():
-           setattr(self, k, v)
-
-                
-    def get_id(self):
-        return ('hz_plus_nfeat_' + str(self.num_features)).lower()
-
-    
-    def run(self, **args):    
-        img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
-        kp = hz.hz_plus(img, output_format='laf', block_mem=self.block_memory, max_max_pts=self.num_features)
-        lafs = K.feature.ellipse_to_laf(kp[None]).squeeze(0)
-        kp, H, s = laf2homo(lafs)
     
         return {'kp': kp, 'H': H, 's': s}
 
 
-class orinet_affnet_module:
+class hz_plus_module:
     def __init__(self, **args):
-        self.orinet = True
-        self.orinet_args = {}
-
-        self.affnet = True
-        self.affnet_args = {}
-
         self.single_image = True
+        self.pipeliner = False        
+        self.args = {
+            'params': {'max_max_pts': 8000, 'block_mem': 16*10**6}
+        }
         
-        for k, v in args.items():
-           setattr(self, k, v)
+        self.id_string, self.args = set_args('hz_plus', args, self.args)
 
-        if self.orinet:
-            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device), **self.orinet_args)
+                
+    def get_id(self): 
+        return self.id_string
+
+    
+    def run(self, **args):    
+        img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
+        kp = hz.hz_plus(img, output_format='laf', **self.args['params'])
+        kp, H, s = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
+    
+        return {'kp': kp, 'H': H, 's': s}
+
+
+class deep_patch_module:
+    def __init__(self, **args):
+        self.single_image = True
+        self.pipeliner = False        
+        self.args = {
+            'orinet': True,
+            'orinet_params': {},
+            'affnet': True,
+            'affnet_params': {}
+            }
+
+        self.id_string, self.args = set_args('deep_patch', args, self.args)
+
+        if self.args['orinet']:
+            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device), **self.args['orinet_params'])
         else:
             self.ori_module = K.feature.PassLAF()
 
-        if self.affnet:
-            self.aff_module = K.feature.LAFAffineShapeEstimator(**self.affnet_args)
+        if self.args['affnet']:
+            self.aff_module = K.feature.LAFAffineShapeEstimator(**self.args['affnet_params'])
         else:
             self.aff_module = K.feature.PassLAF()
 
 
-    def get_id(self):
-        return ('orinet_' + str(self.orinet) + '_affnet_' + str(self.affnet)).lower()
-
+    def get_id(self): 
+        return self.id_string
 
     def run(self, **args):    
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
@@ -302,25 +319,27 @@ class orinet_affnet_module:
 class deep_descriptor_module:
     def __init__(self, **args):
         self.single_image = True
-        self.descriptor = 'hardnet'
-        self.desc_args = {}
-        self.patch_args = {}
+        self.pipeliner = False        
+        self.args = {
+            'descriptor': 'hardnet',
+            'desc_params': {},
+            'patch_params': {}
+            }
+
+        self.id_string, self.args = set_args('deep_descriptor', args, self.args)        
         
-        for k, v in args.items():
-           setattr(self, k, v)
-
-        if self.descriptor == 'hardnet':
+        if self.args['descriptor'] == 'hardnet':
             desc = K.feature.HardNet().to(device)
-        if self.descriptor == 'sosnet':
+        if self.args['descriptor'] == 'sosnet':
             desc = K.feature.SOSNet().to(device)
-        if self.descriptor == 'hynet':
-            desc = K.feature.HyNet(**self.desc_args).to(device)
+        if self.args['descriptor'] == 'hynet':
+            desc = K.feature.HyNet(**self.args['desc_params']).to(device)
 
-        self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.patch_args)
+        self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.args['patch_params'])
 
 
-    def get_id(self):
-        return (self.descriptor + '_descriptor').lower()
+    def get_id(self): 
+        return self.id_string
 
 
     def run(self, **args):    
@@ -334,34 +353,26 @@ class deep_descriptor_module:
 
 class sift_descriptor_module:
     def __init__(self, **args):
-        self.rootsift = True
         self.single_image = True
+        self.pipeliner = False        
+        self.args = {'rootsift': True}
         
-        for k, v in args.items():
-           setattr(self, k, v)
-
+        self.id_string, self.args = set_args('sift_descriptor', args, self.args)        
         self.descriptor = cv2.SIFT_create()
 
 
-    def get_id(self):
-        if self.rootsift:
-            prefix = 'root'
-        else:
-            prefix = ''
-        
-        return (prefix + 'sift_descriptor').lower()
+    def get_id(self): 
+        return self.id_string
 
 
     def run(self, **args):
-        im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
-        
-        lafs = homo2laf(args['kp'][args['idx']], args['H'][args['idx']], args['s'][args['idx']])        
-        
+        im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)        
+        lafs = homo2laf(args['kp'][args['idx']], args['H'][args['idx']], args['s'][args['idx']])                
         kp = opencv_kpts_from_laf(lafs)
         
         _, desc = self.descriptor.compute(im, kp)
 
-        if self.rootsift:
+        if self.args['rootsift']:
             desc /= desc.sum(axis=1, keepdims=True) + 1e-8
             desc = np.sqrt(desc)
             
@@ -372,26 +383,136 @@ class sift_descriptor_module:
 
 class smnn_module:
     def __init__(self, **args):
-        self.th = 0.99
+        self.single_image = False    
+        self.pipeliner = False        
+        self.args = {'th': 0.95}
         
-        for k, v in args.items():
-           setattr(self, k, v)
+        self.id_string, self.args = set_args('smnn', args, self.args)        
 
 
-    def get_id(self):        
-        return ('smnn_th_' + str(self.th)).lower()
+    def get_id(self): 
+        return self.id_string
 
 
     def run(self, **args):
-        val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.th)
+        val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
         return {'midx': idxs, 'vidx': val.squeeze(1)}
 
 
+def pair_rot4(pair, cache_path='tmp_imgs', force=False):
+
+    yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
+
+    rot_mat = np.eye(2)
+    
+    os.makedirs(cache_path, exist_ok=True)
+    
+    rot_to_do = [
+        ['_rot90', cv2.ROTATE_90_CLOCKWISE],
+        ['_rot_180', cv2.ROTATE_180],
+        ['_rot_270', cv2.ROTATE_90_COUNTERCLOCKWISE],
+        ]
+
+    width, height = Image.open(pair[1]).size
+    c = [width / 2, height / 2]
+
+    for r in range(len(rot_to_do)):
+        img = os.path.split(pair[1])[1]
+        img_name, img_ext = os.path.splitext(img)
+        new_img = os.path.join(cache_path, img_name + rot_to_do[r][0] + img_ext)
+
+        if not os.path.isfile(new_img) or force:
+            im = cv2.imread(pair[1], cv2.IMREAD_UNCHANGED)
+            im = cv2.rotate(im, rot_to_do[r][1])
+            cv2.imwrite(new_img, im)
+                                            
+        m0 = [[1, 0,  c[(0 + r + 1) % 2]],
+              [0, 1,  c[(1 + r + 1) % 2]],
+              [0, 0,          1        ]]
+
+        rot_mat = np.asarray([[0, -1], [1, 0]]) @ rot_mat
+        m1 = np.eye(3)
+        m1[:2, :2] = rot_mat
+
+        m2 = [[1, 0, -c[0]],
+              [0, 1, -c[1]],
+              [0, 0,    1 ]]
+
+        # from warped to original
+        warp_matrix = torch.tensor(m2 @ m1 @ m0, device=device, dtype=torch.float)
+            
+        yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix]
+        
+
+class image_muxer_module:
+    def __init__(self, what='default', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=None, pipeline=[]):
+        self.single_image = False
+        self.pipeliner = True
+        
+        self.cache_path = cache_path
+        self.pair_generator = pair_generator
+        self.pipe_gather = pipe_gather
+        self.pipeline = pipeline
+        
+        self.id_string = ('image_muxer_' + str(what)).lower()        
+
+
+    def get_id(self): 
+        return self.id_string
+
+
+    def run(self, db=None, force=False, pipe_data={}, pipe_name=''):
+        pair = pipe_data['img']
+        pipe_data_block = []
+        
+        # H_new = H * [I -kp] * warp * [I w^(-1)kp]
+
+        for pair_, warp_ in image_pairs(self.pair_generator(pair, cache_path=self.cache_path, force=force)):
+            pipe_data_in = pipe_data.copy()
+            pipe_data_in['img'] = [pair_[0], pair_[1]]
+            pipe_data_in['warp'] = [warp_[0], warp_[1]]
+            
+            if 'kp' in pipe_data:
+                aux = []
+
+                for i in range(2):
+                    kp = pipe_data['kp'][i]
+                    pt = torch.zeros((kp.shape[0], 3), device=device)
+                    pt[:, :2] = kp
+                    pt[:, 2] = 1
+                    pt_ = (warp_[i].torch.inverse() @ pt.permute((1, 0))).permute((1, 0))
+                    pt_ = pt_ [:, :2] / pt_[:, 2]
+                    aux.append(pt_)
+                
+                pipe_data_in['kp'] = aux
+                    
+            pipe_data_out, pipe_name_out = run_pipeline(pair_, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
+
+            if 'kp' in pipe_data_out:
+                aux = []
+
+                for i in range(2):
+                    kp = pipe_data_out['kp'][i]
+                    pt = torch.zeros((kp.shape[0], 3), device=device)
+                    pt[:, :2] = kp
+                    pt[:, 2] = 1
+                    pt_ = (warp_[i] @ pt.permute((1, 0))).permute((1, 0))
+                    pt_ = pt_ [:, :2] / pt_[:, 2]
+                    aux.append(pt_)
+
+                pipe_data_out['kp'] = aux
+
+        
+            pipe_data_block.append(pipe_data_out)
+        
+        return self.pipe_gather(pipe_data_block)
+        
+
 if __name__ == '__main__':
     
-    pipeline = [hz_plus_module(),
-                orinet_affnet_module(),
+    pipeline = [keynet_module(),
+                deep_patch_module(),
                 deep_descriptor_module(descriptor='hardnet'),
                 smnn_module()
                 ]
