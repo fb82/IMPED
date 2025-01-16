@@ -489,10 +489,9 @@ class image_muxer_module:
 
     def run(self, db=None, force=False, pipe_data={}, pipe_name=''):
         pair = pipe_data['img']
+        warp = pipe_data['warp']
         pipe_data_block = []
         
-        # H_new = H * [I -kp] * warp * [I w^(-1)kp]
-
         for pair_, warp_ in image_pairs(self.pair_generator(pair, cache_path=self.cache_path, force=force)):
             pipe_data_in = pipe_data.copy()
             pipe_data_in['img'] = [pair_[0], pair_[1]]
@@ -511,6 +510,9 @@ class image_muxer_module:
                     ]
                                        
             pipe_data_out, pipe_name_out = run_pipeline(pair_, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
+
+            pipe_data_out['img'] = pair
+            pipe_data_out['warp'] = warp
 
             if 'kp' in pipe_data_out:
                 pipe_data_out['kp'] = [    
@@ -675,10 +677,10 @@ class poselib_module:
             sac_min = 4
             
         params = {         
-            'max_iterations' : self.args['max_iters'],
-            'min_iterations' : self.args['min_iters'],
-            'success_prob' : self.args['conf'],
-            'max_epipolar_error' : self.args['px_th'],
+            'max_iterations': self.args['max_iters'],
+            'min_iterations': self.args['min_iters'],
+            'success_prob': self.args['conf'],
+            'max_epipolar_error': self.args['px_th'],
             }
             
         if (pt1.shape)[0] >= sac_min:  
@@ -703,7 +705,117 @@ class poselib_module:
 
 
 def pipe_union(pipe_block, unique=True):
+
+    kp0 = []
+    kH0 = []
+
+    kp1 = []
+    kH1 = []
+    
+    m_idx = []
+    m_val = []
+    m_mask = []
+    
+    m0_offset = 0
+    m1_offset = 0
+    
+    for pipe_data in pipe_block:
+        if 'kp' in pipe_data:
+        
+            kp0.append(pipe_data['kp'][0])
+            kp1.append(pipe_data['kp'][1])
+    
+            kH0.append(pipe_data['kH'][0])
+            kH1.append(pipe_data['kH'][1])
+    
+            if 'm_idx' in pipe_data:
+                m_idx.append(pipe_data['m_val'] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
+                m_val.append(pipe_data['m_val'])
+                m_mask.append(pipe_data['m_mask'])
+    
+                m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
+                m1_offset = m1_offset + pipe_data['kp'][1].shape[1]
+
+    if 'kp' in pipe_data:
+        kp0 = torch.cat(kp0)
+        kp1 = torch.cat(kp1)
+
+        kH0 = torch.cat(kH0)
+        kH1 = torch.cat(kH1)
+
+        if 'm_idx' in pipe_data:
+            m_idx = torch.cat(m_idx)
+            m_val = torch.cat(m_val)
+            m_mask = torch.cat(m_mask)
+
+    if unique:
+        if 'm_idx' in pipe_data:
+            idx = torch.argsort(m_val)
+
+            m_idx = m_idx[idx]
+            m_val = m_val[idx]
+            m_mask = m_mask[idx]
+
+            idx = torch.argsort(m_mask, descending=True, stable=True)
+
+            m_idx = m_idx[idx]
+            m_val = m_val[idx]
+            m_mask = m_mask[idx]
+
+            idx0 = torch.zeros(kp0.shape[0], device=device, dtype=torch.int)
+            idx0[:] = m_idx.shape[0] + 1
+            for i in range(m_idx.shape[0] - 1,-1,-1):
+                idx0[m_idx[i, 0]] = i
+            
+            idx0 = torch.argsort(idx0)
+            
+            idx1 = torch.zeros(kp0.shape[0], device=device, dtype=torch.int)
+            idx1[:] = m_idx.shape[0] + 1
+            for i in range(m_idx.shape[0] - 1,-1,-1):
+                idx1[m_idx[i, 1]] = i
+            
+            idx1 = torch.argsort(idx1)
+            
+
+        if 'kp' in pipe_data:
+            kp0, idx0, idx0_rev = sortrows(kp0)
+            kp1, idx1, idx1_rev = sortrows(kp1)
+            
+            if 'm_idx' in pipe_data:
+                m_idx_new = torch.zeros_like(m_idx)
+                m_idx_new[:, 0] = idx0_rev[m_idx[0], 0]
+                m_idx_new[:, 1] = idx1_rev[m_idx[1], 0]
+            
     return pipe_block[0]
+
+
+def sortrows(kp):
+    idx = torch.arange(len(kp))
+
+    for i in range(kp.shape[1] - 1,-1,-1):            
+        _, sidx = torch.sort(kp, dim=i, stable=True)
+        idx = idx[sidx]
+        kp = kp[sidx]            
+
+    kp_ = torch.zeros(kp.shape, device=device)
+    iidx = torch.zeros((kp.shape[0], 2), device=device)
+
+    k = 0
+    uk_cur = kp[0]
+    for i in range(kp.shape[0]):
+        if torch.all(kp[i] == uk_cur):
+            iidx[i, 0] = k
+            iidx[i, 1] = idx[i]
+        else:
+            kp_[k] = uk_cur
+            k = k + 1                                        
+            uk_cur = kp[i]
+
+    _, aux = torch.sort(iidx, dim=1)
+    iidx_rev = iidx[aux,[1, 0]] 
+    
+    return kp_[:k + 1], iidx, iidx_rev
+
 
 class pipeline_muxer_module:
     def __init__(self, what='default', pipe_gather=pipe_union, pipeline=[]):
