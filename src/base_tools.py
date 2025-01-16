@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import hz.hz as hz
 from PIL import Image
+import poselib
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -162,23 +163,32 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
     return pipe_data, pipe_name
 
 
-def laf2homo(kps):
+def laf2homo(kps, with_scale=False):
     c = kps[:, :, 2].type(torch.float)
-    s = torch.sqrt(torch.abs(kps[:, 0, 0] * kps[:, 1, 1] - kps[:, 0, 1] * kps[:, 1, 0]))   
     
     Hi = torch.zeros((kps.shape[0], 3, 3), device=device)
-    Hi[:, :2, :] = kps / s.reshape(-1, 1, 1)
+    Hi[:, :2, :] = kps    
     Hi[:, 2, 2] = 1 
 
+    if with_scale:
+        s = torch.sqrt(torch.abs(kps[:, 0, 0] * kps[:, 1, 1] - kps[:, 0, 1] * kps[:, 1, 0]))   
+        Hi[:, :2, :] = Hi[:, :2, :] / s.reshape(-1, 1, 1)
+        s = s.type(torch.float)
+        
     H = torch.linalg.inv(Hi).type(torch.float)
-    s = s.type(torch.float)
+
+    if with_scale:    
+        return c, H, s
     
-    return c, H, s
+    return c, H
 
 
-def homo2laf(c, H, s):
+def homo2laf(c, H, s=None):
     Hi = torch.linalg.inv(H)
-    kp = Hi[:, :2, :] * s.reshape(-1, 1, 1)
+    kp = Hi[:, :2, :]
+    
+    if not (s is None):
+        kp = kp * s.reshape(-1, 1, 1)
 
     return kp.unsqueeze(0)
 
@@ -201,7 +211,7 @@ class sift_module:
         self.pipeliner = False                
         self.args = {
             'upright': False,
-            'params': {'nfeatures': 8000, 'contrastThreshold': -10000, 'edgeThreshold': 10000}
+            'params': {'nfeatures': 8000, 'contrastThreshold': -10000, 'edgeThreshold': 10000},
         }
 
         self.id_string, self.args = set_args('sift', args, self.args)
@@ -224,9 +234,9 @@ class sift_module:
                 kp[ii].angle = 0       
                 
         kp = laf_from_opencv_kpts(kp, device=device)
-        kp, H, s = laf2homo(kp.squeeze(0).detach().to(device))
+        kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
     
-        return {'kp': kp, 'H': H, 's': s}
+        return {'kp': kp, 'kH': kH}
 
 
 class keynet_module:
@@ -234,7 +244,7 @@ class keynet_module:
         self.single_image = True        
         self.pipeliner = False        
         self.args = {
-            'params': {'num_features': 8000}
+            'params': {'num_features': 8000},
         }
         
         self.id_string, self.args = set_args('keynet', args, self.args)
@@ -248,9 +258,9 @@ class keynet_module:
     def run(self, **args):  
         img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
         kp, _ = self.detector(img)        
-        kp, H, s = laf2homo(kp.squeeze(0).detach().to(device))
+        kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
     
-        return {'kp': kp, 'H': H, 's': s}
+        return {'kp': kp, 'kH': kH}
 
 
 class hz_plus_module:
@@ -271,9 +281,9 @@ class hz_plus_module:
     def run(self, **args):    
         img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
         kp = hz.hz_plus(img, output_format='laf', **self.args['params'])
-        kp, H, s = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
+        kp, kH = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
     
-        return {'kp': kp, 'H': H, 's': s}
+        return {'kp': kp, 'kH': kH}
 
 
 class deep_patch_module:
@@ -284,7 +294,7 @@ class deep_patch_module:
             'orinet': True,
             'orinet_params': {},
             'affnet': True,
-            'affnet_params': {}
+            'affnet_params': {},
             }
 
         self.id_string, self.args = set_args('deep_patch', args, self.args)
@@ -306,14 +316,14 @@ class deep_patch_module:
     def run(self, **args):    
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
 
-        lafs = homo2laf(args['kp'][args['idx']], args['H'][args['idx']], args['s'][args['idx']])
+        lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
 
         lafs = self.ori_module(lafs, im)
         lafs = self.aff_module(lafs, im)
 
-        kp, H, s = laf2homo(lafs.squeeze(0))
+        kp, kH = laf2homo(lafs.squeeze(0))
     
-        return {'kp': kp, 'H': H, 's': s}
+        return {'kp': kp, 'kH': kH}
 
 
 class deep_descriptor_module:
@@ -323,7 +333,7 @@ class deep_descriptor_module:
         self.args = {
             'descriptor': 'hardnet',
             'desc_params': {},
-            'patch_params': {}
+            'patch_params': {},
             }
 
         self.id_string, self.args = set_args('deep_descriptor', args, self.args)        
@@ -345,7 +355,7 @@ class deep_descriptor_module:
     def run(self, **args):    
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
 
-        lafs = homo2laf(args['kp'][args['idx']], args['H'][args['idx']], args['s'][args['idx']])
+        lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)
     
         return {'desc': desc}
@@ -355,7 +365,9 @@ class sift_descriptor_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
-        self.args = {'rootsift': True}
+        self.args = {
+            'rootsift': True,
+            }
         
         self.id_string, self.args = set_args('sift_descriptor', args, self.args)        
         self.descriptor = cv2.SIFT_create()
@@ -367,7 +379,7 @@ class sift_descriptor_module:
 
     def run(self, **args):
         im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)        
-        lafs = homo2laf(args['kp'][args['idx']], args['H'][args['idx']], args['s'][args['idx']])                
+        lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])                
         kp = opencv_kpts_from_laf(lafs)
         
         _, desc = self.descriptor.compute(im, kp)
@@ -385,7 +397,9 @@ class smnn_module:
     def __init__(self, **args):
         self.single_image = False    
         self.pipeliner = False        
-        self.args = {'th': 0.95}
+        self.args = {
+            'th': 0.95,
+            }
         
         self.id_string, self.args = set_args('smnn', args, self.args)        
 
@@ -397,7 +411,7 @@ class smnn_module:
     def run(self, **args):
         val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
-        return {'midx': idxs, 'vidx': val.squeeze(1)}
+        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=device, dtype=torch.bool)}
 
 
 def pair_rot4(pair, cache_path='tmp_imgs', force=False):
@@ -443,10 +457,21 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False):
         warp_matrix = torch.tensor(m2 @ m1 @ m0, device=device, dtype=torch.float)
             
         yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix]
+
+
+def pipe_max_matches(pipe_block):
+    n_matches = torch.zeros(len(pipe_block), device=device)
+    for i in range(len(pipe_block)):
+        if 'm_mask' in pipe_block[i]:
+            n_matches[i] = pipe_block[i]['m_mask'].sum()
+    
+    best = n_matches.max(0)[1]
+    
+    return pipe_block[best]
         
 
 class image_muxer_module:
-    def __init__(self, what='default', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=None, pipeline=[]):
+    def __init__(self, what='default', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[]):
         self.single_image = False
         self.pipeliner = True
         
@@ -474,40 +499,238 @@ class image_muxer_module:
             pipe_data_in['warp'] = [warp_[0], warp_[1]]
             
             if 'kp' in pipe_data:
-                aux = []
+                pipe_data_in['kp'] = [    
+                    apply_homo(pipe_data['kp'][0], warp_[0].inverse()),
+                    apply_homo(pipe_data['kp'][1], warp_[1].inverse())
+                    ]
 
-                for i in range(2):
-                    kp = pipe_data['kp'][i]
-                    pt = torch.zeros((kp.shape[0], 3), device=device)
-                    pt[:, :2] = kp
-                    pt[:, 2] = 1
-                    pt_ = (warp_[i].torch.inverse() @ pt.permute((1, 0))).permute((1, 0))
-                    pt_ = pt_ [:, :2] / pt_[:, 2]
-                    aux.append(pt_)
-                
-                pipe_data_in['kp'] = aux
-                    
+            if 'kH' in pipe_data:
+                pipe_data_in['kH'] = [    
+                    change_patch_homo(pipe_data['kp'][0], pipe_data['kH'][0], warp_[0]),
+                    change_patch_homo(pipe_data['kp'][1], pipe_data['kH'][1], warp_[1]),
+                    ]
+                                       
             pipe_data_out, pipe_name_out = run_pipeline(pair_, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
 
             if 'kp' in pipe_data_out:
-                aux = []
+                pipe_data_out['kp'] = [    
+                    apply_homo(pipe_data_out['kp'][0], warp_[0]),
+                    apply_homo(pipe_data_out['kp'][1], warp_[1])
+                    ]
 
-                for i in range(2):
-                    kp = pipe_data_out['kp'][i]
-                    pt = torch.zeros((kp.shape[0], 3), device=device)
-                    pt[:, :2] = kp
-                    pt[:, 2] = 1
-                    pt_ = (warp_[i] @ pt.permute((1, 0))).permute((1, 0))
-                    pt_ = pt_ [:, :2] / pt_[:, 2]
-                    aux.append(pt_)
-
-                pipe_data_out['kp'] = aux
-
+            if 'kH' in pipe_data_out:
+                pipe_data_in['kH'] = [    
+                    change_patch_homo(pipe_data_out['kp'][0], pipe_data_out['kH'][0], warp_[0].inverse()),
+                    change_patch_homo(pipe_data_out['kp'][1], pipe_data_out['kH'][1], warp_[1].inverse()),
+                    ]
         
             pipe_data_block.append(pipe_data_out)
         
         return self.pipe_gather(pipe_data_block)
         
+
+def change_patch_homo(kp, kH, warp):
+    
+    pt_old = torch.zeros((kp.shape[0], 3), device=device)
+    pt_old[:, :2] = kp
+    pt_old[:, 2] = 1
+    pt_old = pt_old.permute((1,0))
+
+    pt_new = warp.inverse() @ pt_old
+    pt_new / pt_new [:, 2]    
+
+    t_old = torch.zeros((kp.shape[0], 3, 3), device=device)
+    t_new = torch.zeros((kp.shape[0], 3, 3), device=device)
+
+    t_old [:, :2, 2] =  pt_old.unsqueeze(-1)
+    t_new [:, :2, 2] = -pt_new.unsqueeze(-1)    
+    kH_ = (kH.bmm(t_new) @ warp.unsqueeze(0)).bmm(t_old)
+    
+    return kH_
+
+
+def apply_homo(p, H):
+    
+    pt = torch.zeros((p.shape[0], 3), device=device)
+    pt[:, :2] = p
+    pt[:, 2] = 1
+    pt_ = (H @ pt.permute((1, 0))).permute((1, 0))
+    return pt_ [:, :2] / pt_[:, 2]    
+
+
+class magsac_module:
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False        
+        self.args = {
+            'mode': 'fundamental_matrix',
+            'conf': 0.9999,
+            'max_iters': 100000,
+            'px_th': 3,
+            'max_try': 3
+            }
+        
+        self.id_string, self.args = set_args('magsac', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+
+        
+    def run(self, **args):  
+        pt1_ = args['kp'][0]
+        pt2_ = args['kp'][1]
+        mi = args['m_idx']
+        mm = args['m_mask']
+        
+        pt1 = pt1_[mi[mm][0]]
+        pt2 = pt2_[mi[mm][1]]
+        
+        if torch.is_tensor(pt1):
+            pt1 = np.ascontiguousarray(pt1.detach().cpu())
+            pt2 = np.ascontiguousarray(pt2.detach().cpu())
+
+        F = None
+        mask = []
+            
+        if self.args['mode'] == 'fundamental_matrix':
+            sac_to_run = cv2.findFundamentalMat
+            sac_min = 8
+        else:
+            sac_to_run = cv2.findHomography
+            sac_min = 4
+            
+        if (pt1.shape)[0] >= sac_min:  
+            try:                     
+                F, mask = sac_to_run(pt1, pt2, cv2.USAC_MAGSAC, self.args['px_th'], self.args['conf'], self.args['max_iters'])
+            except:
+                for i in range(self.args['max_try'] - 1):
+                    try:
+                        idx = np.random.permutation(pt1.shape[0])
+                        jdx = np.argsort(idx)
+                        F, mask = sac_to_run(pt1[idx], pt2[idx], cv2.USAC_MAGSAC, self.args['px_th'], self.args['conf'], self.args['max_iters'])
+                        mask = mask[jdx]
+                    except:
+                        warnings.warn("MAGSAC failed, tentative " + str(i + 1) + ' of ' + str(self.args['max_try']))
+                        continue
+                    
+        if not isinstance(mask, np.ndarray):
+            mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
+        else:
+            if len(mask.shape) > 1: mask = mask.squeeze(1) > 0
+            mask = torch.tensor(mask, device=device, dtype=torch.bool)
+ 
+        aux = mm[:]
+        mm[aux] = mask
+        
+        if not (F is None):
+            F = torch.tensor(F, device=device)
+        
+        if self.args['mode'] == 'fundamental_matrix':
+            return {'m_mask': mm, 'F': F}
+        else:
+            return {'m_mask': mm, 'H': F}
+
+
+class poselib_module:
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False        
+        self.args = {
+            'mode': 'fundamental_matrix',
+            'conf': 0.9999,
+            'max_iters': 100000,
+            'px_th': 3,
+            'max_try': 3
+            }
+        
+        self.id_string, self.args = set_args('poselib', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+    
+        
+    def run(self, **args):  
+        pt1_ = args['kp'][0]
+        pt2_ = args['kp'][1]
+        mi = args['m_idx']
+        mm = args['m_mask']
+        
+        pt1 = pt1_[mi[mm][0]]
+        pt2 = pt2_[mi[mm][1]]
+        
+        if torch.is_tensor(pt1):
+            pt1 = np.ascontiguousarray(pt1.detach().cpu())
+            pt2 = np.ascontiguousarray(pt2.detach().cpu())
+
+        F = None
+        mask = []
+            
+        if self.args['mode'] == 'fundamental_matrix':
+            sac_to_run = poselib.estimate_fundamental
+            sac_min = 8
+        else:
+            sac_to_run = poselib.estimate_homography
+            sac_min = 4
+            
+        params = {         
+            'max_iterations' : self.args['max_iters'],
+            'min_iterations' : self.args['min_iters'],
+            'success_prob' : self.args['conf'],
+            'max_epipolar_error' : self.args['px_th'],
+            }
+            
+        if (pt1.shape)[0] >= sac_min:  
+            F, info = sac_to_run(pt1, pt2, params, {})
+            mask = info['inliers']
+
+        if not isinstance(mask, np.ndarray):
+            mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
+        else:
+            mask = torch.tensor(mask, device=device, dtype=torch.bool)
+ 
+        aux = mm[:]
+        mm[aux] = mask
+        
+        if not (F is None):
+            F = torch.tensor(F, device=device)
+        
+        if self.args['mode'] == 'fundamental_matrix':
+            return {'m_mask': mm, 'F': F}
+        else:
+            return {'m_mask': mm, 'H': F}
+
+
+def pipe_union(pipe_block, unique=True):
+    return pipe_block[0]
+
+class pipeline_muxer_module:
+    def __init__(self, what='default', pipe_gather=pipe_union, pipeline=[]):
+        self.single_image = False
+        self.pipeliner = True
+        self.pipe_gather = pipe_gather
+        self.pipeline = pipeline
+        
+        self.id_string = ('pipeline_muxer_' + str(what)).lower()        
+
+
+    def get_id(self): 
+        return self.id_string
+
+
+    def run(self, db=None, force=False, pipe_data={}, pipe_name=''):
+        pipe_data_block = []
+        
+        for pipeline in self.args['pipeline']:
+            pipe_data_in = pipe_data.copy()
+            pair = pipe_data['img']
+                                       
+            pipe_data_out, pipe_name_out = run_pipeline(pair, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)        
+            pipe_data_block.append(pipe_data_out)
+        
+        return self.pipe_gather(pipe_data_block)
+
 
 if __name__ == '__main__':
     
