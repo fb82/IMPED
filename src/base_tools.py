@@ -6,6 +6,8 @@ import time
 import torch
 import kornia as K
 from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
+from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
+from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 import cv2
 import numpy as np
 import hz.hz as hz
@@ -102,9 +104,8 @@ def image_pairs(to_list, add_path='', check_img=True):
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in image_pairs(imgs):
-        with torch.inference_mode():        
-            run_pipeline(pair, pipeline, db, force=force)
+    for pair in image_pairs(imgs):       
+        run_pipeline(pair, pipeline, db, force=force)
 
                 
 def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):        
@@ -236,6 +237,7 @@ class sift_module:
         kp = laf_from_opencv_kpts(kp, device=device)
         kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
     
+        # todo: add kp[n].response as kr
         return {'kp': kp, 'kH': kH}
 
 
@@ -259,7 +261,8 @@ class keynet_module:
         img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
         kp, _ = self.detector(img)        
         kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
-    
+
+        # todo: add _ as kr    
         return {'kp': kp, 'kH': kH}
 
 
@@ -280,9 +283,10 @@ class hz_plus_module:
     
     def run(self, **args):    
         img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
-        kp = hz.hz_plus(img, output_format='laf', **self.args['params'])
+        kp, _ = hz.hz_plus(img, output_format='laf', **self.args['params'])
         kp, kH = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
-    
+
+        # todo: add hz response as kr    
         return {'kp': kp, 'kH': kH}
 
 
@@ -705,7 +709,6 @@ class poselib_module:
 
 
 def pipe_union(pipe_block, unique=True):
-
     kp0 = []
     kH0 = []
 
@@ -762,60 +765,72 @@ def pipe_union(pipe_block, unique=True):
             m_val = m_val[idx]
             m_mask = m_mask[idx]
 
-            idx0 = torch.zeros(kp0.shape[0], device=device, dtype=torch.int)
-            idx0[:] = m_idx.shape[0] + 1
+            idx0 = torch.full(kp0.shape[0], m_idx.shape[0], device=device, dtype=torch.int)
             for i in range(m_idx.shape[0] - 1,-1,-1):
-                idx0[m_idx[i, 0]] = i
-            
+                idx0[m_idx[i, 0]] = i            
             idx0 = torch.argsort(idx0)
             
-            idx1 = torch.zeros(kp0.shape[0], device=device, dtype=torch.int)
+            idx1 = torch.full(kp1.shape[0], m_idx.shape[0], device=device, dtype=torch.int)
             idx1[:] = m_idx.shape[0] + 1
             for i in range(m_idx.shape[0] - 1,-1,-1):
-                idx1[m_idx[i, 1]] = i
-            
+                idx1[m_idx[i, 1]] = i            
             idx1 = torch.argsort(idx1)
             
-
         if 'kp' in pipe_data:
-            kp0, idx0, idx0_rev = sortrows(kp0)
-            kp1, idx1, idx1_rev = sortrows(kp1)
+            idx0u, idx0r = sortrows(kp0[:], idx0)
+            kp0 = kp0[idx0u]
+            kH0 = kH0[idx0u]
+
+            idx1u, idx1r = sortrows(kp1[:], idx1)
+            kp1 = kp1[idx1u]
+            kH1 = kH1[idx1u]
             
             if 'm_idx' in pipe_data:
-                m_idx_new = torch.zeros_like(m_idx)
-                m_idx_new[:, 0] = idx0_rev[m_idx[0], 0]
-                m_idx_new[:, 1] = idx1_rev[m_idx[1], 0]
-            
-    return pipe_block[0]
+                m_idx_new = torch.cat((idx0r[m_idx[0]].unsqueeze(1), idx0r[m_idx[0]].unsqueeze(1)), dim=1)
+                idxmu, _ = sortrows(m_idx_new[:])
+                m_idx = m_idx_new[idxmu]
+                m_val = m_val[idxmu]
+                m_mask = m_mask
+                
+    pipe_data_out = {}
+                
+    if 'kp' in pipe_data:
+        pipe_data_out['kp'] = [kp0, kp1]
+        pipe_data_out['kH'] = [kH0, kH1]
+
+        if 'm_idx' in pipe_data:
+            pipe_data_out['m_idx'] = m_idx
+            pipe_data_out['m_val'] = m_val
+            pipe_data_out['m_mask'] = m_mask
+                
+    return pipe_data_out
 
 
-def sortrows(kp):
+def sortrows(kp, idx_prev=None):    
     idx = torch.arange(len(kp))
 
+    if not (idx_prev is None):
+        idx = idx[idx_prev]
+        kp = kp[idx_prev]            
+        
     for i in range(kp.shape[1] - 1,-1,-1):            
-        _, sidx = torch.sort(kp, dim=i, stable=True)
+        sidx = torch.argsort(kp, dim=i, stable=True)
         idx = idx[sidx]
         kp = kp[sidx]            
 
-    kp_ = torch.zeros(kp.shape, device=device)
-    iidx = torch.zeros((kp.shape[0], 2), device=device)
+    idxa = torch.zeros(kp.shape[0], device=device)
+    idxb = torch.zeros(kp.shape[0], device=device)
 
     k = 0
-    uk_cur = kp[0]
+    cur = torch.zeros((0,2), device=device)
     for i in range(kp.shape[0]):
-        if torch.all(kp[i] == uk_cur):
-            iidx[i, 0] = k
-            iidx[i, 1] = idx[i]
-        else:
-            kp_[k] = uk_cur
-            k = k + 1                                        
-            uk_cur = kp[i]
+        if not torch.all(kp[idx[i]] == cur):
+            cur = kp[idx[i]]
+            idxa[k] = idx[i]                                        
+            k = k + 1
+        idxb[idx[i]] = k 
 
-    _, aux = torch.sort(iidx, dim=1)
-    iidx_rev = iidx[aux,[1, 0]] 
-    
-    return kp_[:k + 1], iidx, iidx_rev
-
+    return idxa, idxb
 
 class pipeline_muxer_module:
     def __init__(self, what='default', pipe_gather=pipe_union, pipeline=[]):
@@ -844,13 +859,206 @@ class pipeline_muxer_module:
         return self.pipe_gather(pipe_data_block)
 
 
-if __name__ == '__main__':
+class deep_detector_and_descriptor_module:
+    def __init__(self, **args):
+        self.single_image = True
+        self.pipeliner = False
+        self.what = 'superpoint'
+        self.args = {            
+            'num_features': 8000,
+            'resize': 1024,           # this is default, set to None to disable
+            'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
+            }
+                        
+        self.id_string, self.args = set_args(self.what, args, self.args)        
+
+        if self.what == 'disk':            
+            self.extractor = lg_disk(max_num_keypoints=self.args['num_features']).eval().to(device)
+        elif self.what == 'aliked':            
+            self.extractor = lg_aliked(max_num_keypoints=self.args['num_features'], model_name=self.args['aliked_model']).eval().to(device)
+        elif self.what == 'sift':            
+            self.extractor = lg_sift(max_num_keypoints=self.args['num_features']).eval().to(device)
+        elif self.what == 'doghardnet':            
+            self.extractor = lg_doghardnet(max_num_keypoints=self.args['num_features']).eval().to(device)
+        else:   
+            self.what = 'superpoint'
+            self.extractor = lg_superpoint(max_num_keypoints=self.args['num_features']).eval().to(device)
+
+
+    def get_id(self): 
+        return self.id_string
     
-    pipeline = [keynet_module(),
-                deep_patch_module(),
-                deep_descriptor_module(descriptor='hardnet'),
-                smnn_module()
-                ]
+
+    def run(self, **args):
+        # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])         
+        img = lg_load_image(args['img'][args['idx']]).to(device)
+        
+        feats = self.extractor.extract(img, resize=self.args['resize'])
+        kp = feats['keypoints'].squeeze(0)       
+        desc = feats['descriptors'].squeeze(0)       
+        kH = torch.eye(3, device=device).reshape(1, 9).repeat(kp.shape[0], 1).reshape((-1, 3, 3))
+        
+        # todo: add feats['keypoint_scores'] as kr        
+        return {'kp': kp, 'kH': kH, 'desc': desc}
+
+
+class lightglue_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False
+        self.what = 'superpoint'
+        self.args = {            
+            'num_features': 8000,
+            'resize': 1024,           # this is default, set to None to disable
+            'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
+            }
+
+        self.id_string, self.args = set_args('lightglue_' + self.what, args, self.args)        
+
+        if self.what == 'disk':            
+            self.matcher = lg_lightglue(features='disk').eval().to(device)            
+        elif self.what == 'aliked':            
+            self.matcher = lg_lightglue(features='aliked').eval().to(device)            
+        elif self.what == 'sift':            
+            self.matcher = lg_lightglue(features='sift').eval().to(device)                            
+        elif self.what == 'doghardnet':            
+            self.matcher = lg_lightglue(features='doghardnet').eval().to(device)            
+        else:   
+            self.what = 'superpoint'
+            self.matcher = lg_lightglue(features='superpoint').eval().to(device)            
+
+
+    def get_id(self): 
+        return self.id_string
     
-    imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
-    run_pairs(pipeline, imgs)
+
+    def run(self, **args):           
+        # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])
+        # dict_keys(['matches0', 'matches1', 'matching_scores0', 'matching_scores1', 'stop', 'matches', 'scores', 'prune0', 'prune1'])
+
+        width, height = Image.open(args['img'][0]).size
+        sz1 = torch.tensor([width / 2, height / 2], device=device)
+
+        width, height = Image.open(args['img'][1]).size
+        sz2 = torch.tensor([width / 2, height / 2], device=device)
+
+        feats1 = {'keypoints': args['kp'][0].unsqueeze(0), 'descriptors': args['desc'][0].unsqueeze(0), 'image_size': sz1.unsqueeze(0)} 
+        feats2 = {'keypoints': args['kp'][1].unsqueeze(0), 'descriptors': args['desc'][1].unsqueeze(0), 'image_size': sz2.unsqueeze(0)} 
+        
+        matches12 = self.matcher({'image0': feats1, 'image1': feats2})
+        feats1_, feats2_, matches12 = [lg_rbd(x) for x in [feats1, feats2, matches12]]
+
+
+        idxs = matches12['matches'].squeeze(0)
+        m_val = matches12['scores'].squeeze(0)
+        m_mask = torch.ones(idxs.shape[0], device=device, dtype=torch.bool)
+            
+        return {'m_idx': idxs, 'm_val': m_val, 'm_mask': m_mask}
+    
+
+class loftr_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.args = {
+            'outdoor': True,
+            'resize': None,                          # self.resize = [800, 600]
+            }
+
+        self.id_string, self.args = set_args('loftr', args, self.args)        
+
+        if self.args['outdoor'] == True:
+            pretrained = 'outdoor'
+        else:
+            pretrained = 'indoor_new'
+
+        self.matcher = K.feature.LoFTR(pretrained=pretrained).to(device).eval()
+
+
+    def get_id(self): 
+        return self.id_string
+
+
+    def run(self, **args):
+        image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
+        image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
+
+        hw1 = image0.shape[1:]
+        hw2 = image1.shape[1:]
+
+        if not (self.args['resize'] is None):        
+            ms = min(self.resize)
+            Ms = max(self.resize)
+
+            if hw1[0] > hw1[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw1[0]) / hw1[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw1[1]) / hw1[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+
+            if hw2[0] > hw2[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw2[0]) / hw2[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw2[1]) / hw2[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+                    
+        hw1_ = image0.shape[1:]
+        hw2_ = image1.shape[1:]
+
+        input_dict = {
+            "image0": image0.unsqueeze(0),    # LofTR works on grayscale images
+            "image1": image1.unsqueeze(0),
+        }
+
+        correspondences = self.matcher(input_dict)
+
+        kps1 = correspondences["keypoints0"]
+        kps2 = correspondences["keypoints1"]
+        m_val = correspondences['confidence']
+                        
+        kps1 = kps1.squeeze().detach().to(device)
+        kps2 = kps2.squeeze().detach().to(device)
+
+        kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
+        kps1[:, 1] = kps1[:, 1] * (hw1[0] / float(hw1_[0]))
+    
+        kps2[:, 0] = kps2[:, 0] * (hw2[1] / float(hw2_[1]))
+        kps2[:, 1] = kps2[:, 1] * (hw2[0] / float(hw2_[0]))
+        
+        kp = [kps1, kps2]
+        kH = [
+            torch.eye(3, device=device).reshape(1, 9).repeat(kp[0].shape[0], 1).reshape((-1, 3, 3)),
+            torch.eye(3, device=device).reshape(1, 9).repeat(kp[0].shape[0], 1).reshape((-1, 3, 3)),
+            ]
+
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx[:, 0] = torch.arange(kp[0].shape[0])
+        m_idx[:, 1] = torch.arange(kp[0].shape[0])
+
+        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+
+        return {'kp': kp, 'kH': kH, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+
+        
+if __name__ == '__main__':    
+    with torch.inference_mode():     
+        pipeline = [
+            loftr_module(),
+        ]
+        
+        imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
+        run_pairs(pipeline, imgs)
