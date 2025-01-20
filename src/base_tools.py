@@ -6,6 +6,7 @@ import time
 import torch
 import kornia as K
 from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
+from kornia_moons.viz import visualize_LAF
 from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
 from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 import cv2
@@ -13,8 +14,8 @@ import numpy as np
 import hz.hz as hz
 from PIL import Image
 import poselib
-
-
+import matplotlib.pyplot as plt
+ 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -228,17 +229,21 @@ class sift_module:
         im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
         kp = self.detector.detect(im, None)
 
+
         if self.args['upright']:
             idx = np.unique(np.asarray([[k.pt[0], k.pt[1]] for k in kp]), axis=0, return_index=True)[1]
             kp = [kp[ii] for ii in idx]
             for ii in range(len(kp)):
                 kp[ii].angle = 0       
+
+        kr = []
+        for i in range(len(kp)): kr.append(kp[i].response)
+        kr = torch.tensor(kr, device=device, dtype=torch.float)
                 
         kp = laf_from_opencv_kpts(kp, device=device)
         kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
     
-        # todo: add kp[n].response as kr
-        return {'kp': kp, 'kH': kH}
+        return {'kp': kp, 'kH': kH, 'kr': kr}
 
 
 class keynet_module:
@@ -259,22 +264,57 @@ class keynet_module:
     
     def run(self, **args):  
         img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
-        kp, _ = self.detector(img)        
+        kp, kr = self.detector(img)        
         kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
 
-        # todo: add _ as kr    
-        return {'kp': kp, 'kH': kH}
+        return {'kp': kp, 'kH': kH, 'kr': kr.unsqueeze(0)}
 
 
-class hz_plus_module:
+class hz_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
         self.args = {
-            'params': {'max_max_pts': 8000, 'block_mem': 16*10**6}
+            'plus': True,
+            'params': {'max_max_pts': 8000, 'block_mem': 16*10**6},
+        }
+
+        self.id_string, self.args = set_args('hz' , args, self.args)
+                
+        if self.args['plus']:
+            self.hz_to_run = hz.hz_plus
+        else:
+            self.hz_to_run = hz.hz
+        
+    def get_id(self): 
+        return self.id_string
+
+    
+    def run(self, **args):  
+        if self.args['plus']:        
+            img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
+        else:
+            img = hz.load_to_tensor(args['img'][args['idx']], grayscale=True).to(torch.float)
+
+        kp, kr = self.hz_to_run(img, output_format='laf', **self.args['params'])
+        kp, kH = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
+
+        return {'kp': kp, 'kH': kH, 'kr': kr.unsqueeze(0).type(torch.float)}
+
+
+class show_kpts_module:
+    def __init__(self, **args):
+        self.single_image = True
+        self.pipeliner = False        
+        self.args = {
+            'img_prefix': '',
+            'img_suffix': '',
+            'cache_path': 'show_imgs',
+            'force': False,
+            'params': {},
         }
         
-        self.id_string, self.args = set_args('hz_plus', args, self.args)
+        self.id_string, self.args = set_args('show_kpts' , args, self.args)
 
                 
     def get_id(self): 
@@ -282,12 +322,24 @@ class hz_plus_module:
 
     
     def run(self, **args):    
-        img = hz.load_to_tensor(args['img'][args['idx']]).to(torch.float)
-        kp, _ = hz.hz_plus(img, output_format='laf', **self.args['params'])
-        kp, kH = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
+        im = args['img'][args['idx']]
+        cache_path = self.args['cache_path']
+        img = os.path.split(im)[1]
+        img_name, img_ext = os.path.splitext(img)
+        new_img = os.path.join(cache_path, self.args['img_prefix'] + img_name + self.args['img_suffix'] + img_ext)
 
-        # todo: add hz response as kr    
-        return {'kp': kp, 'kH': kH}
+        if not os.path.isfile(new_img) or self.args['force']:
+            os.makedirs(cache_path, exist_ok=True)
+            img = cv2.cvtColor(cv2.imread(args['img'][args['idx']]), cv2.COLOR_BGR2RGB)    
+            lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
+
+            fig = plt.figure()
+            visualize_LAF(K.image_to_tensor(img, False), lafs, 0, fig=fig, **self.args['params'])
+            plt.axis('off')    
+            plt.savefig(new_img, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        return {}
 
 
 class deep_patch_module:
@@ -1057,7 +1109,10 @@ class loftr_module:
 if __name__ == '__main__':    
     with torch.inference_mode():     
         pipeline = [
-            loftr_module(),
+            keynet_module(),
+            deep_patch_module(),
+            show_kpts_module(),
+            deep_descriptor_module(),
         ]
         
         imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
