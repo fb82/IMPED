@@ -115,15 +115,22 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
         pipe_data['warp'] = [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
         
     for pipe_module in pipeline:
-        if pipe_name == '':
-            pipe_name = pipe_module.get_id()
+        if hasattr(pipe_module, 'pass_through') and pipe_module.pass_through:  
+            pipe_id = ''
+            key_data = '/' + pipe_module.get_id()
         else:
-            pipe_name = pipe_name + '/' + pipe_module.get_id()
+            pipe_id = pipe_module.get_id()
+            key_data = '/data'
+            
+        if pipe_name == '':
+            pipe_name = pipe_id
+        else:
+            pipe_name = pipe_name + '/' + pipe_id
         
         if hasattr(pipe_module, 'single_image') and pipe_module.single_image:            
             for n in range(len(pipe_data['img'])):
                 im = os.path.split(pipe_data['img'][n])[-1]
-                data_key = '/' + im + '/' + pipe_name + '/data'                    
+                data_key = '/' + im + '/' + pipe_name + key_data                    
 
                 out_data, is_found = db.get(data_key)                    
                 if (not is_found) or force:
@@ -145,7 +152,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
         else:            
             im0 = os.path.split(pipe_data['img'][0])[-1]
             im1 = os.path.split(pipe_data['img'][1])[-1]
-            data_key = '/' + im0 + '/' + im1 + '/' + pipe_name + '/data'   
+            data_key = '/' + im0 + '/' + im1 + '/' + pipe_name + key_data 
 
             out_data, is_found = db.get(data_key)                    
             if (not is_found) or force:
@@ -200,7 +207,8 @@ def set_args(id_string, args, args_):
     if args:
         for k, v in args.items():
             args_[k] = v
-            id_string = id_string + '_' + k + '_' + str(v)
+            if k == 'id_more':
+                id_string = id_string + '_' + str(v)
 
     id_string = id_string.lower()
     
@@ -211,12 +219,15 @@ class sift_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False                
+        self.pass_through = False
+
         self.args = {
+            'id_more': '',
             'upright': False,
             'params': {'nfeatures': 8000, 'contrastThreshold': -10000, 'edgeThreshold': 10000},
         }
 
-        self.id_string, self.args = set_args('sift', args, self.args)
+        self.id_string, self.args = set_args('dog', args, self.args)
         self.detector = cv2.SIFT_create(**self.args['params'])
 
 
@@ -250,7 +261,9 @@ class keynet_module:
     def __init__(self, **args):
         self.single_image = True        
         self.pipeliner = False        
+
         self.args = {
+            'id_more': '',
             'params': {'num_features': 8000},
         }
         
@@ -274,16 +287,20 @@ class hz_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
+        self.pass_through = False
+
         self.args = {
+            'id_more': '',
             'plus': True,
             'params': {'max_max_pts': 8000, 'block_mem': 16*10**6},
         }
 
-        self.id_string, self.args = set_args('hz' , args, self.args)
-                
+        self.id_string, self.args = set_args('' , args, self.args)
         if self.args['plus']:
+            self.id_string = 'hz_plus' + self.id_string                
             self.hz_to_run = hz.hz_plus
         else:
+            self.id_string = 'hz' + self.id_string                
             self.hz_to_run = hz.hz
         
     def get_id(self): 
@@ -306,12 +323,17 @@ class show_kpts_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
+        self.pass_through = True
+
         self.args = {
+            'id_more': '',
             'img_prefix': '',
             'img_suffix': '',
             'cache_path': 'show_imgs',
+            'prepend_pair': False,
+            'ext': '.jpg',
             'force': False,
-            'params': {},
+            'params': [{'color': 'r', 'linewidth': 1, 'draw_ori': True}],
         }
         
         self.id_string, self.args = set_args('show_kpts' , args, self.args)
@@ -325,8 +347,13 @@ class show_kpts_module:
         im = args['img'][args['idx']]
         cache_path = self.args['cache_path']
         img = os.path.split(im)[1]
-        img_name, img_ext = os.path.splitext(img)
-        new_img = os.path.join(cache_path, self.args['img_prefix'] + img_name + self.args['img_suffix'] + img_ext)
+        img_name, _ = os.path.splitext(img)
+        if self.args['prepend_pair']:
+            img0 = os.path.splitext(os.path.split(args['img'][0])[1])[0]
+            img1 = os.path.splitext(os.path.split(args['img'][1])[1])[0]
+            cache_path = os.path.join(cache_path, img0 + '_' + img1)
+            
+        new_img = os.path.join(cache_path, self.args['img_prefix'] + img_name + self.args['img_suffix'] + self.args['ext'])
 
         if not os.path.isfile(new_img) or self.args['force']:
             os.makedirs(cache_path, exist_ok=True)
@@ -334,7 +361,7 @@ class show_kpts_module:
             lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
 
             fig = plt.figure()
-            visualize_LAF(K.image_to_tensor(img, False), lafs, 0, fig=fig, **self.args['params'])
+            visualize_LAF(K.image_to_tensor(img, False), lafs, 0, fig=fig, **self.args['params'][0])
             plt.axis('off')    
             plt.savefig(new_img, dpi=150, bbox_inches='tight')
             plt.close(fig)
@@ -346,24 +373,34 @@ class deep_patch_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
+        self.pass_through = False
+
         self.args = {
+            'id_more': '',
             'orinet': True,
             'orinet_params': {},
             'affnet': True,
             'affnet_params': {},
             }
 
-        self.id_string, self.args = set_args('deep_patch', args, self.args)
+        self.id_string, self.args = set_args('', args, self.args)
 
+        base_string = ''
         if self.args['orinet']:
+            base_string = 'orinet'
             self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device), **self.args['orinet_params'])
         else:
             self.ori_module = K.feature.PassLAF()
 
         if self.args['affnet']:
+            if len(base_string): base_string = base_string  + '_' + 'affnet'
+            else: base_string = 'affnet'
             self.aff_module = K.feature.LAFAffineShapeEstimator(**self.args['affnet_params'])
         else:
             self.aff_module = K.feature.PassLAF()
+
+        if not len(base_string): base_string = 'pass_laf'
+        self.id_string = base_string + self.id_string
 
 
     def get_id(self): 
@@ -386,23 +423,29 @@ class deep_descriptor_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
+        self.pass_through = False
+
         self.args = {
+            'id_more': '',
             'descriptor': 'hardnet',
             'desc_params': {},
             'patch_params': {},
             }
 
-        self.id_string, self.args = set_args('deep_descriptor', args, self.args)        
+        self.id_string, self.args = set_args('', args, self.args)        
         
         if self.args['descriptor'] == 'hardnet':
+            base_string = 'hardnet'
             desc = K.feature.HardNet().to(device)
         if self.args['descriptor'] == 'sosnet':
             desc = K.feature.SOSNet().to(device)
+            base_string = 'sosnet'
         if self.args['descriptor'] == 'hynet':
             desc = K.feature.HyNet(**self.args['desc_params']).to(device)
+            base_string = 'hynet'
 
         self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.args['patch_params'])
-
+        self.id_string = base_string + self.id_string
 
     def get_id(self): 
         return self.id_string
@@ -421,13 +464,22 @@ class sift_descriptor_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
+        self.pass_through = False
+
         self.args = {
+            'id_more': '',
             'rootsift': True,
             }
         
-        self.id_string, self.args = set_args('sift_descriptor', args, self.args)        
+        self.id_string, self.args = set_args('', args, self.args)        
         self.descriptor = cv2.SIFT_create()
 
+        if self.args['rootsift']:
+            base_string = 'rootsift'
+        else:
+            base_string = 'sift'
+            
+        self.id_string = base_string + self.id_string
 
     def get_id(self): 
         return self.id_string
@@ -452,8 +504,11 @@ class sift_descriptor_module:
 class smnn_module:
     def __init__(self, **args):
         self.single_image = False    
-        self.pipeliner = False        
+        self.pipeliner = False      
+        self.pass_through = False
+                
         self.args = {
+            'id_more': '',
             'th': 0.95,
             }
         
@@ -527,16 +582,19 @@ def pipe_max_matches(pipe_block):
         
 
 class image_muxer_module:
-    def __init__(self, what='default', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[]):
+    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[]):
         self.single_image = False
         self.pipeliner = True
+        self.pass_through = False
         
+        self.id_more = id_more
         self.cache_path = cache_path
         self.pair_generator = pair_generator
         self.pipe_gather = pipe_gather
         self.pipeline = pipeline
         
-        self.id_string = ('image_muxer_' + str(what)).lower()        
+        self.id_string = 'image_muxer'
+        if len(self.id_more): self.id_string = self.id_string + '_' + str(self.id_more)        
 
 
     def get_id(self): 
@@ -619,8 +677,11 @@ def apply_homo(p, H):
 class magsac_module:
     def __init__(self, **args):       
         self.single_image = False    
-        self.pipeliner = False        
+        self.pipeliner = False  
+        self.pass_through = False
+                
         self.args = {
+            'id_more': '',
             'mode': 'fundamental_matrix',
             'conf': 0.9999,
             'max_iters': 100000,
@@ -641,8 +702,8 @@ class magsac_module:
         mi = args['m_idx']
         mm = args['m_mask']
         
-        pt1 = pt1_[mi[mm][0]]
-        pt2 = pt2_[mi[mm][1]]
+        pt1 = pt1_[mi[mm][:, 0]]
+        pt2 = pt2_[mi[mm][:, 1]]
         
         if torch.is_tensor(pt1):
             pt1 = np.ascontiguousarray(pt1.detach().cpu())
@@ -678,7 +739,7 @@ class magsac_module:
             if len(mask.shape) > 1: mask = mask.squeeze(1) > 0
             mask = torch.tensor(mask, device=device, dtype=torch.bool)
  
-        aux = mm[:]
+        aux = mm.clone()
         mm[aux] = mask
         
         if not (F is None):
@@ -693,11 +754,15 @@ class magsac_module:
 class poselib_module:
     def __init__(self, **args):       
         self.single_image = False    
-        self.pipeliner = False        
+        self.pipeliner = False     
+        self.pass_through = False
+        
         self.args = {
+            'id_more': '',
             'mode': 'fundamental_matrix',
             'conf': 0.9999,
             'max_iters': 100000,
+            'min_iters': 50,
             'px_th': 3,
             'max_try': 3
             }
@@ -715,8 +780,8 @@ class poselib_module:
         mi = args['m_idx']
         mm = args['m_mask']
         
-        pt1 = pt1_[mi[mm][0]]
-        pt2 = pt2_[mi[mm][1]]
+        pt1 = pt1_[mi[mm][:, 0]]
+        pt2 = pt2_[mi[mm][:, 1]]
         
         if torch.is_tensor(pt1):
             pt1 = np.ascontiguousarray(pt1.detach().cpu())
@@ -743,12 +808,12 @@ class poselib_module:
             F, info = sac_to_run(pt1, pt2, params, {})
             mask = info['inliers']
 
-        if not isinstance(mask, np.ndarray):
+        if not isinstance(mask, list):
             mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
         else:
             mask = torch.tensor(mask, device=device, dtype=torch.bool)
  
-        aux = mm[:]
+        aux = mm.clone()
         mm[aux] = mask
         
         if not (F is None):
@@ -885,13 +950,17 @@ def sortrows(kp, idx_prev=None):
     return idxa, idxb
 
 class pipeline_muxer_module:
-    def __init__(self, what='default', pipe_gather=pipe_union, pipeline=[]):
+    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=[]):
         self.single_image = False
         self.pipeliner = True
+        self.pass_through = False
+
+        self.id_more = id_more                
         self.pipe_gather = pipe_gather
-        self.pipeline = pipeline
-        
-        self.id_string = ('pipeline_muxer_' + str(what)).lower()        
+        self.pipeline = pipeline        
+
+        self.id_string = 'pipeline_muxer'
+        if len(self.id_more): self.id_string = self.id_string + '_' + str(self.id_more)        
 
 
     def get_id(self): 
@@ -915,8 +984,11 @@ class deep_detector_and_descriptor_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False
+        self.pass_through = False
+                
         self.what = 'superpoint'
-        self.args = {            
+        self.args = { 
+            'id_more': '',
             'num_features': 8000,
             'resize': 1024,           # this is default, set to None to disable
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
@@ -958,14 +1030,17 @@ class lightglue_module:
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False
+        self.pass_through = False
+
         self.what = 'superpoint'
-        self.args = {            
+        self.args = {
+            'id_more': '',
             'num_features': 8000,
             'resize': 1024,           # this is default, set to None to disable
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
 
-        self.id_string, self.args = set_args('lightglue_' + self.what, args, self.args)        
+        self.id_string, self.args = set_args('lightglue', args, self.args)        
 
         if self.what == 'disk':            
             self.matcher = lg_lightglue(features='disk').eval().to(device)            
@@ -1011,8 +1086,11 @@ class lightglue_module:
 class loftr_module:
     def __init__(self, **args):
         self.single_image = False
-        self.pipeliner = False        
+        self.pipeliner = False   
+        self.pass_through = False
+                
         self.args = {
+            'id_more': '',
             'outdoor': True,
             'resize': None,                          # self.resize = [800, 600]
             }
@@ -1110,9 +1188,12 @@ if __name__ == '__main__':
     with torch.inference_mode():     
         pipeline = [
             keynet_module(),
+            show_kpts_module(id_more='first', prepend_pair=True),
             deep_patch_module(),
-            show_kpts_module(),
+            show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
             deep_descriptor_module(),
+            smnn_module(),
+            poselib_module(),
         ]
         
         imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
