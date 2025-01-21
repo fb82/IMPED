@@ -2,6 +2,7 @@ import os
 import warnings
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 import time
+from tqdm import tqdm
 
 import torch
 import kornia as K
@@ -17,95 +18,224 @@ import poselib
 import matplotlib.pyplot as plt
  
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+show_progress = True
 
+def go_iter(to_iter):
+    if show_progress:
+        return tqdm(to_iter)
+    else:
+        return to_iter 
 
-def image_pairs(to_list, add_path='', check_img=True):
-    imgs = []
+class image_pairs:
+    def __init__(self, to_list, add_path='', check_img=True):
+        imgs = []        
 
-    # to_list is effectively an image folder
-    if isinstance(to_list, str):
-        warnings.warn("retrieving image list from the image folder")
+        if isinstance(to_list, str):
+            warnings.warn("retrieving image list from the image folder")
+    
+            add_path = os.path.join(add_path, to_list)
+    
+            if os.path.isdir(add_path):
+                file_list = os.listdir(add_path)
+            else:
+                warnings.warn("image folder does not exist!")
+                file_list = []
+                
+            is_match_list = False
+            
+            if not is_match_list:                
+                for i in file_list:
+                    ii = os.path.join(add_path, i)
+                    
+                    if check_img:
+                        try:
+                            Image.open(ii).verify()
+                        except:
+                            continue
+    
+                    imgs.append(ii)
+            
+                imgs.sort()
+                iter_base = True
+            
+        if isinstance(to_list, list):
+            is_match_list = True
+            
+            for i in to_list:
+                if ((not isinstance(i, tuple)) and (not isinstance(i, list))) or not (len(i) == 2):
+                    is_match_list = False
+                    break
+            
+            file_list = to_list
+    
+            # to_list is a list of images
+            if not is_match_list:    
+                warnings.warn("reading image list")
+                
+                for i in file_list:
+                    ii = os.path.join(add_path, i)
+                    
+                    if check_img:                
+                        try:
+                            Image.open(ii).verify()
+                        except:
+                            continue
+    
+                    imgs.append(ii)
+            
+                imgs.sort()
+                iter_base = True
 
-        add_path = os.path.join(add_path, to_list)
+            # dir_name is a list of image pairs
+            else:
+                warnings.warn("reading image pairs")
+                iter_base = False
 
-        if os.path.isdir(add_path):
-            file_list = os.listdir(add_path)
+        self.iter_base = iter_base  
+        
+        if iter_base:
+            self.imgs = imgs    
+            self.i = 0
+            self.j = 1
         else:
-            warnings.warn("image folder does not exist!")
-            file_list = []
-            
-        is_match_list = False
-        
-        if not is_match_list:                
-            for i in file_list:
-                ii = os.path.join(add_path, i)
-                
-                if check_img:
-                    try:
-                        Image.open(ii).verify()
-                    except:
-                        continue
+            self.imgs = file_list
+            self.add_path = add_path
+            self.k = 0
+    
 
-                imgs.append(ii)
-        
-            imgs.sort()
-            for i in range(len(imgs)):
-                for j in range(i + 1, len(imgs)):
-                    yield imgs[i], imgs[j]        
-        
-    if isinstance(to_list, list):
-        is_match_list = True
-        
-        for i in to_list:
-            if ((not isinstance(i, tuple)) and (not isinstance(i, list))) or not (len(i) == 2):
-                is_match_list = False
-                break
-        
-        file_list = to_list
+    def __iter__(self):
+        return self
+    
 
-        # to_list is a list of images
-        if not is_match_list:    
-            warnings.warn("reading image list")
-            
-            for i in file_list:
-                ii = os.path.join(add_path, i)
-                
-                if check_img:                
-                    try:
-                        Image.open(ii).verify()
-                    except:
-                        continue
-
-                imgs.append(ii)
+    def __len__(self):
+        if self.iter_base:
+            return (len(self.imgs) * (len(self.imgs) - 1)) // 2
+        else:
+            return len(self.imgs)
 
     
-            imgs.sort()
-            for i in range(len(imgs)):
-                for j in range(i + 1, len(imgs)):
-                    yield imgs[i], imgs[j]
+    def __next__(self):
+        if self.iter_base:            
+            if (self.i < len(self.imgs)) and (self.j < len(self.imgs)):                    
+                    ii, jj = self.imgs[self.i], self.imgs[self.j]
+                
+                    self.j = self.j + 1
 
-        # dir_name is a list of image pairs
+                    if self.j >= len(self.imgs):                    
+                        self.i = self.i + 1
+                        self.j = self.i + 1
+
+                    return ii, jj
+            else:
+                raise StopIteration
+
         else:
-            warnings.warn("reading image pairs")
+            while self.k < len(self.file_list):            
+                i, j = self.file_list[self.k]
+                self.k = self.k + 1
 
-            for i, j in file_list:
-                ii = os.path.join(add_path, i)
-                jj = os.path.join(add_path, j)
-
-                if check_img:
+                ii = os.path.join(self.add_path, i)
+                jj = os.path.join(self.add_path, j)
+        
+                if self.check_img:
                     try:
                         Image.open(ii).verify()
                         Image.open(jj).verify()
                     except:
                         continue
+    
+                return ii, jj            
 
-                yield ii, jj
+            raise StopIteration
+
+            
+# def image_pairs(to_list, add_path='', check_img=True):
+#     imgs = []
+
+#     # to_list is effectively an image folder
+#     if isinstance(to_list, str):
+#         warnings.warn("retrieving image list from the image folder")
+
+#         add_path = os.path.join(add_path, to_list)
+
+#         if os.path.isdir(add_path):
+#             file_list = os.listdir(add_path)
+#         else:
+#             warnings.warn("image folder does not exist!")
+#             file_list = []
+            
+#         is_match_list = False
+        
+#         if not is_match_list:                
+#             for i in file_list:
+#                 ii = os.path.join(add_path, i)
+                
+#                 if check_img:
+#                     try:
+#                         Image.open(ii).verify()
+#                     except:
+#                         continue
+
+#                 imgs.append(ii)
+        
+#             imgs.sort()
+#             for i in range(len(imgs)):
+#                 for j in range(i + 1, len(imgs)):
+#                     yield imgs[i], imgs[j]        
+        
+#     if isinstance(to_list, list):
+#         is_match_list = True
+        
+#         for i in to_list:
+#             if ((not isinstance(i, tuple)) and (not isinstance(i, list))) or not (len(i) == 2):
+#                 is_match_list = False
+#                 break
+        
+#         file_list = to_list
+
+#         # to_list is a list of images
+#         if not is_match_list:    
+#             warnings.warn("reading image list")
+            
+#             for i in file_list:
+#                 ii = os.path.join(add_path, i)
+                
+#                 if check_img:                
+#                     try:
+#                         Image.open(ii).verify()
+#                     except:
+#                         continue
+
+#                 imgs.append(ii)
+
+    
+#             imgs.sort()
+#             for i in range(len(imgs)):
+#                 for j in range(i + 1, len(imgs)):
+#                     yield imgs[i], imgs[j]
+
+#         # dir_name is a list of image pairs
+#         else:
+#             warnings.warn("reading image pairs")
+
+#             for i, j in file_list:
+#                 ii = os.path.join(add_path, i)
+#                 jj = os.path.join(add_path, j)
+
+#                 if check_img:
+#                     try:
+#                         Image.open(ii).verify()
+#                         Image.open(jj).verify()
+#                     except:
+#                         continue
+
+#                 yield ii, jj
 
 
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in image_pairs(imgs):       
+    for pair in go_iter(image_pairs(imgs)):       
         run_pipeline(pair, pipeline, db, force=force)
 
                 
@@ -525,7 +655,7 @@ class smnn_module:
         return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=device, dtype=torch.bool)}
 
 
-def pair_rot4(pair, cache_path='tmp_imgs', force=False):
+def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
 
     yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
 
@@ -567,7 +697,7 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False):
         # from warped to original
         warp_matrix = torch.tensor(m2 @ m1 @ m0, device=device, dtype=torch.float)
             
-        yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix]
+        yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix], {}
 
 
 def pipe_max_matches(pipe_block):
@@ -606,8 +736,12 @@ class image_muxer_module:
         warp = pipe_data['warp']
         pipe_data_block = []
         
-        for pair_, warp_ in image_pairs(self.pair_generator(pair, cache_path=self.cache_path, force=force)):
+        for pair_, warp_, aux_data in image_pairs(self.pair_generator(pair, cache_path=self.cache_path, force=force, pipe_data=pipe_data)):
             pipe_data_in = pipe_data.copy()
+
+            for k in aux_data.keys():
+                pipe_data_in[k] = aux_data[k]
+
             pipe_data_in['img'] = [pair_[0], pair_[1]]
             pipe_data_in['warp'] = [warp_[0], warp_[1]]
             
