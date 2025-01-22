@@ -295,6 +295,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name=''):
                     stop_time = time.time()
                     out_data['running_time'] = stop_time - start_time
                     db.add(data_key, out_data)
+                del out_data['running_time']
 
                 for k, v in out_data.items():
                     if k in pipe_data:
@@ -489,61 +490,70 @@ class show_kpts_module:
             'prepend_pair': False,
             'ext': '.jpg',
             'force': False,
-            'mask_idx': None,
+            'mask_idx': None, # None: all single image, -1: all both images, []: filtered both images
             'params': [{'color': 'r', 'linewidth': 1, 'draw_ori': True}, {'color': 'g', 'linewidth': 1, 'draw_ori': True}],
         }
         
         self.id_string, self.args = set_args('show_kpts' , args, self.args)
+        if not (self.args['mask_idx'] is None): self.single_image = False
 
                 
     def get_id(self): 
         return self.id_string
 
     
-    def run(self, **args):    
-        im = args['img'][args['idx']]
-        cache_path = self.args['cache_path']
-        img = os.path.split(im)[1]
-        img_name, _ = os.path.splitext(img)
-        if self.args['prepend_pair']:
-            img0 = os.path.splitext(os.path.split(args['img'][0])[1])[0]
-            img1 = os.path.splitext(os.path.split(args['img'][1])[1])[0]
-            cache_path = os.path.join(cache_path, img0 + '_' + img1)
-            
-        new_img = os.path.join(cache_path, self.args['img_prefix'] + img_name + self.args['img_suffix'] + self.args['ext'])
+    def run(self, **args): 
+        if not self.single_image:
+            idxs = [0, 1]
+        else:
+            idxs = [args['idx']]
 
-        if not os.path.isfile(new_img) or self.args['force']:
-            os.makedirs(cache_path, exist_ok=True)
-            img = cv2.cvtColor(cv2.imread(args['img'][args['idx']]), cv2.COLOR_BGR2RGB)    
-            lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
-
-            if (self.args['mask_idx'] is None) or (self.args['mask_idx'] == -1) or (not 'm_idx' in args):
-                mask_idx = -1
-                params = self.args['params'][-1]
-            else:
-                mask_idx = self.args['mask_idx']
-                params = self.args['params']
-                                
-            fig = plt.figure()
-            ax = None
-            img = K.image_to_tensor(img, False)
-
-            if mask_idx == -1: 
-                fig, ax = visualize_LAF(img, lafs, 0, fig=fig, ax=ax, return_fig_ax=True, **params)
-
-            else:
-                for i in mask_idx:                
-                    m_idx = args['m_idx'][:, args['idx']]
-                    m_mask = args['m_mask']
-                    m_idx = m_idx[m_mask == i]
-                    lafs_ = lafs[:, m_idx]
-                    
-                    fig, ax = visualize_LAF(img, lafs_, 0, fig=fig, ax=ax, return_fig_ax=True, **params[i])
-                    img = None
-
-            plt.axis('off')
-            plt.savefig(new_img, dpi=150, bbox_inches='tight')
-            plt.close(fig)
+        for idx in idxs:
+            im = args['img'][idx]
+            cache_path = self.args['cache_path']
+            img = os.path.split(im)[1]
+            img_name, _ = os.path.splitext(img)
+            if self.args['prepend_pair']:
+                img0 = os.path.splitext(os.path.split(args['img'][0])[1])[0]
+                img1 = os.path.splitext(os.path.split(args['img'][1])[1])[0]
+                cache_path = os.path.join(cache_path, img0 + '_' + img1)
+                
+            new_img = os.path.join(cache_path, self.args['img_prefix'] + img_name + self.args['img_suffix'] + self.args['ext'])
+    
+            if not os.path.isfile(new_img) or self.args['force']:
+                os.makedirs(cache_path, exist_ok=True)
+                img = cv2.cvtColor(cv2.imread(args['img'][idx]), cv2.COLOR_BGR2RGB)    
+                lafs = homo2laf(args['kp'][idx], args['kH'][idx])
+    
+                if (self.args['mask_idx'] is None) or (self.args['mask_idx'] == -1) or (not 'm_idx' in args):
+                    mask_idx = -1
+                    params = self.args['params'][-1]
+                else:
+                    if not isinstance(self.args['mask_idx'], list): self.args['mask_idx'] = [self.args['mask_idx']]
+                    mask_idx = self.args['mask_idx']
+                    params = self.args['params']
+                                    
+                fig = plt.figure()
+                ax = None
+                img = K.image_to_tensor(img, False)
+    
+                if mask_idx == -1: 
+                    fig, ax = visualize_LAF(img, lafs, 0, fig=fig, ax=ax, return_fig_ax=True, **params)
+    
+                else:
+                    for i in mask_idx:                
+                        m_idx = args['m_idx'][:, idx]
+                        m_mask = args['m_mask']
+                        m_idx = m_idx[m_mask == i]
+                        if m_idx.shape[0] < 1: continue
+                        lafs_ = lafs[:, m_idx]
+                        
+                        fig, ax = visualize_LAF(img, lafs_, 0, fig=fig, ax=ax, return_fig_ax=True, **params[i])
+                        img = None
+    
+                plt.axis('off')
+                plt.savefig(new_img, dpi=150, bbox_inches='tight')
+                plt.close(fig)
 
         return {}
 
@@ -994,7 +1004,7 @@ class poselib_module:
             F, info = sac_to_run(pt1, pt2, params, {})
             mask = info['inliers']
 
-        if not isinstance(mask, list):
+        if (not isinstance(mask, list)) or (mask == []):
             mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
         else:
             mask = torch.tensor(mask, device=device, dtype=torch.bool)
@@ -1384,8 +1394,8 @@ if __name__ == '__main__':
             deep_descriptor_module(),
             smnn_module(),
             poselib_module(),
-            show_kpts_module(id_more='forth', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
-        ]
+            show_kpts_module(id_more='third', img_prefix='ransac_b_', prepend_pair=True, mask_idx=[0, 1]),
+         ]
         
         imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
         run_pairs(pipeline, imgs)
