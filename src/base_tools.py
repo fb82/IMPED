@@ -7,7 +7,6 @@ from tqdm import tqdm
 import torch
 import kornia as K
 from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-from kornia_moons.viz import visualize_LAF
 from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
 from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 import cv2
@@ -25,6 +24,31 @@ def go_iter(to_iter):
         return tqdm(to_iter)
     else:
         return to_iter 
+
+
+def visualize_LAF(img, LAF, img_idx = 0, color='r', linewidth=1, draw_ori = True, fig=None, ax = None, return_fig_ax = False, **kwargs):
+    from kornia_moons.feature import to_numpy_image
+
+    x, y = K.feature.laf.get_laf_pts_to_draw(K.feature.laf.scale_laf(LAF, 0.5), img_idx)
+
+    if not draw_ori:
+        x= x[1:]
+        y= y[1:]
+
+    if (fig is None and ax is None):
+        fig, ax = plt.subplots(1,1, **kwargs)
+
+    if (fig is not None and ax is None):
+        ax = fig.add_axes([0, 0, 1, 1])
+    
+    if not (img is None):
+        ax.imshow(to_numpy_image(img[img_idx]))
+
+    ax.plot(x, y, color, linewidth=linewidth)
+    if return_fig_ax : return fig, ax
+
+    return
+
 
 class image_pairs:
     def __init__(self, to_list, add_path='', check_img=True):
@@ -235,11 +259,13 @@ class image_pairs:
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs)):       
+    for pair in go_iter(image_pairs(imgs)):
         run_pipeline(pair, pipeline, db, force=force)
 
                 
-def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):        
+def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name=''):  
+    if pipe_data is None: pipe_data = {}
+
     if not pipe_data:
         pipe_data['img'] = [pair[0], pair[1]]
         pipe_data['warp'] = [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
@@ -249,13 +275,13 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data={}, pipe_name=''):
             pipe_id = ''
             key_data = '/' + pipe_module.get_id()
         else:
-            pipe_id = pipe_module.get_id()
+            pipe_id = '/' + pipe_module.get_id()
             key_data = '/data'
             
         if pipe_name == '':
             pipe_name = pipe_id
         else:
-            pipe_name = pipe_name + '/' + pipe_id
+            pipe_name = pipe_name + pipe_id
         
         if hasattr(pipe_module, 'single_image') and pipe_module.single_image:            
             for n in range(len(pipe_data['img'])):
@@ -463,7 +489,8 @@ class show_kpts_module:
             'prepend_pair': False,
             'ext': '.jpg',
             'force': False,
-            'params': [{'color': 'r', 'linewidth': 1, 'draw_ori': True}],
+            'mask_idx': None,
+            'params': [{'color': 'r', 'linewidth': 1, 'draw_ori': True}, {'color': 'g', 'linewidth': 1, 'draw_ori': True}],
         }
         
         self.id_string, self.args = set_args('show_kpts' , args, self.args)
@@ -490,9 +517,31 @@ class show_kpts_module:
             img = cv2.cvtColor(cv2.imread(args['img'][args['idx']]), cv2.COLOR_BGR2RGB)    
             lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
 
+            if (self.args['mask_idx'] is None) or (self.args['mask_idx'] == -1) or (not 'm_idx' in args):
+                mask_idx = -1
+                params = self.args['params'][-1]
+            else:
+                mask_idx = self.args['mask_idx']
+                params = self.args['params']
+                                
             fig = plt.figure()
-            visualize_LAF(K.image_to_tensor(img, False), lafs, 0, fig=fig, **self.args['params'][0])
-            plt.axis('off')    
+            ax = None
+            img = K.image_to_tensor(img, False)
+
+            if mask_idx == -1: 
+                fig, ax = visualize_LAF(img, lafs, 0, fig=fig, ax=ax, return_fig_ax=True, **params)
+
+            else:
+                for i in mask_idx:                
+                    m_idx = args['m_idx'][:, args['idx']]
+                    m_mask = args['m_mask']
+                    m_idx = m_idx[m_mask == i]
+                    lafs_ = lafs[:, m_idx]
+                    
+                    fig, ax = visualize_LAF(img, lafs_, 0, fig=fig, ax=ax, return_fig_ax=True, **params[i])
+                    img = None
+
+            plt.axis('off')
             plt.savefig(new_img, dpi=150, bbox_inches='tight')
             plt.close(fig)
 
@@ -712,7 +761,7 @@ def pipe_max_matches(pipe_block):
         
 
 class image_muxer_module:
-    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[]):
+    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
@@ -721,6 +770,8 @@ class image_muxer_module:
         self.cache_path = cache_path
         self.pair_generator = pair_generator
         self.pipe_gather = pipe_gather
+
+        if pipeline is None: pipeline = []
         self.pipeline = pipeline
         
         self.id_string = 'image_muxer'
@@ -731,7 +782,8 @@ class image_muxer_module:
         return self.id_string
 
 
-    def run(self, db=None, force=False, pipe_data={}, pipe_name=''):
+    def run(self, db=None, force=False, pipe_data=None, pipe_name=''):        
+        if pipe_data is None: pipe_data = {}
         pair = pipe_data['img']
         warp = pipe_data['warp']
         pipe_data_block = []
@@ -1042,7 +1094,7 @@ def pipe_union(pipe_block, unique=True):
                 m_idx = m_idx_new[idxmu]
                 m_val = m_val[idxmu]
                 m_mask = m_mask
-                
+
     pipe_data_out = {}
                 
     if 'kp' in pipe_data:
@@ -1084,13 +1136,15 @@ def sortrows(kp, idx_prev=None):
     return idxa, idxb
 
 class pipeline_muxer_module:
-    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=[]):
+    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
 
         self.id_more = id_more                
         self.pipe_gather = pipe_gather
+        
+        if pipeline is None: pipeline = []
         self.pipeline = pipeline        
 
         self.id_string = 'pipeline_muxer'
@@ -1101,7 +1155,9 @@ class pipeline_muxer_module:
         return self.id_string
 
 
-    def run(self, db=None, force=False, pipe_data={}, pipe_name=''):
+    def run(self, db=None, force=False, pipe_data=None, pipe_name=''):
+        if pipe_data is None: pipe_data = {}
+
         pipe_data_block = []
         
         for pipeline in self.args['pipeline']:
@@ -1328,6 +1384,7 @@ if __name__ == '__main__':
             deep_descriptor_module(),
             smnn_module(),
             poselib_module(),
+            show_kpts_module(id_more='forth', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
         ]
         
         imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
