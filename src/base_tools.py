@@ -828,7 +828,7 @@ class smnn_module:
 
 def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
 
-    yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
+    yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)], {}
 
     rot_mat = np.eye(2)
     
@@ -910,7 +910,7 @@ class image_muxer_module:
         warp = pipe_data['warp']
         pipe_data_block = []
         
-        for pair_, warp_, aux_data in image_pairs(self.pair_generator(pair, cache_path=self.cache_path, force=force, pipe_data=pipe_data)):
+        for pair_, warp_, aux_data in self.pair_generator(pair, cache_path=self.cache_path, force=force, pipe_data=pipe_data):            
             pipe_data_in = pipe_data.copy()
 
             for k in aux_data.keys():
@@ -931,7 +931,7 @@ class image_muxer_module:
                     change_patch_homo(pipe_data['kp'][1], pipe_data['kH'][1], warp_[1]),
                     ]
                                        
-            pipe_data_out, pipe_name_out = run_pipeline(pair_, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
+            pipe_data_out, pipe_name_out = run_pipeline(pair_, self.pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
 
             pipe_data_out['img'] = pair
             pipe_data_out['warp'] = warp
@@ -961,13 +961,20 @@ def change_patch_homo(kp, kH, warp):
     pt_old = pt_old.permute((1,0))
 
     pt_new = warp.inverse() @ pt_old
-    pt_new / pt_new [:, 2]    
+    pt_new / pt_new[:, 2].unsqueeze(-1)    
 
     t_old = torch.zeros((kp.shape[0], 3, 3), device=device)
-    t_new = torch.zeros((kp.shape[0], 3, 3), device=device)
+    t_old[:, 0, 0] = 1
+    t_old[:, 1, 1] = 1
+    t_old[:, 2, 2] = 1
 
-    t_old [:, :2, 2] =  pt_old.unsqueeze(-1)
-    t_new [:, :2, 2] = -pt_new.unsqueeze(-1)    
+    t_new = torch.zeros((kp.shape[0], 3, 3), device=device)
+    t_new[:, 0, 0] = 1
+    t_new[:, 1, 1] = 1
+    t_new[:, 2, 2] = 1
+
+    t_old [:, :2, 2] =  pt_old[:2].permute((1,0))
+    t_new [:, :2, 2] = -pt_new[:2].permute((1,0))
     kH_ = (kH.bmm(t_new) @ warp.unsqueeze(0)).bmm(t_old)
     
     return kH_
@@ -979,7 +986,7 @@ def apply_homo(p, H):
     pt[:, :2] = p
     pt[:, 2] = 1
     pt_ = (H @ pt.permute((1, 0))).permute((1, 0))
-    return pt_ [:, :2] / pt_[:, 2]    
+    return pt_[:, :2] / pt_[:, 2].unsqueeze(-1)    
 
 
 class magsac_module:
@@ -1541,13 +1548,25 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]
 
+#       pipeline = [
+#           deep_joined_module(),
+#           show_kpts_module(id_more='first', prepend_pair=False),
+#           lightglue_module(),
+#           magsac_module(),
+#           show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#       ]
+
         pipeline = [
-            deep_joined_module(),
-            show_kpts_module(id_more='first', prepend_pair=False),
-            lightglue_module(),
-            magsac_module(),
-            show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+                deep_joined_module(),
+                show_kpts_module(id_more='first', prepend_pair=False),
+                lightglue_module(),
+                magsac_module(),
+                show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            ]),
+            show_kpts_module(id_more='third', img_prefix='best_rot_matches_', prepend_pair=False),
+            show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
         ]
-        
-        imgs = '../data/ET'
+      
+        imgs = '../data/ET_random_rotated'
         run_pairs(pipeline, imgs)
