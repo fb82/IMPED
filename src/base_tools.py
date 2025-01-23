@@ -19,9 +19,11 @@ import matplotlib.pyplot as plt
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 show_progress = True
 
-def go_iter(to_iter):
-    if show_progress:
-        return tqdm(to_iter)
+def go_iter(to_iter, msg='', active=True, params=None):
+    if params is None: params = {}
+    
+    if show_progress and active:
+        return tqdm(to_iter, desc=msg, **params)
     else:
         return to_iter 
 
@@ -259,18 +261,18 @@ class image_pairs:
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs)):
-        run_pipeline(pair, pipeline, db, force=force)
+    for pair in go_iter(image_pairs(imgs), msg='          processed pairs'):
+        run_pipeline(pair, pipeline, db, force=force, show_progress=True)
 
                 
-def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name=''):  
+def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='', show_progress=False):  
     if pipe_data is None: pipe_data = {}
 
     if not pipe_data:
         pipe_data['img'] = [pair[0], pair[1]]
         pipe_data['warp'] = [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
         
-    for pipe_module in pipeline:
+    for pipe_module in go_iter(pipeline, msg='current pipeline progress', active=show_progress, params={'leave': False}):
         if hasattr(pipe_module, 'pass_through') and pipe_module.pass_through:  
             pipe_id = ''
             key_data = '/' + pipe_module.get_id()
@@ -409,7 +411,7 @@ class sift_module:
         kr = torch.tensor(kr, device=device, dtype=torch.float)
                 
         kp = laf_from_opencv_kpts(kp, device=device)
-        kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
+        kp, kH = laf2homo(kp.detach().to(device).squeeze(0))
     
         return {'kp': kp, 'kH': kH, 'kr': kr}
 
@@ -432,12 +434,12 @@ class keynet_module:
         return self.id_string
         
     
-    def run(self, **args):  
+    def run(self, **args):
         img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
-        kp, kr = self.detector(img)        
-        kp, kH = laf2homo(kp.squeeze(0).detach().to(device))
+        kp, kr = self.detector(img)
+        kp, kH = laf2homo(kp.detach().to(device).squeeze(0))
 
-        return {'kp': kp, 'kH': kH, 'kr': kr.unsqueeze(0)}
+        return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(device).squeeze(0)}
 
 
 class hz_module:
@@ -473,7 +475,7 @@ class hz_module:
         kp, kr = self.hz_to_run(img, output_format='laf', **self.args['params'])
         kp, kH = laf2homo(K.feature.ellipse_to_laf(kp[None]).squeeze(0))
 
-        return {'kp': kp, 'kH': kH, 'kr': kr.unsqueeze(0).type(torch.float)}
+        return {'kp': kp, 'kH': kH, 'kr': kr.type(torch.float)}
 
 
 class show_kpts_module:
@@ -1360,8 +1362,8 @@ class loftr_module:
         kps2 = correspondences["keypoints1"]
         m_val = correspondences['confidence']
                         
-        kps1 = kps1.squeeze().detach().to(device)
-        kps2 = kps2.squeeze().detach().to(device)
+        kps1 = kps1.detach().to(device).squeeze()
+        kps2 = kps2.detach().to(device).squeeze()
 
         kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
         kps1[:, 1] = kps1[:, 1] * (hw1[0] / float(hw1_[0]))
