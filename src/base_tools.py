@@ -604,7 +604,7 @@ class show_matches_module:
         new_img = os.path.join(cache_path, self.args['img_prefix'] + im0 + '_' + im1 + self.args['img_suffix'] + self.args['ext'])
     
         if not os.path.isfile(new_img) or self.args['force']:
-            os.makedirs(self.args['cache_path'], exist_ok=True)
+            os.makedirs(cache_path, exist_ok=True)
 
             fig = plt.figure()    
             img0 = viz_utils.load_image(args['img'][0])
@@ -1500,17 +1500,18 @@ if __name__ == '__main__':
     with torch.inference_mode():     
         pipeline = [
             dog_module(),
-            show_kpts_module(id_more='first', prepend_pair=False),
+            # show_kpts_module(id_more='first', prepend_pair=False),
             deep_patch_module(),
-            show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
+            # show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
             deep_descriptor_module(),
             smnn_module(),
-            poselib_module(),
-            show_kpts_module(id_more='third', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
-            show_matches_module(id_more='forth', img_prefix='matches_', mask_idx=[1, 0]),
-            show_matches_module(id_more='fifth', img_prefix='matches_inliers_', mask_idx=[1]),
-            show_matches_module(id_more='sixth', img_prefix='matches_all_', mask_idx=-1),
+            magsac_module(),
+            # show_kpts_module(id_more='third', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
+            # show_matches_module(id_more='forth', img_prefix='matches_', mask_idx=[1, 0]),
+            # show_matches_module(id_more='fifth', img_prefix='matches_inliers_', mask_idx=[1]),
+            # show_matches_module(id_more='sixth', img_prefix='matches_all_', mask_idx=-1),
+            show_matches_module(id_more='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         ]
         
-        imgs = '/media/bellavista/Dati2/colmap_working/villa_giulia2/imgs'
+        imgs = '../data/ET'
         run_pairs(pipeline, imgs)
