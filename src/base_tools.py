@@ -582,7 +582,7 @@ class show_matches_module:
             'mask_idx': [1], # -1: all, [1]: inliers, [0]: outliers, [0, 1]: outlier and inliers with differen colors
             'fig_min_size': 960,
             'fig_max_size': 1280, 
-            'params': [{'color': [1, 0, 0]}, {'color': [0, 0, 1]}],
+            'params': [{'color': [1, 0, 0]}, {'color': [0, 1, 0]}],
         }
         
         self.id_string, self.args = set_args('show_matches' , args, self.args)
@@ -1292,7 +1292,7 @@ class pipeline_muxer_module:
         return self.pipe_gather(pipe_data_block)
 
 
-class deep_detector_and_descriptor_module:
+class deep_joined_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False
@@ -1301,6 +1301,7 @@ class deep_detector_and_descriptor_module:
         self.what = 'superpoint'
         self.args = { 
             'id_more': '',
+            'patch_radius': 16,            
             'num_features': 8000,
             'resize': 1024,           # this is default, set to None to disable
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
@@ -1332,10 +1333,17 @@ class deep_detector_and_descriptor_module:
         feats = self.extractor.extract(img, resize=self.args['resize'])
         kp = feats['keypoints'].squeeze(0)       
         desc = feats['descriptors'].squeeze(0)       
-        kH = torch.eye(3, device=device).reshape(1, 9).repeat(kp.shape[0], 1).reshape((-1, 3, 3))
+
+        kH = torch.zeros((kp.shape[0], 3, 3), device=device)        
+        kH[:, [0, 1], 2] = -kp / self.args['patch_radius']
+        kH[:, 0, 0] = 1 / self.args['patch_radius']
+        kH[:, 1, 1] = 1 / self.args['patch_radius']
+        kH[:, 2, 2] = 1
+
+        kr = torch.full((kp[0].shape[0],), torch.nan, device=device)        
         
         # todo: add feats['keypoint_scores'] as kr        
-        return {'kp': kp, 'kH': kH, 'desc': desc}
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
 
 
 class lightglue_module:
@@ -1405,6 +1413,7 @@ class loftr_module:
             'id_more': '',
             'outdoor': True,
             'resize': None,                          # self.resize = [800, 600]
+            'patch_radius': 16,
             }
 
         self.id_string, self.args = set_args('loftr', args, self.args)        
@@ -1483,9 +1492,21 @@ class loftr_module:
         
         kp = [kps1, kps2]
         kH = [
-            torch.eye(3, device=device).reshape(1, 9).repeat(kp[0].shape[0], 1).reshape((-1, 3, 3)),
-            torch.eye(3, device=device).reshape(1, 9).repeat(kp[0].shape[0], 1).reshape((-1, 3, 3)),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
             ]
+        
+        kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+        kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[0][:, 2, 2] = 1
+
+        kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+        kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[1][:, 2, 2] = 1
+
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
 
         m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
@@ -1493,24 +1514,39 @@ class loftr_module:
 
         m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
 
-        return {'kp': kp, 'kH': kH, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
         
 if __name__ == '__main__':    
     with torch.inference_mode():     
+#       pipeline = [
+#           dog_module(),
+#         # show_kpts_module(id_more='first', prepend_pair=False),
+#           deep_patch_module(),
+#         # show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
+#           deep_descriptor_module(),
+#           smnn_module(),
+#           magsac_module(),
+#         # show_kpts_module(id_more='third', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
+#         # show_matches_module(id_more='forth', img_prefix='matches_', mask_idx=[1, 0]),
+#         # show_matches_module(id_more='fifth', img_prefix='matches_inliers_', mask_idx=[1]),
+#         # show_matches_module(id_more='sixth', img_prefix='matches_all_', mask_idx=-1),
+#           show_matches_module(id_more='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#       ]
+
+#       pipeline = [
+#           loftr_module(),
+#           show_kpts_module(id_more='first', prepend_pair=False),
+#           magsac_module(),
+#           show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#       ]
+
         pipeline = [
-            dog_module(),
-            # show_kpts_module(id_more='first', prepend_pair=False),
-            deep_patch_module(),
-            # show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
-            deep_descriptor_module(),
-            smnn_module(),
+            deep_joined_module(),
+            show_kpts_module(id_more='first', prepend_pair=False),
+            lightglue_module(),
             magsac_module(),
-            # show_kpts_module(id_more='third', img_prefix='ransac_', prepend_pair=True, mask_idx=[0, 1]),
-            # show_matches_module(id_more='forth', img_prefix='matches_', mask_idx=[1, 0]),
-            # show_matches_module(id_more='fifth', img_prefix='matches_inliers_', mask_idx=[1]),
-            # show_matches_module(id_more='sixth', img_prefix='matches_all_', mask_idx=-1),
-            show_matches_module(id_more='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         ]
         
         imgs = '../data/ET'
