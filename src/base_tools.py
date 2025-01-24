@@ -853,17 +853,17 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
             im = cv2.rotate(im, rot_to_do[r][1])
             cv2.imwrite(new_img, im)
                                             
-        m0 = [[1, 0,  c[(0 + r + 1) % 2]],
-              [0, 1,  c[(1 + r + 1) % 2]],
+        m0 = [[1, 0, -c[(0 + r + 1) % 2]],
+              [0, 1, -c[(1 + r + 1) % 2]],
               [0, 0,          1        ]]
 
-        rot_mat = np.asarray([[0, -1], [1, 0]]) @ rot_mat
+        rot_mat = np.asarray([[0, 1], [-1, 0]]) @ rot_mat
         m1 = np.eye(3)
         m1[:2, :2] = rot_mat
 
-        m2 = [[1, 0, -c[0]],
-              [0, 1, -c[1]],
-              [0, 0,    1 ]]
+        m2 = [[1, 0, c[0]],
+              [0, 1, c[1]],
+              [0, 0,   1 ]]
 
         # from warped to original
         warp_matrix = torch.tensor(m2 @ m1 @ m0, device=device, dtype=torch.float)
