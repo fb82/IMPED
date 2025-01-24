@@ -927,8 +927,8 @@ class image_muxer_module:
 
             if 'kH' in pipe_data:
                 pipe_data_in['kH'] = [    
-                    change_patch_homo(pipe_data['kp'][0], pipe_data['kH'][0], warp_[0]),
-                    change_patch_homo(pipe_data['kp'][1], pipe_data['kH'][1], warp_[1]),
+                    change_patch_homo(pipe_data['kH'][0], warp_[0]),
+                    change_patch_homo(pipe_data['kH'][1], warp_[1]),
                     ]
                                        
             pipe_data_out, pipe_name_out = run_pipeline(pair_, self.pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
@@ -944,8 +944,8 @@ class image_muxer_module:
 
             if 'kH' in pipe_data_out:
                 pipe_data_in['kH'] = [    
-                    change_patch_homo(pipe_data_out['kp'][0], pipe_data_out['kH'][0], warp_[0].inverse()),
-                    change_patch_homo(pipe_data_out['kp'][1], pipe_data_out['kH'][1], warp_[1].inverse()),
+                    change_patch_homo(pipe_data_out['kH'][0], warp_[0].inverse()),
+                    change_patch_homo(pipe_data_out['kH'][1], warp_[1].inverse()),
                     ]
         
             pipe_data_block.append(pipe_data_out)
@@ -953,31 +953,9 @@ class image_muxer_module:
         return self.pipe_gather(pipe_data_block)
         
 
-def change_patch_homo(kp, kH, warp):
-    
-    pt_old = torch.zeros((kp.shape[0], 3), device=device)
-    pt_old[:, :2] = kp
-    pt_old[:, 2] = 1
-    pt_old = pt_old.permute((1,0))
-
-    pt_new = warp.inverse() @ pt_old
-    pt_new / pt_new[:, 2].unsqueeze(-1)    
-
-    t_old = torch.zeros((kp.shape[0], 3, 3), device=device)
-    t_old[:, 0, 0] = 1
-    t_old[:, 1, 1] = 1
-    t_old[:, 2, 2] = 1
-
-    t_new = torch.zeros((kp.shape[0], 3, 3), device=device)
-    t_new[:, 0, 0] = 1
-    t_new[:, 1, 1] = 1
-    t_new[:, 2, 2] = 1
-
-    t_old [:, :2, 2] =  pt_old[:2].permute((1,0))
-    t_new [:, :2, 2] = -pt_new[:2].permute((1,0))
-    kH_ = (kH.bmm(t_new) @ warp.unsqueeze(0)).bmm(t_old)
-    
-    return kH_
+def change_patch_homo(kH, warp):
+        
+    return kH @ warp.unsqueeze(0)
 
 
 def apply_homo(p, H):
@@ -1556,6 +1534,20 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]
 
+#       pipeline = [
+#           image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+#               hz_module(),
+#               deep_patch_module(),
+#               deep_descriptor_module(),
+#               show_kpts_module(id_more='first', prepend_pair=False),
+#               smnn_module(),
+#               magsac_module(),
+#               show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           ]),
+#           show_kpts_module(id_more='third', img_prefix='best_rot_', prepend_pair=False),
+#           show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
+#       ]
+
         pipeline = [
             image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
                 deep_joined_module(),
@@ -1564,9 +1556,9 @@ if __name__ == '__main__':
                 magsac_module(),
                 show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
             ]),
-            show_kpts_module(id_more='third', img_prefix='best_rot_matches_', prepend_pair=False),
+            show_kpts_module(id_more='third', img_prefix='best_rot_', prepend_pair=False),
             show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
         ]
-      
+        
         imgs = '../data/ET_random_rotated'
         run_pairs(pipeline, imgs)
