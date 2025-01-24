@@ -16,7 +16,6 @@ from PIL import Image
 import poselib
 
 import matplotlib.pyplot as plt
-from matplotlib import colormaps
 import plot.viz2d as viz
 import plot.utils as viz_utils
  
@@ -270,7 +269,7 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False)
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
 
                 
-def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='', show_progress=False):  
+def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
     if pipe_data is None: pipe_data = {}
 
     if not pipe_data:
@@ -279,21 +278,20 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='', 
         
     for pipe_module in go_iter(pipeline, msg='current pipeline progress', active=show_progress, params={'leave': False}):
         if hasattr(pipe_module, 'pass_through') and pipe_module.pass_through:  
-            pipe_id = ''
+            pipe_id = '/'
             key_data = '/' + pipe_module.get_id()
         else:
             pipe_id = '/' + pipe_module.get_id()
             key_data = '/data'
             
-        if pipe_name == '':
-            pipe_name = pipe_id
-        else:
-            pipe_name = pipe_name + pipe_id
+        if pipe_name == '': pipe_name = '/'
+        pipe_name_prev = pipe_name            
+        pipe_name = pipe_name + pipe_id
         
         if hasattr(pipe_module, 'single_image') and pipe_module.single_image:            
             for n in range(len(pipe_data['img'])):
                 im = os.path.split(pipe_data['img'][n])[-1]
-                data_key = '/' + im + '/' + pipe_name + key_data                    
+                data_key = '/' + im + pipe_name + key_data                    
 
                 out_data, is_found = db.get(data_key)                    
                 if (not is_found) or force:
@@ -316,20 +314,22 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='', 
         else:            
             im0 = os.path.split(pipe_data['img'][0])[-1]
             im1 = os.path.split(pipe_data['img'][1])[-1]
-            data_key = '/' + im0 + '/' + im1 + '/' + pipe_name + key_data 
+            data_key = '/' + im0 + '/' + im1 + pipe_name + key_data 
 
             out_data, is_found = db.get(data_key)                    
             if (not is_found) or force:
                 start_time = time.time()
 
                 if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
-                    out_data = pipe_module.run(pipe_data=pipe_data, pipe_name=pipe_name, db=db, force=force)
+                    out_data = pipe_module.run(pipe_data=pipe_data, pipe_name=pipe_name_prev, db=db, force=force)
                 else:
                     out_data = pipe_module.run(**pipe_data)
 
                 stop_time = time.time()
                 out_data['running_time'] = stop_time - start_time
                 db.add(data_key, out_data)
+            out_data['running_time']
+                
 
             for k, v in out_data.items(): pipe_data[k] = v
                 
@@ -670,7 +670,7 @@ class show_matches_module:
         return {}
 
 
-class deep_patch_module:
+class patch_module:
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -678,6 +678,8 @@ class deep_patch_module:
 
         self.args = {
             'id_more': '',
+            'sift_orientation': False,
+            'sift_orientation_params': {},
             'orinet': True,
             'orinet_params': {},
             'affnet': True,
@@ -687,11 +689,13 @@ class deep_patch_module:
         self.id_string, self.args = set_args('', args, self.args)
 
         base_string = ''
+        self.ori_module = K.feature.PassLAF()
+        if self.args['sift_orientation']:
+            base_string = 'sift_orientation'
+            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.PatchDominantGradientOrientation(), **self.args['orinet_params'])
         if self.args['orinet']:
             base_string = 'orinet'
             self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device), **self.args['orinet_params'])
-        else:
-            self.ori_module = K.feature.PassLAF()
 
         if self.args['affnet']:
             if len(base_string): base_string = base_string  + '_' + 'affnet'
@@ -904,7 +908,7 @@ class image_muxer_module:
         return self.id_string
 
 
-    def run(self, db=None, force=False, pipe_data=None, pipe_name=''):        
+    def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):        
         if pipe_data is None: pipe_data = {}
         pair = pipe_data['img']
         warp = pipe_data['warp']
@@ -1121,9 +1125,11 @@ class poselib_module:
 def pipe_union(pipe_block, unique=True):
     kp0 = []
     kH0 = []
+    kr0 = []
 
     kp1 = []
     kH1 = []
+    kr1 = []
     
     m_idx = []
     m_val = []
@@ -1140,14 +1146,17 @@ def pipe_union(pipe_block, unique=True):
     
             kH0.append(pipe_data['kH'][0])
             kH1.append(pipe_data['kH'][1])
-    
+
+            kr0.append(pipe_data['kr'][0])
+            kr1.append(pipe_data['kr'][1])
+
             if 'm_idx' in pipe_data:
-                m_idx.append(pipe_data['m_val'] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
+                m_idx.append(pipe_data['m_idx'] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
                 m_val.append(pipe_data['m_val'])
                 m_mask.append(pipe_data['m_mask'])
     
                 m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
-                m1_offset = m1_offset + pipe_data['kp'][1].shape[1]
+                m1_offset = m1_offset + pipe_data['kp'][1].shape[0]
 
     if 'kp' in pipe_data:
         kp0 = torch.cat(kp0)
@@ -1155,6 +1164,9 @@ def pipe_union(pipe_block, unique=True):
 
         kH0 = torch.cat(kH0)
         kH1 = torch.cat(kH1)
+
+        kr0 = torch.cat(kr0)
+        kr1 = torch.cat(kr1)
 
         if 'm_idx' in pipe_data:
             m_idx = torch.cat(m_idx)
@@ -1190,10 +1202,12 @@ def pipe_union(pipe_block, unique=True):
             idx0u, idx0r = sortrows(kp0[:], idx0)
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
+            kr0 = kH0[idx0u]
 
             idx1u, idx1r = sortrows(kp1[:], idx1)
             kp1 = kp1[idx1u]
             kH1 = kH1[idx1u]
+            kr1 = kH1[idx1u]
             
             if 'm_idx' in pipe_data:
                 m_idx_new = torch.cat((idx0r[m_idx[0]].unsqueeze(1), idx0r[m_idx[0]].unsqueeze(1)), dim=1)
@@ -1207,6 +1221,7 @@ def pipe_union(pipe_block, unique=True):
     if 'kp' in pipe_data:
         pipe_data_out['kp'] = [kp0, kp1]
         pipe_data_out['kH'] = [kH0, kH1]
+        pipe_data_out['kr'] = [kr0, kr1]
 
         if 'm_idx' in pipe_data:
             pipe_data_out['m_idx'] = m_idx
@@ -1262,12 +1277,12 @@ class pipeline_muxer_module:
         return self.id_string
 
 
-    def run(self, db=None, force=False, pipe_data=None, pipe_name=''):
+    def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):
         if pipe_data is None: pipe_data = {}
 
         pipe_data_block = []
         
-        for pipeline in self.args['pipeline']:
+        for pipeline in self.pipeline:
             pipe_data_in = pipe_data.copy()
             pair = pipe_data['img']
                                        
@@ -1325,7 +1340,7 @@ class deep_joined_module:
         kH[:, 1, 1] = 1 / self.args['patch_radius']
         kH[:, 2, 2] = 1
 
-        kr = torch.full((kp[0].shape[0],), torch.nan, device=device)        
+        kr = torch.full((kp.shape[0], ), torch.nan, device=device)        
         
         # todo: add feats['keypoint_scores'] as kr        
         return {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
@@ -1507,7 +1522,7 @@ if __name__ == '__main__':
 #       pipeline = [
 #           dog_module(),
 #         # show_kpts_module(id_more='first', prepend_pair=False),
-#           deep_patch_module(),
+#           patch_module(),
 #         # show_kpts_module(id_more='second', img_prefix='orinet_affnet_', prepend_pair=True),
 #           deep_descriptor_module(),
 #           smnn_module(),
@@ -1537,7 +1552,7 @@ if __name__ == '__main__':
 #       pipeline = [
 #           image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
 #               hz_module(),
-#               deep_patch_module(),
+#               patch_module(sift_orientation=True, orinet=False),
 #               deep_descriptor_module(),
 #               show_kpts_module(id_more='first', prepend_pair=False),
 #               smnn_module(),
@@ -1548,17 +1563,38 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
 #       ]
 
+#       pipeline = [
+#           image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+#               deep_joined_module(),
+#               show_kpts_module(id_more='first', prepend_pair=False),
+#               lightglue_module(),
+#               magsac_module(),
+#               show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           ]),
+#           show_kpts_module(id_more='third', img_prefix='best_rot_', prepend_pair=False),
+#           show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
+#       ]
+       
         pipeline = [
-            image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
-                deep_joined_module(),
-                show_kpts_module(id_more='first', prepend_pair=False),
-                lightglue_module(),
-                magsac_module(),
-                show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+                [
+                    loftr_module(),
+                    show_kpts_module(id_more='a_first', prepend_pair=False),
+                    magsac_module(),
+                    show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+                ],
+                [
+                    deep_joined_module(),
+                    show_kpts_module(id_more='b_first', prepend_pair=False),
+                    lightglue_module(),
+                    magsac_module(),
+                    show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
+                ],
             ]),
-            show_kpts_module(id_more='third', img_prefix='best_rot_', prepend_pair=False),
-            show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
+            show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
+            show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
         ]
-        
-        imgs = '../data/ET_random_rotated'
+       
+#       imgs = '../data/ET_random_rotated'
+        imgs = '../data/ET'
         run_pairs(pipeline, imgs)
