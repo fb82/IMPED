@@ -1122,7 +1122,7 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
     kp0 = []
     kH0 = []
     kr0 = []
@@ -1141,6 +1141,8 @@ def pipe_union(pipe_block, unique=True):
     idx0 = None
     idx1 = None
     
+    if not isinstance(pipe_block, list): pipe_block = [pipe_block]
+    
     for pipe_data in pipe_block:
         if 'kp' in pipe_data:
         
@@ -1154,10 +1156,16 @@ def pipe_union(pipe_block, unique=True):
             kr1.append(pipe_data['kr'][1])
 
             if 'm_idx' in pipe_data:
-                m_idx.append(pipe_data['m_idx'] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
-                m_val.append(pipe_data['m_val'])
-                m_mask.append(pipe_data['m_mask'])
-    
+
+                if only_matched:
+                    to_retain = pipe_data['m_mask'].clone()
+                else:
+                    to_retain = torch.full((pipe_data['m_mask'].shape[0], ), 1, device=device, dtype=torch.bool)
+                                
+                m_idx.append(pipe_data['m_idx'][to_retain] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
+                m_val.append(pipe_data['m_val'][to_retain])
+                m_mask.append(pipe_data['m_mask'][to_retain])
+                    
                 m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
                 m1_offset = m1_offset + pipe_data['kp'][1].shape[0]
 
@@ -1202,22 +1210,42 @@ def pipe_union(pipe_block, unique=True):
             idx1 = torch.argsort(idx1)
             
         if 'kp' in pipe_data:
-            idx0u, idx0r = sortrows(kp0[:], idx0)
+            idx0u, idx0r = sortrows(kp0.clone(), idx0)
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
             kr0 = kH0[idx0u]
 
-            idx1u, idx1r = sortrows(kp1[:], idx1)
+            idx1u, idx1r = sortrows(kp1.clone(), idx1)
             kp1 = kp1[idx1u]
             kH1 = kH1[idx1u]
             kr1 = kH1[idx1u]
             
             if 'm_idx' in pipe_data:
-                m_idx_new = torch.cat((idx0r[m_idx[0]].unsqueeze(1), idx1r[m_idx[1]].unsqueeze(1)), dim=1)
-                idxmu, _ = sortrows(m_idx_new[:])
+                m_idx_new = torch.cat((idx0r[m_idx[:, 0]].unsqueeze(1), idx1r[m_idx[:, 1]].unsqueeze(1)), dim=1)
+                idxmu, _ = sortrows(m_idx_new.clone())
                 m_idx = m_idx_new[idxmu]
                 m_val = m_val[idxmu]
-                m_mask = m_mask
+                m_mask = m_mask[idxmu]
+    
+    if no_unmatched and ('m_idx' in pipe_data):
+        t0 = torch.zeros((kp0.shape[0], ), device=device, dtype=torch.int)
+        t1 = torch.zeros((kp1.shape[0], ), device=device, dtype=torch.int)
+
+        t0[m_idx[:, 0]] = True
+        t1[m_idx[:, 1]] = True
+        
+        idx0 = t0.cumsum() - 1
+        idx1 = t1.cumsum() - 1
+
+        m_idx_new = torch.cat((idx0[m_idx[:, 0]].unsqueeze(1), idx1[m_idx[:, 1]].unsqueeze(1)), dim=1)
+
+        kp0 = kp0[t0]
+        kH0 = kH0[t0]
+        kr0 = kr0[t0]
+
+        kp1 = kp1[t1]
+        kH1 = kH1[t1]
+        kr1 = kr1[t1]
 
     pipe_data_out = {}
                 
@@ -1252,11 +1280,14 @@ def sortrows(kp, idx_prev=None):
     k = 0
     cur = torch.zeros((0, 2), device=device)
     for i in range(kp.shape[0]):
-        if (cur.shape[0] == 0) or (not torch.all(kp[idx[i]] == cur)):
-            cur = kp[idx[i]]
+        if (cur.shape[0] == 0) or (not torch.all(kp[i] == cur)):
+            cur = kp[i]
             idxa[k] = idx[i]                                        
             k = k + 1
-        idxb[idx[i]] = k 
+        idxb[idx[i]] = k - 1
+
+            
+    idxa = idxa[:k]
 
     return idxa, idxb
 
@@ -1578,13 +1609,35 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
 #       ]
        
+#       pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#               [
+#                   loftr_module(),
+#                   show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
+#                   magsac_module(),
+#                   show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+#               ],
+#               [
+#                   deep_joined_module(),
+#                   show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+#                   lightglue_module(),
+#                   magsac_module(),
+#                   show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
+#               ],
+#           ]),
+#           show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
+#           show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
+#       ]
+        
+        
         pipeline = [
             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
                 [
-                    loftr_module(),
+                    deep_joined_module(),
                     show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
+                    lightglue_module(),
                     magsac_module(),
-                    show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+                    show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),                    
                 ],
                 [
                     deep_joined_module(),
@@ -1596,7 +1649,7 @@ if __name__ == '__main__':
             ]),
             show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
             show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
-        ]
+        ]        
        
 #       imgs = '../data/ET_random_rotated'
         imgs = '../data/ET'
