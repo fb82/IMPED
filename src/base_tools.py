@@ -1138,6 +1138,9 @@ def pipe_union(pipe_block, unique=True):
     m0_offset = 0
     m1_offset = 0
     
+    idx0 = None
+    idx1 = None
+    
     for pipe_data in pipe_block:
         if 'kp' in pipe_data:
         
@@ -1175,24 +1178,24 @@ def pipe_union(pipe_block, unique=True):
 
     if unique:
         if 'm_idx' in pipe_data:
-            idx = torch.argsort(m_val)
+            idx = torch.argsort(m_val, descending=True)
 
             m_idx = m_idx[idx]
             m_val = m_val[idx]
             m_mask = m_mask[idx]
 
-            idx = torch.argsort(m_mask, descending=True, stable=True)
+            idx = torch.argsort(m_mask.type(torch.float), descending=True, stable=True)
 
             m_idx = m_idx[idx]
             m_val = m_val[idx]
             m_mask = m_mask[idx]
 
-            idx0 = torch.full(kp0.shape[0], m_idx.shape[0], device=device, dtype=torch.int)
+            idx0 = torch.full((kp0.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
             for i in range(m_idx.shape[0] - 1,-1,-1):
                 idx0[m_idx[i, 0]] = i            
             idx0 = torch.argsort(idx0)
             
-            idx1 = torch.full(kp1.shape[0], m_idx.shape[0], device=device, dtype=torch.int)
+            idx1 = torch.full((kp1.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
             idx1[:] = m_idx.shape[0] + 1
             for i in range(m_idx.shape[0] - 1,-1,-1):
                 idx1[m_idx[i, 1]] = i            
@@ -1210,7 +1213,7 @@ def pipe_union(pipe_block, unique=True):
             kr1 = kH1[idx1u]
             
             if 'm_idx' in pipe_data:
-                m_idx_new = torch.cat((idx0r[m_idx[0]].unsqueeze(1), idx0r[m_idx[0]].unsqueeze(1)), dim=1)
+                m_idx_new = torch.cat((idx0r[m_idx[0]].unsqueeze(1), idx1r[m_idx[1]].unsqueeze(1)), dim=1)
                 idxmu, _ = sortrows(m_idx_new[:])
                 m_idx = m_idx_new[idxmu]
                 m_val = m_val[idxmu]
@@ -1232,24 +1235,24 @@ def pipe_union(pipe_block, unique=True):
 
 
 def sortrows(kp, idx_prev=None):    
-    idx = torch.arange(len(kp))
+    idx = torch.arange(len(kp), device=device)
 
     if not (idx_prev is None):
         idx = idx[idx_prev]
         kp = kp[idx_prev]            
         
     for i in range(kp.shape[1] - 1,-1,-1):            
-        sidx = torch.argsort(kp, dim=i, stable=True)
+        sidx = torch.argsort(kp[:, i], stable=True)
         idx = idx[sidx]
         kp = kp[sidx]            
 
-    idxa = torch.zeros(kp.shape[0], device=device)
-    idxb = torch.zeros(kp.shape[0], device=device)
+    idxa = torch.zeros(kp.shape[0], device=device, dtype=torch.int)
+    idxb = torch.zeros(kp.shape[0], device=device, dtype=torch.int)
 
     k = 0
-    cur = torch.zeros((0,2), device=device)
+    cur = torch.zeros((0, 2), device=device)
     for i in range(kp.shape[0]):
-        if not torch.all(kp[idx[i]] == cur):
+        if (cur.shape[0] == 0) or (not torch.all(kp[idx[i]] == cur)):
             cur = kp[idx[i]]
             idxa[k] = idx[i]                                        
             k = k + 1
@@ -1579,13 +1582,13 @@ if __name__ == '__main__':
             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
                 [
                     loftr_module(),
-                    show_kpts_module(id_more='a_first', prepend_pair=False),
+                    show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
                     magsac_module(),
                     show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
                 ],
                 [
                     deep_joined_module(),
-                    show_kpts_module(id_more='b_first', prepend_pair=False),
+                    show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
                     lightglue_module(),
                     magsac_module(),
                     show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
