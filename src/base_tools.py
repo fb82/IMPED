@@ -20,6 +20,7 @@ import plot.viz2d as viz
 import plot.utils as viz_utils
  
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = 'cpu'
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
 
@@ -1122,7 +1123,7 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0):
     kp0 = []
     kH0 = []
     kr0 = []
@@ -1183,7 +1184,29 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
             m_idx = torch.cat(m_idx)
             m_val = torch.cat(m_val)
             m_mask = torch.cat(m_mask)
+            
 
+    if not (sampling_mode is None):
+        kp0_unsampled = kp0.clone()
+        kp1_unsampled = kp1.clone()
+        
+        kp0 = ((kp0 + sampling_offset) / sampling_scale).round() * sampling_scale
+        kp1 = ((kp1 + sampling_offset) / sampling_scale).round() * sampling_scale
+            
+        if 'm_idx' in pipe_data:
+            m0_idx = m_idx[:, 0]
+            m1_idx = m_idx[:, 1]
+            ms_val = m_val
+            ms_mask = m_mask
+        else:
+            m0_idx = None
+            m1_idx = None
+            ms_val = None
+            ms_mask = None
+        
+        kp0 = sampling(sampling_mode, kp0, kp0_unsampled, kr0, m0_idx, ms_val, ms_mask)            
+        kp1 = sampling(sampling_mode, kp1, kp1_unsampled, kr1, m1_idx, ms_val, ms_mask)            
+            
     if unique:
         if 'm_idx' in pipe_data:
             idx = torch.argsort(m_val, descending=True)
@@ -1199,13 +1222,13 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
             m_mask = m_mask[idx]
 
             idx0 = torch.full((kp0.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
-            for i in range(m_idx.shape[0] - 1,-1,-1):
+            for i in range(m_idx.shape[0] - 1, -1, -1):
                 idx0[m_idx[i, 0]] = i            
             idx0 = torch.argsort(idx0)
             
             idx1 = torch.full((kp1.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
             idx1[:] = m_idx.shape[0] + 1
-            for i in range(m_idx.shape[0] - 1,-1,-1):
+            for i in range(m_idx.shape[0] - 1, -1, -1):
                 idx1[m_idx[i, 1]] = i            
             idx1 = torch.argsort(idx1)
             
@@ -1213,12 +1236,12 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
             idx0u, idx0r = sortrows(kp0.clone(), idx0)
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
-            kr0 = kH0[idx0u]
+            kr0 = kr0[idx0u]
 
             idx1u, idx1r = sortrows(kp1.clone(), idx1)
             kp1 = kp1[idx1u]
             kH1 = kH1[idx1u]
-            kr1 = kH1[idx1u]
+            kr1 = kr1[idx1u]
             
             if 'm_idx' in pipe_data:
                 m_idx_new = torch.cat((idx0r[m_idx[:, 0]].unsqueeze(1), idx1r[m_idx[:, 1]].unsqueeze(1)), dim=1)
@@ -1228,16 +1251,16 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
                 m_mask = m_mask[idxmu]
     
     if no_unmatched and ('m_idx' in pipe_data):
-        t0 = torch.zeros((kp0.shape[0], ), device=device, dtype=torch.int)
-        t1 = torch.zeros((kp1.shape[0], ), device=device, dtype=torch.int)
+        t0 = torch.zeros(kp0.shape[0], device=device, dtype=torch.bool)
+        t1 = torch.zeros(kp1.shape[0], device=device, dtype=torch.bool)
 
         t0[m_idx[:, 0]] = True
         t1[m_idx[:, 1]] = True
         
-        idx0 = t0.cumsum() - 1
-        idx1 = t1.cumsum() - 1
+        idx0 = t0.cumsum(dim=0) - 1
+        idx1 = t1.cumsum(dim=0) - 1
 
-        m_idx_new = torch.cat((idx0[m_idx[:, 0]].unsqueeze(1), idx1[m_idx[:, 1]].unsqueeze(1)), dim=1)
+        m_idx = torch.cat((idx0[m_idx[:, 0]].unsqueeze(1), idx1[m_idx[:, 1]].unsqueeze(1)), dim=1)
 
         kp0 = kp0[t0]
         kH0 = kH0[t0]
@@ -1246,7 +1269,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
         kp1 = kp1[t1]
         kH1 = kH1[t1]
         kr1 = kr1[t1]
-
+                
     pipe_data_out = {}
                 
     if 'kp' in pipe_data:
@@ -1262,6 +1285,94 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=True):
     return pipe_data_out
 
 
+def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
+    if (sampling_mode == 'raw') or (kp.shape[0] == 0): return kp
+        
+    if (sampling_mode == 'avg_inlier_matches'):
+        if ms_idx is None:
+            mask = torch.full((kp.shape[0], ), 1, device=device, dtype=torch.bool)
+        else:            
+            mask = torch.zeros(kp.shape[0], device=device, dtype=torch.bool)
+            for i in torch.arange(ms_idx.shape[0]):
+                mask[ms_idx[i]] = ms_mask[i]
+
+    if (sampling_mode == 'best'):
+        if ms_idx is None:
+            mask = torch.full((kp.shape[0], ), 1, device=device, dtype=torch.bool)  
+            val = torch.full((kp.shape[0], ), 1, device=device)  
+        else:
+            mask = torch.zeros(kp.shape[0], device=device, dtype=torch.bool)
+            for i in torch.arange(ms_idx.shape[0]):
+                mask[ms_idx[i]] = ms_mask[i]
+    
+            val = torch.zeros(kp.shape[0], device=device)
+            for i in torch.arange(ms_idx.shape[0]):
+                val[ms_idx[i]] = ms_val[i]
+    
+    aux = kp.clone()
+    idx = torch.arange(len(aux), device=device)
+    for i in range(aux.shape[1] - 1, -1, -1):            
+        sidx = torch.argsort(aux[:, i], stable=True)
+        idx = idx[sidx]
+        aux = aux[sidx]            
+    
+    i = 0
+    j = 1
+    while j < aux.shape[0]:
+        if torch.all(aux[i] == aux[j]):
+            j = j + 1
+            continue
+
+        if (sampling_mode == 'avg_all_matches'):            
+            kp[idx[i:j]] = kp_unsampled[idx[i:j]].mean(dim=0)
+            
+        if (sampling_mode == 'avg_inlier_matches'):
+            tmp = kp_unsampled[idx[i:j]]
+            tmp_mask = mask[idx[i:j]]
+            if torch.any(tmp_mask):
+                kp[idx[i:j]] = tmp[tmp_mask].mean(dim=0)
+
+        if (sampling_mode == 'best'):
+            tmp_mask = torch.stack((mask[idx[i:j]], val[idx[i:j]], kr[idx[i:j]]), dim=1)
+            
+            max_idx = 0
+            max_val = tmp_mask[0]
+            for q in torch.arange(1, tmp_mask.shape[0]):
+                if (max_val[0] < tmp_mask[q][0]) or ((max_val[0] == tmp_mask[q][0]) and (max_val[1] < tmp_mask[q][1])) or ((max_val[0] == tmp_mask[q][0]) and (max_val[1] == tmp_mask[q][1]) and (max_val[2] < tmp_mask[q][2])):
+                    max_val = tmp_mask[q]
+                    max_idx = q
+            
+            best = idx[i:j][max_idx]
+            kp[idx[i:j]] = kp_unsampled[best]            
+                        
+        i = j     
+        j = j + 1
+
+    if (sampling_mode == 'avg_all_matches'):
+        kp[idx[i:j]] = kp_unsampled[idx[i:j]].mean(dim=0)
+        
+    if (sampling_mode == 'avg_inlier_matches'):
+        tmp = kp_unsampled[idx[i:j]]
+        tmp_mask = mask[idx[i:j]]
+        if torch.any(tmp_mask):
+            kp[idx[i:j]] = tmp[tmp_mask].mean(dim=0)
+        
+    if (sampling_mode == 'best'):
+        tmp_mask = torch.stack((mask[idx[i:j]], val[idx[i:j]], kr[idx[i:j]]), dim=1)
+        
+        max_idx = 0
+        max_val = tmp_mask[0]
+        for q in torch.arange(1, tmp_mask.shape[0]):
+            if (max_val[0] < tmp_mask[q][0]) or ((max_val[0] == tmp_mask[q][0]) and (max_val[1] < tmp_mask[q][1])) or ((max_val[0] == tmp_mask[q][0]) and (max_val[1] == tmp_mask[q][1]) and (max_val[2] < tmp_mask[q][2])):
+                max_val = tmp_mask[q]
+                max_idx = q
+        
+        best = idx[i:j][max_idx]
+        kp[idx[i:j]] = kp_unsampled[best]            
+       
+    return kp
+
+
 def sortrows(kp, idx_prev=None):    
     idx = torch.arange(len(kp), device=device)
 
@@ -1269,7 +1380,7 @@ def sortrows(kp, idx_prev=None):
         idx = idx[idx_prev]
         kp = kp[idx_prev]            
         
-    for i in range(kp.shape[1] - 1,-1,-1):            
+    for i in range(kp.shape[1] - 1, -1, -1):            
         sidx = torch.argsort(kp[:, i], stable=True)
         idx = idx[sidx]
         kp = kp[sidx]            
@@ -1550,7 +1661,40 @@ class loftr_module:
 
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
-        
+class sampling_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False
+        self.pass_through = False
+
+        self.args = {
+            'id_more': '',
+            'unique': True,
+            'no_unmatched': True,
+            'only_matched': True,
+            'sampling_mode': 'raw', # None, raw, best, avg_inlier_matches, avg_all_matches
+            'sampling_scale': 1,
+            'sampling_offset': 0,
+            }
+
+        self.id_string, self.args = set_args('sampling', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+    
+
+    def run(self, **args):           
+        pipe_data = args
+
+        return pipe_union(pipe_data, unique=self.args['unique'],
+                          no_unmatched=self.args['no_unmatched'],
+                          only_matched=self.args['only_matched'],
+                          sampling_mode=self.args['sampling_mode'],
+                          sampling_scale=self.args['sampling_scale'],
+                          sampling_offset=self.args['sampling_offset'])    
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():     
 #       pipeline = [
@@ -1630,26 +1774,34 @@ if __name__ == '__main__':
 #       ]
         
         
+#       pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#               [
+#                   deep_joined_module(),
+#                   show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
+#                   lightglue_module(),
+#                   magsac_module(),
+#                   show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),                    
+#               ],
+#               [
+#                   deep_joined_module(),
+#                   show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+#                   lightglue_module(),
+#                   magsac_module(),
+#                   show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
+#               ],
+#           ]),
+#           show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
+#           show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
+#       ]        
+
         pipeline = [
-            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-                [
-                    deep_joined_module(),
-                    show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
-                    lightglue_module(),
-                    magsac_module(),
-                    show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),                    
-                ],
-                [
-                    deep_joined_module(),
-                    show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
-                    lightglue_module(),
-                    magsac_module(),
-                    show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
-                ],
-            ]),
-            show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
-            show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
-        ]        
+            loftr_module(),
+            magsac_module(),
+            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            sampling_module(sampling_mode='avg_inlier_matches', sampling_scale=20),
+            show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
+        ]
        
 #       imgs = '../data/ET_random_rotated'
         imgs = '../data/ET'
