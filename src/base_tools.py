@@ -16,6 +16,8 @@ from PIL import Image
 import poselib
 
 import pycolmap
+import sqlite3
+import colmap_db.database as coldb
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
 import plot.utils as viz_utils
@@ -24,6 +26,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
+
 
 def go_iter(to_iter, msg='', active=True, params=None):
     if params is None: params = {}
@@ -296,7 +299,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 data_key = '/' + im + pipe_name + key_data                    
 
                 out_data, is_found = db.get(data_key)                    
-                if (not is_found) or force or (hasattr(pipe_module, 'force') and pipe_module.force):
+                if (not is_found) or force:
                     start_time = time.time()
                     out_data = pipe_module.run(idx=n, **pipe_data)
                     stop_time = time.time()
@@ -319,7 +322,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             data_key = '/' + im0 + '/' + im1 + pipe_name + key_data 
 
             out_data, is_found = db.get(data_key)                    
-            if (not is_found) or force or (hasattr(pipe_module, 'force') and pipe_module.force):
+            if (not is_found) or force:
                 start_time = time.time()
 
                 if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
@@ -386,7 +389,6 @@ class dog_module:
         self.single_image = True
         self.pipeliner = False                
         self.pass_through = False
-        self.force = False
 
         self.args = {
             'id_more': '',
@@ -429,7 +431,6 @@ class keynet_module:
         self.single_image = True        
         self.pipeliner = False   
         self.pass_through = False
-        self.force = False
         
         self.args = {
             'id_more': '',
@@ -457,7 +458,6 @@ class hz_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        self.force = False
 
         self.args = {
             'id_more': '',
@@ -494,7 +494,6 @@ class show_kpts_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = True
-        self.force = False
 
         self.args = {
             'id_more': '',
@@ -577,7 +576,6 @@ class show_matches_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
-        self.force = False
 
         self.args = {
             'id_more': '',
@@ -683,7 +681,6 @@ class patch_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        self.force = False
         
         self.args = {
             'id_more': '',
@@ -738,7 +735,6 @@ class deep_descriptor_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        self.force = False
         
         self.args = {
             'id_more': '',
@@ -780,7 +776,6 @@ class sift_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        self.force = False
         
         self.args = {
             'id_more': '',
@@ -822,7 +817,6 @@ class smnn_module:
         self.single_image = False    
         self.pipeliner = False      
         self.pass_through = False
-        self.force = False
                         
         self.args = {
             'id_more': '',
@@ -843,7 +837,6 @@ class smnn_module:
 
 
 def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
-
     yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)], {}
 
     rot_mat = np.eye(2)
@@ -903,7 +896,6 @@ class image_muxer_module:
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-        self.force = False
                 
         self.id_more = id_more
         self.cache_path = cache_path
@@ -970,8 +962,7 @@ class image_muxer_module:
         return self.pipe_gather(pipe_data_block)
         
 
-def change_patch_homo(kH, warp):
-        
+def change_patch_homo(kH, warp):       
     return kH @ warp.unsqueeze(0)
 
 
@@ -989,7 +980,6 @@ class magsac_module:
         self.single_image = False    
         self.pipeliner = False  
         self.pass_through = False
-        self.force = False
                         
         self.args = {
             'id_more': '',
@@ -1067,7 +1057,6 @@ class poselib_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-        self.force = False
                 
         self.args = {
             'id_more': '',
@@ -1146,6 +1135,16 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     kH1 = []
     kr1 = []
     
+    use_w = False
+    for pipe_data in pipe_block:
+        if 'w' in pipe_data:
+            use_w = True
+            break
+    
+    if use_w:
+        w0 = []
+        w1 = []
+    
     m_idx = []
     m_val = []
     m_mask = []
@@ -1169,7 +1168,11 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
 
             kr0.append(pipe_data['kr'][0])
             kr1.append(pipe_data['kr'][1])
-
+            
+            if use_w:
+                w0.append(pipe_data['w'][0])
+                w1.append(pipe_data['w'][1])
+            
             if 'm_idx' in pipe_data:
 
                 if only_matched:
@@ -1193,7 +1196,11 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
 
         kr0 = torch.cat(kr0)
         kr1 = torch.cat(kr1)
-
+        
+        if use_w:
+            w0 = torch.cat(w0)
+            w1 = torch.cat(w1)
+          
         if 'm_idx' in pipe_data:
             m_idx = torch.cat(m_idx)
             m_val = torch.cat(m_val)
@@ -1257,6 +1264,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH1 = kH1[idx1u]
             kr1 = kr1[idx1u]
             
+            if use_w:
+                w0 = w0[idx0u]
+                w1 = w1[idx1u]
+            
             if 'm_idx' in pipe_data:
                 m_idx_new = torch.cat((idx0r[m_idx[:, 0]].unsqueeze(1), idx1r[m_idx[:, 1]].unsqueeze(1)), dim=1)
                 idxmu, _ = sortrows(m_idx_new.clone())
@@ -1284,13 +1295,20 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         kH1 = kH1[t1]
         kr1 = kr1[t1]
                 
+        if use_w:
+            w0 = w0[t0]            
+            w1 = w1[t1]            
+        
     pipe_data_out = {}
                 
     if 'kp' in pipe_data:
         pipe_data_out['kp'] = [kp0, kp1]
         pipe_data_out['kH'] = [kH0, kH1]
         pipe_data_out['kr'] = [kr0, kr1]
-
+        
+        if use_w:
+            pipe_data_out['w'] = [w0, w1]
+            
         if 'm_idx' in pipe_data:
             pipe_data_out['m_idx'] = m_idx
             pipe_data_out['m_val'] = m_val
@@ -1421,7 +1439,6 @@ class pipeline_muxer_module:
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-        self.force = False
         
         self.id_more = id_more                
         self.pipe_gather = pipe_gather
@@ -1457,7 +1474,6 @@ class deep_joined_module:
         self.single_image = True
         self.pipeliner = False
         self.pass_through = False
-        self.force = False
                         
         self.what = 'superpoint'
         self.args = { 
@@ -1512,7 +1528,6 @@ class lightglue_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-        self.force = False
         
         self.what = 'superpoint'
         self.args = {
@@ -1570,7 +1585,6 @@ class loftr_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-        self.force = False
                         
         self.args = {
             'id_more': '',
@@ -1684,7 +1698,6 @@ class sampling_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-        self.force = False
         
         self.args = {
             'id_more': '',
@@ -1714,21 +1727,119 @@ class sampling_module:
                           sampling_offset=self.args['sampling_offset'])    
 
 
+class coldb_ext(coldb.COLMAPDatabase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+
+    def get_image_id(self, image):
+        cursor = self.execute(
+            "SELECT image_id FROM images WHERE name=?",
+            (image, ),
+        )
+        image_id = cursor.fetchone()
+        if not (image_id is None): image_id = image_id[0]
+        return image_id
+
+        
+    def get_keypoints(self, image_id):
+        cursor = self.execute("SELECT data, rows, cols FROM keypoints where image_id=?", (image_id, ))
+        kpts = cursor.fetchone()
+        if kpts is None:
+            return None
+        else:
+            k, r, c = kpts
+            return np.reshape(coldb.blob_to_array(kpts[0], np.float32), (r, c))
+
+
+    def update_keypoints(self, image_id, keypoints):
+        assert len(keypoints.shape) == 2
+        assert keypoints.shape[1] in [2, 4, 6]
+
+        keypoints = np.asarray(keypoints, np.float32)
+        
+        if self.get_keypoints(image_id) is None:
+            self.add_keypoints(image_id, keypoints)
+        else: 
+            self.execute(
+                "UPDATE keypoints SET rows=?, cols=?, data=? WHERE image_id=?",
+                keypoints.shape + (coldb.array_to_blob(keypoints), ) + (image_id, ),
+                )
+
+
+    def get_matches(self, image_id1, image_id2):
+        pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+        cursor = self.execute("SELECT data, rows, cols FROM matches where pair_id=?", (pair_id, ))
+        m = cursor.fetchone()
+        if m is None:
+            return None
+        else:
+            m, r, c = m
+            m = np.reshape(coldb.blob_to_array(m[0], np.float32), (r, c))
+            if image_id1 > image_id2: m = m[:, ::-1]
+            return m
+
+
+    def update_matches(self, image_id1, image_id2, matches):
+        assert len(matches.shape) == 2
+        assert matches.shape[1] == 2
+
+        pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+
+        if self.get_matches(image_id1, image_id2) is None:
+            self.add_matches(image_id1, image_id2, matches)
+        else:
+            matches = np.asarray(matches, np.uint32)
+
+            if image_id1 > image_id2:
+                matches = matches[:, ::-1]
+
+            self.execute(
+                "UPDATE matches SET rows=?, cols=?, data=? WHERE pair_id=?",
+                matches.shape + (coldb.array_to_blob(matches), ) + (pair_id, ),
+                )
+
+
+def kpts_as_colmap(idx, **args): 
+    kp = args['kp'][idx]
+    kH = args['kH'][idx]
+     
+    t = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    t[:, [0, 1], 2] = -kp
+    t[:, 0, 0] = 1
+    t[:, 1, 1] = 1
+    t[:, 2, 2] = 1           
+     
+    h = t.bmm(kH.inverse())
+     
+    v = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    v[:, 2, :] = h[:, 2, :]
+    v[:, 0, 0] = 1
+    v[:, 1, 1] = 1
+     
+    w = h.bmm(v.inverse())
+    w = w[:, :2, :2].reshape(-1, 4)
+         
+    return torch.cat((kp[:, :2], w), dim=1)
+
+
+SIMPLE_RADIAL = 2
+DEGENERATE = 1
+UNCALIBRATED = 3
+PLANAR = 4
+
 class colmap_module:
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
-        self.force = True
 
         self.args = {
             'id_more': '',
             'db': 'colmap.db',
             'aux_hdf5': 'colmap_aux.hdf5',
             'focal_cf': 1.2,
-            'keypoint_only': True,
-            'also_geometric_matching': True,
-            'force': False,
+            'only_keypoints': False,            
             'unique': True,
             'no_unmatched': False,
             'only_matched': False,
@@ -1738,12 +1849,12 @@ class colmap_module:
         }
         
         self.id_string, self.args = set_args('colmap' , args, self.args)
-        if self.args['keypoint_only']: self.single_image = True
 
-        self.db = pycolmap.Database(self.args['db'])
+        self.db = coldb_ext(self.args['db'])
+        self.db.create_tables()
         self.aux_hdf5 = None
         if (self.args['sampling_mode'] == 'avg_inlier_matches') or (self.args['sampling_mode'] == 'avg_all_matches'):
-                self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.args['id_more'])
+            self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.args['id_more'])
                 
 
     def __del__(self):
@@ -1754,79 +1865,80 @@ class colmap_module:
         return self.id_string
 
     
-    def run(self, **args):        
-        if not self.single_image:
-            idxs = [0, 1]
-        else:
-            idxs = [args['idx']]
-
-        for idx in idxs:
-            im = args['img'][idx]
-            
+    def run(self, **args):   
+        im_ids = []
+        
+        for idx in [0, 1]:
+            im = args['img'][idx]            
             _, img = os.path.split(im)
             
-            if not self.db.exists_image(img):
+            im_id = self.db.get_image_id(img)
+            if  im_id is None:
                 w, h = Image.open(im).size
-                cam = pycolmap.Camera.create(camera_id=4294967295, model=pycolmap.CameraModelId.SIMPLE_RADIAL, focal_length=self.args['focal_cf'] * max(w, h), width=w, height=h)
-                cam_id = self.db.write_camera(cam)            
-                ima = pycolmap.Image(name=img, camera_id=cam_id, id=0)
-                self.db.write_image(ima)
+                cam_id = self.db.add_camera(SIMPLE_RADIAL, w, h, np.array([self.args['focal_cf'] * max(w, h), w / 2, h / 2, 0]))
+                im_id = self.db.add_image(img, cam_id)
+                self.db.commit()
 
-        if ('kp' in args) and self.single_image:
-            idx = idxs[0]
-            im = args['img'][idx]
-            
-            _, img = os.path.split(im)            
-            ima = self.db.read_image(img)
-            im_id = ima.image_id
-            
-            kp = args['kp'][idx]
-            kH = args['kH'][idx]
-            kr = args['kr'][idx]
-            
-            t = torch.zeros((kp.shape[0], 3, 3), device=device)        
-            t[:, [0, 1], 2] = -kp
-            t[:, 0, 0] = 1
-            t[:, 1, 1] = 1
-            t[:, 2, 2] = 1           
-            
-            h = t.bmm(kH.inverse())
-
-            v = torch.zeros((kp.shape[0], 3, 3), device=device)        
-            v[:, 2, :] = h[:, 2, :]
-            v[:, 0, 0] = 1
-            v[:, 1, 1] = 1
-
-            w = h.bmm(v.inverse())
-            w = w[:, :2, :2].reshape(-1, 4)
-
-            kp_old = torch.tensor(self.db.read_keypoints(im_id), device=device)
-            if kp_old.shape[0] > 0:
-                kr_old = torch.full((kp_old.shape[0], ), torch.inf, device=device)
-                w_old = kp_old[:, 2:]
-
-                kp = torch.cat((kp_old[:, :2], kp), dim=0)
-                kr = torch.cat((kr_old, kr), dim=0)
-                w = torch.cat((w_old, w), dim=0)
+            im_ids.append(im_id)
                 
-            if not (self.args['sampling_mode'] is None):
-                kp_unsampled = kp.clone()
-                
-                kp = ((kp + self.args['sampling_offset']) / self.args['sampling_scale']).round() * self.args['sampling_scale']            
-                ms_idx = None
-                ms_val = None
-                ms_mask = None            
-                
-                kp = sampling(self.args['sampling_mode'], kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask)            
+        pipe_old = {}
         
-            if self.args['unique']:
-                idxu, _ = sortrows(kp.clone(), None)
-                kp = kp[idxu]
-                w = w[idxu]
+        kp_old0 = self.db.get_keypoints(im_ids[0])
+        if kp_old0 is None:
+            w_old0 = torch.zeros((0, 6), device=device)
+            kp_old0 = torch.zeros((0, 2), device=device)
+        else:
+            w_old0 = torch.tensor(kp_old0, device=device)
+            kp_old0 = torch.tensor(kp_old0[:, :2], device=device)
             
-            pts = torch.cat((kp, w), dim=1).to('cpu').numpy()
-            self.db.write_keypoints(im_id, pts)
+        kH_old0 = torch.zeros((kp_old0.shape[0], 3, 3), device=device)
+        kr_old0 = torch.full((kp_old0.shape[0], ), torch.inf, device=device)
+        
+        kp_old1 = self.db.get_keypoints(im_ids[1])
+        if kp_old1 is None:
+            w_old1 = torch.zeros((0, 6), device=device)
+            kp_old1 = torch.zeros((0, 2), device=device)
+        else:
+            w_old1 = torch.tensor(kp_old1, device=device)
+            kp_old1 = torch.tensor(kp_old1[:, :2], device=device)
             
+        kH_old1 = torch.zeros((kp_old1.shape[0], 3, 3), device=device)
+        kr_old1 = torch.full((kp_old1.shape[0], ), torch.inf, device=device)
+
+        m_idx_old = self.db.get_matches(im_ids[0], im_ids[1])    
+        if m_idx_old is None:
+            m_idx_old = torch.zeros((0, 2), device=device, dtype=torch.int)
+        else:
+            m_idx_old = torch.tensor(m_idx_old, device=device, dtype=torch.int)
+        m_val_old = torch.full((m_idx_old.shape[0], ), torch.inf, device=device)
+        m_mask_old = torch.full((m_idx_old.shape[0], ), 1, device=device, dtype=torch.bool)
+            
+        pipe_old['kp'] = [kp_old0, kp_old1]
+        pipe_old['kH'] = [kH_old0, kH_old1]
+        pipe_old['kr'] = [kr_old0, kr_old1]
+        pipe_old['w'] = [w_old0, w_old1]
+
+        pipe_old['m_idx'] = m_idx_old
+        pipe_old['m_val'] = m_val_old
+        pipe_old['m_mask'] = m_mask_old
+                
+        w0 = kpts_as_colmap(0, **args)
+        w1 = kpts_as_colmap(1, **args)
+        args['w'] = [w0, w1]
+        
+        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'])
+
+        pts0 = pipe_out['w'][0].to('cpu').numpy()
+        pts1 = pipe_out['w'][1].to('cpu').numpy()
+        self.db.update_keypoints(im_ids[0], pts0)
+        self.db.update_keypoints(im_ids[1], pts1)
+
+        if not self.args['only_keypoints']:
+            m_idx = pipe_out['m_idx'].to('cpu').numpy()
+            self.db.update_matches(im_ids[0], im_ids[1], m_idx)
+
+        self.db.commit()
+        
         return {}
 
 
