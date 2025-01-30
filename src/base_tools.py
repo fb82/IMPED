@@ -15,6 +15,7 @@ import hz.hz as hz
 from PIL import Image
 import poselib
 
+import pycolmap
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
 import plot.utils as viz_utils
@@ -295,7 +296,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 data_key = '/' + im + pipe_name + key_data                    
 
                 out_data, is_found = db.get(data_key)                    
-                if (not is_found) or force:
+                if (not is_found) or force or (hasattr(pipe_module, 'force') and pipe_module.force):
                     start_time = time.time()
                     out_data = pipe_module.run(idx=n, **pipe_data)
                     stop_time = time.time()
@@ -318,7 +319,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             data_key = '/' + im0 + '/' + im1 + pipe_name + key_data 
 
             out_data, is_found = db.get(data_key)                    
-            if (not is_found) or force:
+            if (not is_found) or force or (hasattr(pipe_module, 'force') and pipe_module.force):
                 start_time = time.time()
 
                 if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
@@ -385,6 +386,7 @@ class dog_module:
         self.single_image = True
         self.pipeliner = False                
         self.pass_through = False
+        self.force = False
 
         self.args = {
             'id_more': '',
@@ -425,8 +427,10 @@ class dog_module:
 class keynet_module:
     def __init__(self, **args):
         self.single_image = True        
-        self.pipeliner = False        
-
+        self.pipeliner = False   
+        self.pass_through = False
+        self.force = False
+        
         self.args = {
             'id_more': '',
             'params': {'num_features': 8000},
@@ -453,6 +457,7 @@ class hz_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
+        self.force = False
 
         self.args = {
             'id_more': '',
@@ -489,6 +494,7 @@ class show_kpts_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = True
+        self.force = False
 
         self.args = {
             'id_more': '',
@@ -571,6 +577,7 @@ class show_matches_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
+        self.force = False
 
         self.args = {
             'id_more': '',
@@ -676,7 +683,8 @@ class patch_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-
+        self.force = False
+        
         self.args = {
             'id_more': '',
             'sift_orientation': False,
@@ -730,7 +738,8 @@ class deep_descriptor_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-
+        self.force = False
+        
         self.args = {
             'id_more': '',
             'descriptor': 'hardnet',
@@ -771,7 +780,8 @@ class sift_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-
+        self.force = False
+        
         self.args = {
             'id_more': '',
             'rootsift': True,
@@ -812,7 +822,8 @@ class smnn_module:
         self.single_image = False    
         self.pipeliner = False      
         self.pass_through = False
-                
+        self.force = False
+                        
         self.args = {
             'id_more': '',
             'th': 0.95,
@@ -892,7 +903,8 @@ class image_muxer_module:
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-        
+        self.force = False
+                
         self.id_more = id_more
         self.cache_path = cache_path
         self.pair_generator = pair_generator
@@ -977,7 +989,8 @@ class magsac_module:
         self.single_image = False    
         self.pipeliner = False  
         self.pass_through = False
-                
+        self.force = False
+                        
         self.args = {
             'id_more': '',
             'mode': 'fundamental_matrix',
@@ -1054,7 +1067,8 @@ class poselib_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-        
+        self.force = False
+                
         self.args = {
             'id_more': '',
             'mode': 'fundamental_matrix',
@@ -1407,7 +1421,8 @@ class pipeline_muxer_module:
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-
+        self.force = False
+        
         self.id_more = id_more                
         self.pipe_gather = pipe_gather
         
@@ -1442,7 +1457,8 @@ class deep_joined_module:
         self.single_image = True
         self.pipeliner = False
         self.pass_through = False
-                
+        self.force = False
+                        
         self.what = 'superpoint'
         self.args = { 
             'id_more': '',
@@ -1496,7 +1512,8 @@ class lightglue_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-
+        self.force = False
+        
         self.what = 'superpoint'
         self.args = {
             'id_more': '',
@@ -1553,7 +1570,8 @@ class loftr_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-                
+        self.force = False
+                        
         self.args = {
             'id_more': '',
             'outdoor': True,
@@ -1666,7 +1684,8 @@ class sampling_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-
+        self.force = False
+        
         self.args = {
             'id_more': '',
             'unique': True,
@@ -1693,6 +1712,122 @@ class sampling_module:
                           sampling_mode=self.args['sampling_mode'],
                           sampling_scale=self.args['sampling_scale'],
                           sampling_offset=self.args['sampling_offset'])    
+
+
+class colmap_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.pass_through = True
+        self.force = True
+
+        self.args = {
+            'id_more': '',
+            'db': 'colmap.db',
+            'aux_hdf5': 'colmap_aux.hdf5',
+            'focal_cf': 1.2,
+            'keypoint_only': True,
+            'also_geometric_matching': True,
+            'force': False,
+            'unique': True,
+            'no_unmatched': False,
+            'only_matched': False,
+            'sampling_mode': 'raw',
+            'sampling_scale': 1,
+            'sampling_offset': 0,
+        }
+        
+        self.id_string, self.args = set_args('colmap' , args, self.args)
+        if self.args['keypoint_only']: self.single_image = True
+
+        self.db = pycolmap.Database(self.args['db'])
+        self.aux_hdf5 = None
+        if (self.args['sampling_mode'] == 'avg_inlier_matches') or (self.args['sampling_mode'] == 'avg_all_matches'):
+                self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.args['id_more'])
+                
+
+    def __del__(self):
+        self.db.close()
+
+                
+    def get_id(self): 
+        return self.id_string
+
+    
+    def run(self, **args):        
+        if not self.single_image:
+            idxs = [0, 1]
+        else:
+            idxs = [args['idx']]
+
+        for idx in idxs:
+            im = args['img'][idx]
+            
+            _, img = os.path.split(im)
+            
+            if not self.db.exists_image(img):
+                w, h = Image.open(im).size
+                cam = pycolmap.Camera.create(camera_id=4294967295, model=pycolmap.CameraModelId.SIMPLE_RADIAL, focal_length=self.args['focal_cf'] * max(w, h), width=w, height=h)
+                cam_id = self.db.write_camera(cam)            
+                ima = pycolmap.Image(name=img, camera_id=cam_id, id=0)
+                self.db.write_image(ima)
+
+        if ('kp' in args) and self.single_image:
+            idx = idxs[0]
+            im = args['img'][idx]
+            
+            _, img = os.path.split(im)            
+            ima = self.db.read_image(img)
+            im_id = ima.image_id
+            
+            kp = args['kp'][idx]
+            kH = args['kH'][idx]
+            kr = args['kr'][idx]
+            
+            t = torch.zeros((kp.shape[0], 3, 3), device=device)        
+            t[:, [0, 1], 2] = -kp
+            t[:, 0, 0] = 1
+            t[:, 1, 1] = 1
+            t[:, 2, 2] = 1           
+            
+            h = t.bmm(kH.inverse())
+
+            v = torch.zeros((kp.shape[0], 3, 3), device=device)        
+            v[:, 2, :] = h[:, 2, :]
+            v[:, 0, 0] = 1
+            v[:, 1, 1] = 1
+
+            w = h.bmm(v.inverse())
+            w = w[:, :2, :2].reshape(-1, 4)
+
+            kp_old = torch.tensor(self.db.read_keypoints(im_id), device=device)
+            if kp_old.shape[0] > 0:
+                kr_old = torch.full((kp_old.shape[0], ), torch.inf, device=device)
+                w_old = kp_old[:, 2:]
+
+                kp = torch.cat((kp_old[:, :2], kp), dim=0)
+                kr = torch.cat((kr_old, kr), dim=0)
+                w = torch.cat((w_old, w), dim=0)
+                
+            if not (self.args['sampling_mode'] is None):
+                kp_unsampled = kp.clone()
+                
+                kp = ((kp + self.args['sampling_offset']) / self.args['sampling_scale']).round() * self.args['sampling_scale']            
+                ms_idx = None
+                ms_val = None
+                ms_mask = None            
+                
+                kp = sampling(self.args['sampling_mode'], kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask)            
+        
+            if self.args['unique']:
+                idxu, _ = sortrows(kp.clone(), None)
+                kp = kp[idxu]
+                w = w[idxu]
+            
+            pts = torch.cat((kp, w), dim=1).to('cpu').numpy()
+            self.db.write_keypoints(im_id, pts)
+            
+        return {}
 
 
 if __name__ == '__main__':    
@@ -1795,14 +1930,21 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
 #       ]        
 
+#       pipeline = [
+#           loftr_module(),
+#           magsac_module(),
+#           show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           sampling_module(sampling_mode='avg_inlier_matches', sampling_scale=20),
+#           show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
+#       ]
+
         pipeline = [
             loftr_module(),
             magsac_module(),
-            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            sampling_module(sampling_mode='avg_inlier_matches', sampling_scale=20),
-            show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
-        ]
-       
+            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            colmap_module(),
+        ]        
+                
 #       imgs = '../data/ET_random_rotated'
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
