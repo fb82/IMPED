@@ -1126,7 +1126,7 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, preserve_order=False):
     kp0 = []
     kH0 = []
     kr0 = []
@@ -1144,6 +1144,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     if use_w:
         w0 = []
         w1 = []
+        
+    if preserve_order:
+        rank0 = []
+        rank1 = []
     
     m_idx = []
     m_val = []
@@ -1157,7 +1161,9 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     
     if not isinstance(pipe_block, list): pipe_block = [pipe_block]
     
-    for pipe_data in pipe_block:
+    c_rank0 = 0
+    c_rank1 = 0
+    for i, pipe_data in enumerate(pipe_block):
         if 'kp' in pipe_data:
         
             kp0.append(pipe_data['kp'][0])
@@ -1172,6 +1178,16 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             if use_w:
                 w0.append(pipe_data['w'][0])
                 w1.append(pipe_data['w'][1])
+
+            if preserve_order:
+                rank0.append(torch.arange(c_rank0, c_rank0 + pipe_data['kp'][0].shape[0], device=device))
+                rank1.append(torch.arange(c_rank1, c_rank1 + pipe_data['kp'][1].shape[0], device=device))
+                c_rank0 = c_rank0 + pipe_data['kp'][0].shape[0]
+                c_rank1 = c_rank1 + pipe_data['kp'][1].shape[0]
+                
+                if i==0:
+                    q_rank0 = pipe_data['kp'][0].shape[0]
+                    q_rank1 = pipe_data['kp'][1].shape[0]
             
             if 'm_idx' in pipe_data:
 
@@ -1200,6 +1216,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         if use_w:
             w0 = torch.cat(w0)
             w1 = torch.cat(w1)
+            
+        if preserve_order:
+            rank0 = torch.cat(rank0)
+            rank1 = torch.cat(rank1)
           
         if 'm_idx' in pipe_data:
             m_idx = torch.cat(m_idx)
@@ -1245,13 +1265,13 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             idx0 = torch.full((kp0.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
             for i in range(m_idx.shape[0] - 1, -1, -1):
                 idx0[m_idx[i, 0]] = i            
-            idx0 = torch.argsort(idx0)
+            idx0 = torch.argsort(idx0, stable=True)
             
             idx1 = torch.full((kp1.shape[0], ), m_idx.shape[0], device=device, dtype=torch.int)
             idx1[:] = m_idx.shape[0] + 1
             for i in range(m_idx.shape[0] - 1, -1, -1):
                 idx1[m_idx[i, 1]] = i            
-            idx1 = torch.argsort(idx1)
+            idx1 = torch.argsort(idx1, stable=True)
             
         if 'kp' in pipe_data:
             idx0u, idx0r = sortrows(kp0.clone(), idx0)
@@ -1267,6 +1287,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             if use_w:
                 w0 = w0[idx0u]
                 w1 = w1[idx1u]
+                
+            if preserve_order:
+                rank0 = rank0[idx0u]
+                rank1 = rank1[idx1u]
             
             if 'm_idx' in pipe_data:
                 m_idx_new = torch.cat((idx0r[m_idx[:, 0]].unsqueeze(1), idx1r[m_idx[:, 1]].unsqueeze(1)), dim=1)
@@ -1278,6 +1302,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     if no_unmatched and ('m_idx' in pipe_data):
         t0 = torch.zeros(kp0.shape[0], device=device, dtype=torch.bool)
         t1 = torch.zeros(kp1.shape[0], device=device, dtype=torch.bool)
+        
+        if preserve_order:
+            t0[:q_rank0] = True
+            t1[:q_rank1] = True
 
         t0[m_idx[:, 0]] = True
         t1[m_idx[:, 1]] = True
@@ -1299,6 +1327,33 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             w0 = w0[t0]            
             w1 = w1[t1]            
         
+        if preserve_order:
+            rank0 = rank0[t0]
+            rank1 = rank1[t1]
+            
+    if preserve_order:
+        if 'kp' in pipe_data:        
+            idx0 = torch.argsort(rank0)
+            idr0 = torch.argsort(idx0)
+
+            idx1 = torch.argsort(rank1)
+            idr1 = torch.argsort(idx1)
+
+            kp0 = kp0[idx0]
+            kH0 = kH0[idx0]
+            kr0 = kr0[idx0]
+    
+            kp1 = kp1[idx1]
+            kH1 = kH1[idx1]
+            kr1 = kr1[idx1]
+                    
+            if use_w:
+                w0 = w0[idx0]            
+                w1 = w1[idx1]   
+                
+            if 'm_idx' in pipe_data:
+                m_idx = torch.cat((idr0[m_idx[:, 0]].unsqueeze(1), idr1[m_idx[:, 1]].unsqueeze(1)), dim=1)
+        
     pipe_data_out = {}
                 
     if 'kp' in pipe_data:
@@ -1307,6 +1362,8 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         pipe_data_out['kr'] = [kr0, kr1]
         
         if use_w:
+            w0[:, :2] = kp0
+            w1[:, :2] = kp1
             pipe_data_out['w'] = [w0, w1]
             
         if 'm_idx' in pipe_data:
@@ -1840,11 +1897,11 @@ class colmap_module:
             'aux_hdf5': 'colmap_aux.hdf5',
             'focal_cf': 1.2,
             'only_keypoints': False,            
-            'unique': True,
-            'no_unmatched': False,
-            'only_matched': False,
+            'unique': False,
+            'only_matched': True,
+            'no_unmatched': True,
             'sampling_mode': 'raw',
-            'sampling_scale': 1,
+            'sampling_scale': 10,
             'sampling_offset': 0,
         }
         
@@ -1910,6 +1967,7 @@ class colmap_module:
             m_idx_old = torch.zeros((0, 2), device=device, dtype=torch.int)
         else:
             m_idx_old = torch.tensor(m_idx_old, device=device, dtype=torch.int)
+        
         m_val_old = torch.full((m_idx_old.shape[0], ), torch.inf, device=device)
         m_mask_old = torch.full((m_idx_old.shape[0], ), 1, device=device, dtype=torch.bool)
             
@@ -1926,7 +1984,7 @@ class colmap_module:
         w1 = kpts_as_colmap(1, **args)
         args['w'] = [w0, w1]
         
-        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'])
+        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'], preserve_order=True)
 
         pts0 = pipe_out['w'][0].to('cpu').numpy()
         pts1 = pipe_out['w'][1].to('cpu').numpy()
