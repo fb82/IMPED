@@ -1250,7 +1250,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             
     if unique:
         if 'm_idx' in pipe_data:
-            idx = torch.argsort(m_val, descending=True)
+            idx = torch.argsort(m_val, descending=True, stable=True)
 
             m_idx = m_idx[idx]
             m_val = m_val[idx]
@@ -1274,12 +1274,16 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             idx1 = torch.argsort(idx1, stable=True)
             
         if 'kp' in pipe_data:
-            idx0u, idx0r = sortrows(kp0.clone(), idx0)
+            if not preserve_order:
+                rank0 = None
+                rank1 = None
+            
+            idx0u, idx0r = sortrows(kp0.clone(), idx0, rank0)
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
             kr0 = kr0[idx0u]
 
-            idx1u, idx1r = sortrows(kp1.clone(), idx1)
+            idx1u, idx1r = sortrows(kp1.clone(), idx1, rank1)
             kp1 = kp1[idx1u]
             kH1 = kH1[idx1u]
             kr1 = kr1[idx1u]
@@ -1304,8 +1308,8 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         t1 = torch.zeros(kp1.shape[0], device=device, dtype=torch.bool)
         
         if preserve_order:
-            t0[:q_rank0] = True
-            t1[:q_rank1] = True
+            t0[rank0 < q_rank0] = True
+            t1[rank1 < q_rank1] = True
 
         t0[m_idx[:, 0]] = True
         t1[m_idx[:, 1]] = True
@@ -1462,17 +1466,23 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
     return kp
 
 
-def sortrows(kp, idx_prev=None):    
-    idx = torch.arange(len(kp), device=device)
+def sortrows(kp, idx_prev=None, rank=None):    
+    idx = torch.arange(kp.shape[0], device=device)
 
     if not (idx_prev is None):
         idx = idx[idx_prev]
-        kp = kp[idx_prev]            
+        kp = kp[idx_prev]
+        
+        if not (rank is None):
+            rank = rank[idx_prev]
         
     for i in range(kp.shape[1] - 1, -1, -1):            
         sidx = torch.argsort(kp[:, i], stable=True)
         idx = idx[sidx]
-        kp = kp[sidx]            
+        kp = kp[sidx]
+
+        if not (rank is None):
+            rank = rank[sidx]
 
     idxa = torch.zeros(kp.shape[0], device=device, dtype=torch.int)
     idxb = torch.zeros(kp.shape[0], device=device, dtype=torch.int)
@@ -1484,8 +1494,16 @@ def sortrows(kp, idx_prev=None):
             cur = kp[i]
             idxa[k] = idx[i]                                        
             k = k + 1
-        idxb[idx[i]] = k - 1
+            
+            if not (rank is None):
+                cur_rank = rank[i]
 
+        if not (rank is None):
+            if cur_rank > rank[i]:
+                cur_rank = rank[i]
+                idxa[k - 1] = idx[i]
+            
+        idxb[idx[i]] = k - 1
             
     idxa = idxa[:k]
 
@@ -1862,7 +1880,7 @@ def kpts_as_colmap(idx, **args):
     kH = args['kH'][idx]
      
     t = torch.zeros((kp.shape[0], 3, 3), device=device)        
-    t[:, [0, 1], 2] = -kp
+    t[:, [0, 1], 2] = -kH[:, [0, 1], 2]
     t[:, 0, 0] = 1
     t[:, 1, 1] = 1
     t[:, 2, 2] = 1           
@@ -1881,11 +1899,18 @@ def kpts_as_colmap(idx, **args):
 
 
 SIMPLE_RADIAL = 2
-DEGENERATE = 1
-UNCALIBRATED = 3
-PLANAR = 4
 
-class colmap_module:
+UNDEFINED = 0  # Not provided
+DEGENERATE = 1 # Degenerate configuration (e.g., no overlap or not enough inliers).
+CALIBRATED = 2 # Essential matrix.
+UNCALIBRATED = 3 # Fundamental matrix.
+PLANAR = 4 # Homography, planar scene with baseline.
+PANORAMIC = 5 # Homography, pure rotation without baseline.
+PLANAR_OR_PANORAMIC = 6 # Homography, planar or panoramic.
+WATERMARK = 7 # Watermark, pure 2D translation in image borders.
+MULTIPLE = 8 # Multi-model configuration, i.e. the inlier matches result from multiple individual, non-degenerate configurations.
+
+class to_colmap_module:
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -1897,11 +1922,11 @@ class colmap_module:
             'aux_hdf5': 'colmap_aux.hdf5',
             'focal_cf': 1.2,
             'only_keypoints': False,            
-            'unique': False,
+            'unique': True,
             'only_matched': True,
             'no_unmatched': True,
             'sampling_mode': 'raw',
-            'sampling_scale': 10,
+            'sampling_scale': 1,
             'sampling_offset': 0,
         }
         
@@ -2112,7 +2137,7 @@ if __name__ == '__main__':
             loftr_module(),
             magsac_module(),
             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            colmap_module(),
+            to_colmap_module(),
         ]        
                 
 #       imgs = '../data/ET_random_rotated'
