@@ -15,8 +15,6 @@ import hz.hz as hz
 from PIL import Image
 import poselib
 
-import pycolmap
-import sqlite3
 import colmap_db.database as coldb
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
@@ -1126,7 +1124,9 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, preserve_order=False):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, preserve_order=False, counter=False):
+    if not isinstance(pipe_block, list): pipe_block = [pipe_block]
+
     kp0 = []
     kH0 = []
     kr0 = []
@@ -1145,6 +1145,13 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         w0 = []
         w1 = []
         
+    counter0 = None
+    counter1 = None    
+        
+    if counter:
+        counter0 = []
+        counter1 = []
+        
     if preserve_order:
         rank0 = []
         rank1 = []
@@ -1158,9 +1165,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     
     idx0 = None
     idx1 = None
-    
-    if not isinstance(pipe_block, list): pipe_block = [pipe_block]
-    
+        
     c_rank0 = 0
     c_rank1 = 0
     for i, pipe_data in enumerate(pipe_block):
@@ -1188,6 +1193,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 if i==0:
                     q_rank0 = pipe_data['kp'][0].shape[0]
                     q_rank1 = pipe_data['kp'][1].shape[0]
+
+            if counter:
+                counter0.append(pipe_data['k_counter'][0])
+                counter1.append(pipe_data['k_counter'][1])
             
             if 'm_idx' in pipe_data:
 
@@ -1220,19 +1229,22 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         if preserve_order:
             rank0 = torch.cat(rank0)
             rank1 = torch.cat(rank1)
+            
+        if counter:
+            counter0 = torch.cat(counter0)
+            counter1 = torch.cat(counter1)
           
         if 'm_idx' in pipe_data:
             m_idx = torch.cat(m_idx)
             m_val = torch.cat(m_val)
             m_mask = torch.cat(m_mask)
             
-
     if not (sampling_mode is None):
         kp0_unsampled = kp0.clone()
         kp1_unsampled = kp1.clone()
         
-        kp0 = ((kp0 + sampling_offset) / sampling_scale).round() * sampling_scale
-        kp1 = ((kp1 + sampling_offset) / sampling_scale).round() * sampling_scale
+        kp0 = ((kp0 + sampling_offset) / sampling_scale).round() * sampling_scale - sampling_offset
+        kp1 = ((kp1 + sampling_offset) / sampling_scale).round() * sampling_scale - sampling_offset
             
         if 'm_idx' in pipe_data:
             m0_idx = m_idx[:, 0]
@@ -1245,8 +1257,8 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             ms_val = None
             ms_mask = None
         
-        kp0 = sampling(sampling_mode, kp0, kp0_unsampled, kr0, m0_idx, ms_val, ms_mask)            
-        kp1 = sampling(sampling_mode, kp1, kp1_unsampled, kr1, m1_idx, ms_val, ms_mask)            
+        kp0 = sampling(sampling_mode, kp0, kp0_unsampled, kr0, m0_idx, ms_val, ms_mask, counter=counter0)            
+        kp1 = sampling(sampling_mode, kp1, kp1_unsampled, kr1, m1_idx, ms_val, ms_mask, counter=counter1)            
             
     if unique:
         if 'm_idx' in pipe_data:
@@ -1279,11 +1291,25 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 rank1 = None
             
             idx0u, idx0r = sortrows(kp0.clone(), idx0, rank0)
+            
+            if counter:
+                counter_new = torch.zeros(idx0u.shape[0], device=device)
+                for i in range(idx0r.shape[0]):
+                    counter_new[idx0r[i]] = counter_new[idx0r[i]] + counter0[i] 
+                counter0 = counter_new
+            
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
             kr0 = kr0[idx0u]
 
             idx1u, idx1r = sortrows(kp1.clone(), idx1, rank1)
+ 
+            if counter:
+                counter_new = torch.zeros(idx1u.shape[0], device=device)
+                for i in range(idx1r.shape[0]):
+                    counter_new[idx1r[i]] = counter_new[idx1r[i]] + counter1[i] 
+                counter1 = counter_new
+  
             kp1 = kp1[idx1u]
             kH1 = kH1[idx1u]
             kr1 = kr1[idx1u]
@@ -1295,7 +1321,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             if preserve_order:
                 rank0 = rank0[idx0u]
                 rank1 = rank1[idx1u]
-            
+                            
             if 'm_idx' in pipe_data:
                 m_idx_new = torch.cat((idx0r[m_idx[:, 0]].unsqueeze(1), idx1r[m_idx[:, 1]].unsqueeze(1)), dim=1)
                 idxmu, _ = sortrows(m_idx_new.clone())
@@ -1335,6 +1361,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             rank0 = rank0[t0]
             rank1 = rank1[t1]
             
+        if counter:
+            counter0 = counter0[t0]
+            counter1 = counter1[t1]
+            
     if preserve_order:
         if 'kp' in pipe_data:        
             idx0 = torch.argsort(rank0)
@@ -1353,7 +1383,11 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                     
             if use_w:
                 w0 = w0[idx0]            
-                w1 = w1[idx1]   
+                w1 = w1[idx1] 
+                
+            if counter:
+                counter0 = counter0[idx0]
+                counter1 = counter1[idx1]
                 
             if 'm_idx' in pipe_data:
                 m_idx = torch.cat((idr0[m_idx[:, 0]].unsqueeze(1), idr1[m_idx[:, 1]].unsqueeze(1)), dim=1)
@@ -1370,6 +1404,9 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             w1[:, :2] = kp1
             pipe_data_out['w'] = [w0, w1]
             
+        if counter:
+            pipe_data_out['k_counter'] = [counter0, counter1]
+            
         if 'm_idx' in pipe_data:
             pipe_data_out['m_idx'] = m_idx
             pipe_data_out['m_val'] = m_val
@@ -1378,17 +1415,26 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     return pipe_data_out
 
 
-def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
+def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, counter=None):
     if (sampling_mode == 'raw') or (kp.shape[0] == 0): return kp
+            
+    if (sampling_mode == 'avg_all_matches'):                    
+        if counter is None:
+            counter = torch.full((kp.shape[0], ), 1, device=device, dtype=torch.bool)
         
-    if (sampling_mode == 'avg_inlier_matches'):
+    if (sampling_mode == 'avg_inlier_matches'):                
         if ms_idx is None:
             mask = torch.full((kp.shape[0], ), 1, device=device, dtype=torch.bool)
         else:            
             mask = torch.zeros(kp.shape[0], device=device, dtype=torch.bool)
             for i in torch.arange(ms_idx.shape[0]):
                 mask[ms_idx[i]] = ms_mask[i]
-
+                
+        if counter is None:
+            counter = torch.zeros(kp.shape[0], device=device)
+            for i in torch.arange(ms_idx.shape[0]):
+                if ms_mask[i]: counter[ms_idx[i]] = 1            
+            
     if (sampling_mode == 'best'):
         if ms_idx is None:
             mask = torch.full((kp.shape[0], ), 1, device=device, dtype=torch.bool)  
@@ -1416,14 +1462,17 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
             j = j + 1
             continue
 
-        if (sampling_mode == 'avg_all_matches'):            
-            kp[idx[i:j]] = kp_unsampled[idx[i:j]].mean(dim=0)
+        if (sampling_mode == 'avg_all_matches'): 
+            c_sum = counter[idx[i:j]].sum()
+            kp[idx[i:j]] = (kp_unsampled[idx[i:j]] * counter[idx[i:j]].unsqueeze(-1)).sum(dim=0) / c_sum
             
         if (sampling_mode == 'avg_inlier_matches'):
             tmp = kp_unsampled[idx[i:j]]
+            tmp_c = counter[idx[i:j]]
             tmp_mask = mask[idx[i:j]]
             if torch.any(tmp_mask):
-                kp[idx[i:j]] = tmp[tmp_mask].mean(dim=0)
+                c_sum = tmp_c[tmp_mask].sum()                
+                kp[idx[i:j]] = (tmp[tmp_mask] * tmp_c[tmp_mask].unsqueeze(-1)).sum(dim=0) / c_sum
 
         if (sampling_mode == 'best'):
             tmp_mask = torch.stack((mask[idx[i:j]], val[idx[i:j]], kr[idx[i:j]]), dim=1)
@@ -1442,14 +1491,17 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
         j = j + 1
 
     if (sampling_mode == 'avg_all_matches'):
-        kp[idx[i:j]] = kp_unsampled[idx[i:j]].mean(dim=0)
+        c_sum = counter[idx[i:j]].sum()
+        kp[idx[i:j]] = (kp_unsampled[idx[i:j]] * counter[idx[i:j]].unsqueeze(-1)).sum(dim=0) / c_sum
         
     if (sampling_mode == 'avg_inlier_matches'):
         tmp = kp_unsampled[idx[i:j]]
+        tmp_c = counter[idx[i:j]]
         tmp_mask = mask[idx[i:j]]
         if torch.any(tmp_mask):
-            kp[idx[i:j]] = tmp[tmp_mask].mean(dim=0)
-        
+            c_sum = tmp_c[tmp_mask].sum()                
+            kp[idx[i:j]] = (tmp[tmp_mask] * tmp_c[tmp_mask].unsqueeze(-1)).sum(dim=0) / c_sum
+    
     if (sampling_mode == 'best'):
         tmp_mask = torch.stack((mask[idx[i:j]], val[idx[i:j]], kr[idx[i:j]]), dim=1)
         
@@ -1461,7 +1513,7 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask):
                 max_idx = q
         
         best = idx[i:j][max_idx]
-        kp[idx[i:j]] = kp_unsampled[best]            
+        kp[idx[i:j]] = kp_unsampled[best]  
        
     return kp
 
@@ -1935,12 +1987,16 @@ class to_colmap_module:
         self.db = coldb_ext(self.args['db'])
         self.db.create_tables()
         self.aux_hdf5 = None
-        if (self.args['sampling_mode'] == 'avg_inlier_matches') or (self.args['sampling_mode'] == 'avg_all_matches'):
-            self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.args['id_more'])
+        if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):         
+            self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.id_string)
                 
 
     def __del__(self):
         self.db.close()
+        if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):
+            self.aux_hdf5.close()
+            if os.path.isfile(self.args['aux_hdf5']):
+                os.remove(self.args['aux_hdf5'])
 
                 
     def get_id(self): 
@@ -1949,6 +2005,7 @@ class to_colmap_module:
     
     def run(self, **args):   
         im_ids = []
+        imgs = []
         
         for idx in [0, 1]:
             im = args['img'][idx]            
@@ -1961,6 +2018,7 @@ class to_colmap_module:
                 im_id = self.db.add_image(img, cam_id)
                 self.db.commit()
 
+            imgs.append(img)
             im_ids.append(im_id)
                 
         pipe_old = {}
@@ -1969,9 +2027,13 @@ class to_colmap_module:
         if kp_old0 is None:
             w_old0 = torch.zeros((0, 6), device=device)
             kp_old0 = torch.zeros((0, 2), device=device)
+            if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):            
+                k_count_old0 = torch.zeros(0, device=device)
         else:
             w_old0 = torch.tensor(kp_old0, device=device)
             kp_old0 = torch.tensor(kp_old0[:, :2], device=device)
+            if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):            
+                k_count_old0, _ = self.aux_hdf5.get(imgs[0])
             
         kH_old0 = torch.zeros((kp_old0.shape[0], 3, 3), device=device)
         kr_old0 = torch.full((kp_old0.shape[0], ), torch.inf, device=device)
@@ -1980,9 +2042,13 @@ class to_colmap_module:
         if kp_old1 is None:
             w_old1 = torch.zeros((0, 6), device=device)
             kp_old1 = torch.zeros((0, 2), device=device)
+            if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):            
+                k_count_old1 = torch.zeros(0, device=device)
         else:
             w_old1 = torch.tensor(kp_old1, device=device)
             kp_old1 = torch.tensor(kp_old1[:, :2], device=device)
+            if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):            
+                k_count_old1, _ = self.aux_hdf5.get(imgs[1])
             
         kH_old1 = torch.zeros((kp_old1.shape[0], 3, 3), device=device)
         kr_old1 = torch.full((kp_old1.shape[0], ), torch.inf, device=device)
@@ -2000,6 +2066,9 @@ class to_colmap_module:
         pipe_old['kH'] = [kH_old0, kH_old1]
         pipe_old['kr'] = [kr_old0, kr_old1]
         pipe_old['w'] = [w_old0, w_old1]
+        
+        if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):        
+            pipe_old['k_counter'] = [k_count_old0, k_count_old1]
 
         pipe_old['m_idx'] = m_idx_old
         pipe_old['m_val'] = m_val_old
@@ -2008,11 +2077,39 @@ class to_colmap_module:
         w0 = kpts_as_colmap(0, **args)
         w1 = kpts_as_colmap(1, **args)
         args['w'] = [w0, w1]
+
+        if (self.args['sampling_mode'] == 'avg_all_matches'):
+            k_count0 = torch.full((args['kp'][0].shape[0], ), 1, device=device)
+            k_count1 = torch.full((args['kp'][1].shape[0], ), 1, device=device)
+            args['k_counter'] = [k_count0, k_count1]
         
-        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'], preserve_order=True)
+        if (self.args['sampling_mode'] == 'avg_inlier_matches'):            
+            if 'm_idx' in args:            
+                k_count0 = torch.full((args['kp'][0].shape[0], ), 0, device=device)
+                for i in torch.arange(args['m_mask'].shape[0]):
+                    if args['m_mask'][i]:
+                        k_count0[args['m_idx'][i, 0]] = 1
+
+                k_count1 = torch.full((args['kp'][1].shape[0], ), 0, device=device)
+                for i in torch.arange(args['m_mask'].shape[0]):
+                    if args['m_mask'][i]:
+                        k_count1[args['m_idx'][i, 1]] = 1
+            else:
+                k_count0 = torch.full((args['kp'][0].shape[0], ), 1, device=device)
+                k_count1 = torch.full((args['kp'][1].shape[0], ), 1, device=device)
+            
+            args['k_counter'] = [k_count0, k_count1]
+
+        counter = (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches')
+        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'], preserve_order=True, counter=counter)
 
         pts0 = pipe_out['w'][0].to('cpu').numpy()
         pts1 = pipe_out['w'][1].to('cpu').numpy()
+        
+        if counter:
+            self.aux_hdf5.add(imgs[0], pipe_out['k_counter'][0])
+            self.aux_hdf5.add(imgs[1], pipe_out['k_counter'][1])
+        
         self.db.update_keypoints(im_ids[0], pts0)
         self.db.update_keypoints(im_ids[1], pts1)
 
