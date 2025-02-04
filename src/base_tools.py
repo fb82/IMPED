@@ -1124,7 +1124,7 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, preserve_order=False, counter=False):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False):
     if not isinstance(pipe_block, list): pipe_block = [pipe_block]
 
     kp0 = []
@@ -1245,7 +1245,17 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         
         kp0 = ((kp0 + sampling_offset) / sampling_scale).round() * sampling_scale - sampling_offset
         kp1 = ((kp1 + sampling_offset) / sampling_scale).round() * sampling_scale - sampling_offset
-            
+        
+        if overlapping_cells:
+            kp0_ = ((kp0 + sampling_offset + (sampling_scale / 2) ) / sampling_scale).round() * sampling_scale - sampling_offset - (sampling_scale / 2)
+            kp1_ = ((kp1 + sampling_offset + (sampling_scale / 2) ) / sampling_scale).round() * sampling_scale - sampling_offset - (sampling_scale / 2)
+
+            s0 = ((kp0_unsampled - kp0)**2).sum(dim=1) > ((kp0_unsampled - kp0_)**2).sum(dim=1)
+            s1 = ((kp1_unsampled - kp1)**2).sum(dim=1) > ((kp1_unsampled - kp1_)**2).sum(dim=1)
+
+            kp0[s0] = kp0_[s0]
+            kp1[s1] = kp1_[s1]
+                        
         if 'm_idx' in pipe_data:
             m0_idx = m_idx[:, 0]
             m1_idx = m_idx[:, 1]
@@ -1832,6 +1842,7 @@ class sampling_module:
             'no_unmatched': True,
             'only_matched': True,
             'sampling_mode': 'raw', # None, raw, best, avg_inlier_matches, avg_all_matches
+            'overlapping_cells': False,
             'sampling_scale': 1,
             'sampling_offset': 0,
             }
@@ -1851,7 +1862,8 @@ class sampling_module:
                           only_matched=self.args['only_matched'],
                           sampling_mode=self.args['sampling_mode'],
                           sampling_scale=self.args['sampling_scale'],
-                          sampling_offset=self.args['sampling_offset'])    
+                          sampling_offset=self.args['sampling_offset'],
+                          overlapping_cells=self.args['overlapping_cells'])    
 
 
 class coldb_ext(coldb.COLMAPDatabase):
@@ -1978,6 +1990,7 @@ class to_colmap_module:
             'only_matched': True,
             'no_unmatched': True,
             'sampling_mode': 'raw',
+            'overlapping_cells' : False,
             'sampling_scale': 1,
             'sampling_offset': 0,
         }
@@ -2101,7 +2114,7 @@ class to_colmap_module:
             args['k_counter'] = [k_count0, k_count1]
 
         counter = (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches')
-        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'], preserve_order=True, counter=counter)
+        pipe_out = pipe_union([pipe_old, args], unique=self.args['unique'], no_unmatched=self.args['no_unmatched'], only_matched=self.args['only_matched'], sampling_mode=self.args['sampling_mode'], sampling_scale=self.args['sampling_scale'], sampling_offset=self.args['sampling_offset'], overlapping_cells=self.args['overlapping_cells'], preserve_order=True, counter=counter)
 
         pts0 = pipe_out['w'][0].to('cpu').numpy()
         pts1 = pipe_out['w'][1].to('cpu').numpy()
@@ -2226,7 +2239,7 @@ if __name__ == '__main__':
 #           loftr_module(),
 #           magsac_module(),
 #           show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           sampling_module(sampling_mode='avg_inlier_matches', sampling_scale=20),
+#           sampling_module(sampling_mode='avg_inlier_matches', overlapping_cells=True, sampling_scale=20),
 #           show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
 #       ]
 
