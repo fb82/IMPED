@@ -36,7 +36,9 @@ if __name__ == '__main__':
     dataset_name = 'dataset'    
     dataset = [
         {'scene': 'ET', 'db': 'ET.db', 'imgs': '../data/ET', 'models': 'ET_3D'},
-        {'scene': 'kermit', 'db': 'kermit.db', 'imgs': '../data/kermit', 'models': 'kermit_3D'},
+        {'scene': 'another_ET', 'db': 'another_ET.db', 'imgs': '../data/another_ET', 'models': 'another_ET_3D'},
+#       {'scene': 'kermit', 'db': 'kermit.db', 'imgs': '../data/kermit', 'models': 'kermit_3D'},
+#       {'scene': 'another_kermit', 'db': 'another_kermit.db', 'imgs': '../data/another_kermit', 'models': 'another_kermit_3D'},
         ]
 
     mode = 'w'    
@@ -67,9 +69,13 @@ if __name__ == '__main__':
     submission = 'submission.csv'
     dataset_name = 'dataset'
     
-    db = 'ET_kermit.db'
-    imgs = '../data/ET_kermit'
-    models = 'ET_kermit_3D'
+    db = 'ETs.db'
+    imgs = '../data/ETs'
+    models = 'ETs_3D'
+
+#   db = 'kermits.db'
+#   imgs = '../data/kermits'
+#   models = 'kermits_3D'
 
     with torch.inference_mode():    
         pipeline = [
