@@ -2005,6 +2005,7 @@ class to_colmap_module:
                 
 
     def __del__(self):
+        self.db.commit()
         self.db.close()
         if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):
             self.aux_hdf5.close()
