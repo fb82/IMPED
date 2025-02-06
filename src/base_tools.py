@@ -1204,7 +1204,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                     to_retain = pipe_data['m_mask'].clone()
                 else:
                     to_retain = torch.full((pipe_data['m_mask'].shape[0], ), 1, device=device, dtype=torch.bool)
-                                
+                          
                 m_idx.append(pipe_data['m_idx'][to_retain] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
                 m_val.append(pipe_data['m_val'][to_retain])
                 m_mask.append(pipe_data['m_mask'][to_retain])
@@ -1709,11 +1709,15 @@ class lightglue_module:
         matches12 = self.matcher({'image0': feats1, 'image1': feats2})
         feats1_, feats2_, matches12 = [lg_rbd(x) for x in [feats1, feats2, matches12]]
 
-
         idxs = matches12['matches'].squeeze(0)
         m_val = matches12['scores'].squeeze(0)
+
+        if torch.numel(idxs) == 2:
+            idxs = idxs.reshape(1, -1)
+            m_val = m_val.reshape(1)
+        
         m_mask = torch.ones(idxs.shape[0], device=device, dtype=torch.bool)
-            
+                    
         return {'m_idx': idxs, 'm_val': m_val, 'm_mask': m_mask}
     
 
