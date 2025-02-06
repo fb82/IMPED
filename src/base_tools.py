@@ -2244,12 +2244,20 @@ if __name__ == '__main__':
 #           show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
 #       ]
 
+#       pipeline = [
+#           loftr_module(),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]     
+        
         pipeline = [
-            loftr_module(),
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
             magsac_module(),
             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
             to_colmap_module(),
-        ]        
+        ]         
                 
 #       imgs = '../data/ET_random_rotated'
         imgs = '../data/ET'

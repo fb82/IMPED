@@ -20,7 +20,7 @@ def arr_to_str(a):
 def create_submission(dataset, scene, map_3d, mode='w', csv_name='submission.csv'):
     with open(csv_name, mode) as f:
         if mode == 'w':
-            f.write('scene,image,rotation_matrix,translation_vector\n')
+            f.write('dataset,scene,image,rotation_matrix,translation_vector\n')
 
         for i in map_3d.images:
             img = map_3d.image(i).name
@@ -29,7 +29,34 @@ def create_submission(dataset, scene, map_3d, mode='w', csv_name='submission.csv
             f.write(f'{dataset},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
 
 
-def make_gt(img_file='../aux/imgs', rec_file='../aux/3D'):
+def gt_to_csv(datasets, csv_file='../aux/gt.csv'):
+    with open(csv_file, 'w') as f:
+        f.write('dataset,scene,image,rotation_matrix,translation_vector\n')
+
+        for dataset in datasets:
+            dataset_name = dataset['name']
+            for i in range(len(dataset['scenes'])):
+                scene = dataset['scenes'][i]
+                imgs = os.listdir(dataset['images'][i])            
+                model = pycolmap.Reconstruction(dataset['models'][i])
+                
+                for img in imgs:
+                    if os.path.isfile(os.path.join(dataset['images'][i], img)):
+                        im = model.find_image_with_name(img)
+                        if not (im is None):
+                            R = im.cam_from_world.rotation.matrix()
+                            T = np.array(im.cam_from_world.translation)
+                            f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+
+            if not (dataset['outliers'] is None):
+                imgs = os.listdir(dataset['outliers'])
+                for img in imgs:
+                    R = np.full((3, 3), np.nan)
+                    T = np.full((3, ), np.nan)
+                    f.write(f'{dataset_name},outliers,{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                    
+
+def make_gt(img_file='../aux/imgs', rec_file='../aux/3D', check_models=False):
     data = []
 
     datasets = os.listdir(img_file)
@@ -39,10 +66,11 @@ def make_gt(img_file='../aux/imgs', rec_file='../aux/3D'):
         
         if os.path.isdir(abs_dataset):
             tmp_dataset = {}
-            tmp_dataset['dataset_name'] = dataset
-            tmp_dataset['dataset_scenes'] = []
-            tmp_dataset['dataset_models'] = []
-            tmp_dataset['dataset_outliers'] = False
+            tmp_dataset['name'] = dataset
+            tmp_dataset['scenes'] = []
+            tmp_dataset['images'] = []
+            tmp_dataset['models'] = []
+            tmp_dataset['outliers'] = None
             
             scenes = os.listdir(abs_dataset)
 
@@ -51,13 +79,20 @@ def make_gt(img_file='../aux/imgs', rec_file='../aux/3D'):
                 
                 if os.path.isdir(abs_scene):
                     if scene == 'outliers':
-                        tmp_dataset['dataset_outliers'] = True
+                        tmp_dataset['outliers'] = os.path.join(abs_dataset, 'outliers')
                     else:  
                         abs_3d = os.path.join(rec_file, dataset, scene)
 
                         db = os.path.join(abs_3d, 'database.db')
                         models = os.path.join(abs_3d, 'models')                            
 
+                        tmp_dataset['scenes'].append(scene)
+                        tmp_dataset['images'].append(abs_scene)
+
+                        if not check_models:
+                            tmp_dataset['models'].append(os.path.join(models, '0'))
+                            continue
+                            
                         if not os.path.isfile(db):
                             os.makedirs(abs_3d, exist_ok=True)  
 
@@ -86,8 +121,7 @@ def make_gt(img_file='../aux/imgs', rec_file='../aux/3D'):
                                 best_n = n
                                 best_model = abs_model
                                     
-                        tmp_dataset['dataset_scenes'].append(scene)
-                        tmp_dataset['dataset_models'].append(best_model)
+                        tmp_dataset['models'].append(best_model)
                             
             data.append(tmp_dataset)
 
@@ -96,7 +130,9 @@ def make_gt(img_file='../aux/imgs', rec_file='../aux/3D'):
 
 if __name__ == '__main__':    
 
-    dataset = make_gt()    
+    data = make_gt()
+    gt_to_csv(data)
+    print('doh!')
 
 # ### GT    
 
