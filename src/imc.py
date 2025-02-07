@@ -11,6 +11,7 @@ import math
 import pandas as pd
 import pandas.api.types
 
+_EPS = np.finfo(float).eps * 4.0
 
 def compute_3D(db, img_dir, output_path):
     # pycolmap.match_exhaustive(db)
@@ -247,22 +248,6 @@ def make_input_data(datasets, folder='../aux/todo'):
                 shutil.copy(os.path.join(dataset['outliers'], img), os.path.join(abs_dataset, img))
 
 
-
-
-_EPS = np.finfo(float).eps * 4.0
-
-# mAA evaluation thresholds per scene, different accoring to the scene
-translation_thresholds_meters_dict = {
- 'multi-temporal-temple-baalshamin':  np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0]),
- 'pond':                              np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0]),
- 'transp_obj_glass_cylinder':         np.array([0.0025, 0.005, 0.01, 0.02, 0.05, 0.1]),
- 'transp_obj_glass_cup':              np.array([0.0025, 0.005, 0.01, 0.02, 0.05, 0.1]),
- 'church':                            np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0]),
- 'lizard':                            np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0]),
- 'dioscuri':                          np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0]), 
-}
-
-
 def vector_norm(data, axis=None, out=None):
     '''Return length, i.e. Euclidean norm, of ndarray along axis.'''
     data = np.array(data, dtype=np.float64, copy=True)
@@ -483,8 +468,8 @@ def register_by_Horn(ev_coord, gt_coord, ransac_threshold, inl_cf, strict_cf):
                         strict_inl[:, to_update] = (best_err[:, to_update] < strict_cf * ransac_threshold[:, to_update])
                         best_transf_matrix[to_update] = transf_matrix
 
-    for i in range(r):
-       print(f'Registered cameras {int(max_no_inl[0, i])}/{n} for threshold {ransac_threshold[0, i]}')
+    # for i in range(r):
+    #     print(f'Registered cameras {int(max_no_inl[0, i])}/{n} for threshold {ransac_threshold[0, i]}')
 
     best_model = {
         "valid_cams": idx_cams,        
@@ -493,117 +478,6 @@ def register_by_Horn(ev_coord, gt_coord, ransac_threshold, inl_cf, strict_cf):
         "triplets_used": triplets_used,
         "transf_matrix": best_transf_matrix}
     return best_model
-
-
-# mAA computation
-def mAA_on_cameras(err, thresholds, n, skip_top_thresholds, to_dec=3):
-    '''mAA is the mean of mAA_i, where for each threshold th_i in <thresholds>, excluding the first <skip_top_thresholds values>,
-    mAA_i = max(0, sum(err_i < th_i) - <to_dec>) / (n - <to_dec>)
-    where <n> is the number of ground-truth cameras and err_i is the camera registration error for the best 
-    registration corresponding to threshold th_i'''
-    
-    aux = err[:, skip_top_thresholds:] < np.expand_dims(np.asarray(thresholds[skip_top_thresholds:]), axis=0)
-    return np.sum(np.maximum(np.sum(aux, axis=0) - to_dec, 0)) / (len(thresholds[skip_top_thresholds:]) * (n - to_dec))
-
-
-# import data - no error handling in case float(x) fails
-def get_camera_centers_from_df(df):
-    out = {}
-    for row in df.iterrows():
-        row = row[1]
-        fname = row['image_path']
-        R = np.array([float(x) for x in (row['rotation_matrix'].split(';'))]).reshape(3,3)
-        t = np.array([float(x) for x in (row['translation_vector'].split(';'))]).reshape(3)
-        center = -R.T @ t
-        out[fname] = center
-    return out
-
-
-def evaluate_rec(gt_df, user_df, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3,
-                 thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
-    ''' Register the <user_df> camera centers to the ground-truth <gt_df> camera centers and
-    return the corresponding mAA as the average percentage of registered camera threshold.
-    
-    For each threshold value in <thresholds>, the best similarity transformation found which
-    maximizes the number of registered cameras is employed. A camera is marked as registered
-    if after the transformation its Euclidean distance to the corresponding ground-truth camera
-    center is less than the mentioned threshold. Current measurements are in meter.
-    
-    Registration parameters:
-    <inl_cf> coefficient to activate registration refinement, set to 1 to refine a new model
-    only when it gives more inliers, to 0 to refine a new model always; high values increase
-    speed but decrease precision.
-    <strict_cf> threshold coefficient to define strict inliers for the best registration so far,
-    new minimal models made up of strict inliers are skipped. It can vary from 0 (slower) to
-    1 (faster); set to -1 to check exhaustively all the minimal model triplets.
-
-    mAA parameters:
-    <skip_top_thresholds> excluded lower thresholds in the mAA computation; in case of using
-    heuristics for the registration, i.e. inl_cf!=0 and strict_cf!=-1, best model for lower
-    threshold can be not the optimal, so skip them in the mAA computation.
-    <to_dec> excludes the minimal model cameras from the computation of the mAA. Given the
-    minimal model, i.e. three pairs of 3D correspondences, there is a high chance to register by
-    a similarity transformation at any threshold, so do not account for mAA'''
-    
-    # get camera centers
-    ucameras = get_camera_centers_from_df(user_df)
-    gcameras = get_camera_centers_from_df(gt_df)    
-
-    # the denominator for mAA ratio
-    m = gt_df.shape[0]
-    
-    # get the image list to use
-    good_cams = []
-    for image_path in gcameras.keys():
-        if image_path in ucameras.keys():
-            good_cams.append(image_path)
-        
-    # put corresponding camera centers into matrices
-    n = len(good_cams)
-    u_cameras = np.zeros((3, n))
-    g_cameras = np.zeros((3, n))
-    
-    ii = 0
-    for i in good_cams:
-        u_cameras[:, ii] = ucameras[i]
-        g_cameras[:, ii] = gcameras[i]
-        ii += 1
-        
-    # Horn camera centers registration, a different best model for each camera threshold
-    model = register_by_Horn(u_cameras, g_cameras, np.asarray(thresholds), inl_cf, strict_cf)
-    
-    # transformation matrix
-    print("\nTransformation matrix for maximum threshold")
-    T = np.squeeze(model['transf_matrix'][-1])
-    print(T)
-    
-    # mAA
-    mAA = mAA_on_cameras(model["err"], thresholds, m, skip_top_thresholds, to_dec)
-    # print(f'mAA = {mAA * 100 : .2f}% considering {m} input cameras - {to_dec}')
-    return mAA
-
-
-def score(solution: pd.DataFrame, submission: pd.DataFrame) -> float:
-    '''The metric is an mean average accuracy between solution and submission camera centers.
-    Prior to calculate the metric, a function performs exhaustive registration (like RANSAC, but
-    not random, considering all possible configurations) to align the user camera system to the GT'''
-    
-    scenes = list(set(solution['dataset'].tolist()))
-    results_per_dataset = []
-    for dataset in scenes:
-        print(f"\n*** {dataset} ***")
-        start = time.time()
-        gt_ds = solution[solution['dataset'] == dataset]
-        user_ds = submission[submission['dataset'] == dataset]
-        gt_ds = gt_ds.sort_values(by=['image_path'], ascending = True)
-        user_ds = user_ds.sort_values(by=['image_path'], ascending = True)
-        result = evaluate_rec(gt_ds, user_ds, inl_cf=0, strict_cf=-1, skip_top_thresholds=0, to_dec=3,
-                 thresholds=translation_thresholds_meters_dict[dataset])
-        end = time.time()
-        print(f"\nmAA: {result*100}%")
-        print("Running time: %s" % (end - start))        
-        results_per_dataset.append(result)
-    return float(np.array(results_per_dataset).mean())
 
 
 def read_csv(filename):
@@ -653,6 +527,17 @@ translation_thresholds_meters = {
 }
     
 
+# mAA computation
+def mAA_on_cameras(err, thresholds, n, skip_top_thresholds, to_dec=3):
+    '''mAA is the mean of mAA_i, where for each threshold th_i in <thresholds>, excluding the first <skip_top_thresholds values>,
+    mAA_i = max(0, sum(err_i < th_i) - <to_dec>) / (n - <to_dec>)
+    where <n> is the number of ground-truth cameras and err_i is the camera registration error for the best 
+    registration corresponding to threshold th_i'''
+    
+    aux = err[:, skip_top_thresholds:] < np.expand_dims(np.asarray(thresholds[skip_top_thresholds:]), axis=0)
+    return np.sum(np.maximum(np.sum(aux, axis=0) - to_dec, 0)) / (len(thresholds[skip_top_thresholds:]) * (n - to_dec))
+
+        
 def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
     gt_data = read_csv(gt_csv)
     user_data = read_csv(user_csv)
@@ -669,11 +554,28 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
         model_block = []
         reg_block = np.zeros((th_n, len(gt_dataset), len(user_dataset)))
         mAA_block = np.zeros((len(gt_dataset), len(user_dataset)))
-        
-        for i, gt_scene in enumerate(gt_dataset.keys()):
-            model_row = []
+        cluster_block = np.zeros((len(gt_dataset), len(user_dataset)))
+        gt_scene_sum = np.zeros((len(gt_dataset), len(user_dataset)))
+        user_scene_sum = np.zeros((len(gt_dataset), len(user_dataset)))
 
+        best_gt_scene_list = []
+        best_user_scene_list = []
+        best_model = []
+        best_reg = np.zeros((th_n, len(gt_dataset)))
+        best_mAA = np.zeros(len(gt_dataset))
+        best_cluster = np.zeros(len(gt_dataset))
+        best_gt_scene_sum = np.zeros(len(gt_dataset))
+        best_user_scene_sum = np.zeros(len(gt_dataset))
+
+        gt_scene_list = []        
+        for i, gt_scene in enumerate(gt_dataset.keys()):
+            gt_scene_list.append(gt_scene)
+
+            model_row = []
+            user_scene_list = []
             for j, user_scene in enumerate(user_dataset.keys()):                
+                user_scene_list.append(user_scene)
+
                 if (gt_scene == 'outliers') or (user_scene == 'outliers'):
                     model_row.append([])
                     continue
@@ -715,12 +617,60 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
                                 
                 reg_block[:, i, j] = model['no_inl']
                 mAA_block[i, j] = mAA
+                cluster_block[i, j] = n
+                gt_scene_sum[i, j] = m
+                user_scene_sum[i, j] = len(user_data[dataset][user_scene])
                 
                 model_row.append(model)
 
+            best_ind = np.lexsort((-mAA_block[i], -cluster_block[i]))[0]
+
+            best_gt_scene_list.append(gt_scene)
+            best_user_scene_list.append(user_scene_list[best_ind])
+            best_model.append(model_row[best_ind])
+            best_reg[:, i] = reg_block[:, i, best_ind]
+            best_mAA[i] = mAA_block[i, best_ind]
+            best_cluster[i] = cluster_block[i, best_ind]
+            best_gt_scene_sum[i] = gt_scene_sum[i, best_ind]
+            best_user_scene_sum[i] = user_scene_sum[i, best_ind]
+    
             model_block.append(model_row)
 
-        print('doh')
+        outlier_idx = -1
+        for i, scene in enumerate(best_gt_scene_list):
+            if scene == 'outliers':
+                outlier_idx = i
+                break
+        
+        if outlier_idx > -1:
+            best_gt_scene_list.pop(outlier_idx)
+            best_user_scene_list.pop(outlier_idx)
+            best_model.pop(outlier_idx)
+            best_reg = np.delete(best_reg, outlier_idx, axis=1)            
+            best_mAA = np.delete(best_mAA, outlier_idx)            
+            best_cluster = np.delete(best_cluster, outlier_idx)            
+            best_gt_scene_sum = np.delete(best_gt_scene_sum, outlier_idx)            
+            best_user_scene_sum = np.delete(best_user_scene_sum, outlier_idx)
+            
+        cluster_score = np.sum(best_cluster) / np.sum(best_user_scene_sum)
+
+        n = np.sum(best_gt_scene_sum)
+        a = 0
+        for i, scene in enumerate(best_gt_scene_list):
+            if not isinstance(thresholds, dict):
+                ths = thresholds
+            else:
+                ths = thresholds[dataset][scene]
+                    
+            tmp = best_model[i]['err'][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
+            a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
+
+        b = (th_n - skip_top_thresholds) * (n - len(best_gt_scene_list) * to_dec) 
+
+        mAA_score = a / b
+
+        print(f'{dataset}: mAA = {mAA_score * 100} %, clusterness =  {cluster_score * 100} %, combined = {mAA_score * cluster_score* 100} %')
+
 
 if __name__ == '__main__':      
     # gt_data = make_gt()
@@ -731,4 +681,18 @@ if __name__ == '__main__':
     # submission_data = make_todo()
     # to_csv(submission_data, csv_file='../aux/submission/submission.csv')    
 
+    print('GT vs GT')
+    score_all('../aux/gt/gt.csv', '../aux/gt/gt.csv', thresholds=translation_thresholds_meters)
+
+    print('GT vs submission')
     score_all('../aux/gt/gt.csv', '../aux/submission/submission.csv', thresholds=translation_thresholds_meters)
+
+# output
+
+# GT vs GT
+# ETs: mAA = 100.0 %, clusterness =  100.0 %, combined = 100.0 %
+# kermits: mAA = 100.0 %, clusterness =  100.0 %, combined = 100.0 %
+
+# GT vs submission
+# ETs: mAA = 48.75 %, clusterness =  57.99999999999999 %, combined = 28.275 %
+# kermits: mAA = 93.33333333333333 %, clusterness =  95.45454545454545 %, combined = 89.0909090909091 %
