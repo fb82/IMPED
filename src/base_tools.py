@@ -14,6 +14,13 @@ import numpy as np
 import hz.hz as hz
 from PIL import Image
 import poselib
+import gdown
+import zipfile
+import tarfile
+import csv
+import shutil
+import bz2
+import _pickle as cPickle
 
 import colmap_db.database as coldb
 import matplotlib.pyplot as plt
@@ -24,6 +31,506 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
+
+
+def megadepth_1500_list(ppath='bench_data/gt_data/megadepth'):
+    npz_list = [i for i in os.listdir(ppath) if (os.path.splitext(i)[1] == '.npz')]
+
+    data = {'im1': [], 'im2': [], 'K1': [], 'K2': [], 'T': [], 'R': []}
+    # Sort to avoid os.listdir issues 
+    for name in sorted(npz_list):
+        scene_info = np.load(os.path.join(ppath, name), allow_pickle=True)
+    
+        # Sort to avoid pickle issues 
+        pidx = sorted([[pair_info[0][0], pair_info[0][1]] for pair_info in scene_info['pair_infos']])
+    
+        # Collect pairs
+        for idx in pidx:
+            id1, id2 = idx
+            im1 = scene_info['image_paths'][id1].replace('Undistorted_SfM/', '')
+            im2 = scene_info['image_paths'][id2].replace('Undistorted_SfM/', '')                        
+            K1 = scene_info['intrinsics'][id1].astype(np.float32)
+            K2 = scene_info['intrinsics'][id2].astype(np.float32)
+    
+            # Compute relative pose
+            T1 = scene_info['poses'][id1]
+            T2 = scene_info['poses'][id2]
+            T12 = np.matmul(T2, np.linalg.inv(T1))
+    
+            data['im1'].append(im1)
+            data['im2'].append(im2)
+            data['K1'].append(K1)
+            data['K2'].append(K2)
+            data['T'].append(T12[:3, 3])
+            data['R'].append(T12[:3, :3])   
+    return data
+
+
+def scannet_1500_list(ppath='bench_data/gt_data/scannet'):
+    intrinsic_path = 'intrinsics.npz'
+    npz_path = 'test.npz'
+
+    data = np.load(os.path.join(ppath, npz_path))
+    data_names = data['name']
+    intrinsics = dict(np.load(os.path.join(ppath, intrinsic_path)))
+    rel_pose = data['rel_pose']
+    
+    data = {'im1': [], 'im2': [], 'K1': [], 'K2': [], 'T': [], 'R': []}
+    
+    for idx in range(data_names.shape[0]):
+        scene_name, scene_sub_name, stem_name_0, stem_name_1 = data_names[idx]
+        scene_name = f'scene{scene_name:04d}_{scene_sub_name:02d}'
+    
+        # read the grayscale image which will be resized to (1, 480, 640)
+        im1 = os.path.join(scene_name, 'color', f'{stem_name_0}.jpg')
+        im2 = os.path.join(scene_name, 'color', f'{stem_name_1}.jpg')
+        
+        # read the intrinsic of depthmap
+        K1 = intrinsics[scene_name]
+        K2 = intrinsics[scene_name]
+    
+        # pose    
+        T12 = np.concatenate((rel_pose[idx],np.asarray([0, 0, 0, 1.0]))).reshape(4,4)
+        
+        data['im1'].append(im1)
+        data['im2'].append(im2)
+        data['K1'].append(K1)
+        data['K2'].append(K2)  
+        data['T'].append(T12[:3, 3])
+        data['R'].append(T12[:3, :3])     
+    return data
+
+
+def resize_megadepth(im, res_path='imgs/megadepth', bench_path='bench_data', force=False, max_sz=1200):
+    aux = im.split('/')
+    flat_img = os.path.join(aux[0], '_'.join((aux[0], aux[-1])))
+    
+    mod_im = os.path.join(bench_path, res_path, os.path.splitext(flat_img)[0] + '.png')
+    ori_im= os.path.join(bench_path, 'megadepth_test_1500/Undistorted_SfM', im)
+
+    if os.path.isfile(mod_im) and not force:
+        # PIL does not load image, so it's faster to get only image size
+        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), mod_im 
+        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], mod_im
+
+    img = cv2.imread(ori_im)
+    sz_ori = np.array(img.shape)[:2][::-1]
+    sz_max = float(max(sz_ori))
+
+    if sz_max > max_sz:
+        cf = max_sz / sz_max                    
+        sz_new = np.ceil(sz_ori * cf).astype(int) 
+        img = cv2.resize(img, tuple(sz_new), interpolation=cv2.INTER_LANCZOS4)
+        sc = sz_ori/sz_new
+        os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
+        cv2.imwrite(mod_im, img)
+        return sc, mod_im
+    else:
+        os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
+        cv2.imwrite(mod_im, img)
+        return np.array([1., 1.]), mod_im
+
+
+def resize_scannet(im, res_path='imgs/scannet', bench_path='bench_data', force=False):
+    aux = im.split('/')
+    flat_img = os.path.join(aux[0], '_'.join((aux[0], aux[-1])))
+
+    mod_im = os.path.join(bench_path, res_path, os.path.splitext(flat_img)[0] + '.png')
+    ori_im= os.path.join(bench_path, 'scannet_test_1500', im)
+
+    if os.path.isfile(mod_im) and not force:
+        # PIL does not load image, so it's faster to get only image size
+        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), mod_im 
+        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], mod_im
+
+    img = cv2.imread(ori_im)
+    sz_ori = np.array(img.shape)[:2][::-1]
+
+    sz_new = np.array([640, 480])
+    img = cv2.resize(img, tuple(sz_new), interpolation=cv2.INTER_LANCZOS4)
+    sc = sz_ori/sz_new
+    os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
+    cv2.imwrite(mod_im, img)
+    return sc, mod_im
+
+
+def setup_images_megadepth(megadepth_data, data_file='bench_data/megadepth_scannet.pbz2', bench_path='bench_data', bench_imgs='imgs', max_sz=1200):
+    n = len(megadepth_data['im1'])
+    im_pair_scale = np.zeros((n, 2, 2))
+
+    new_im1 = [None] * n
+    new_im2 = [None] * n
+    
+    res_path = os.path.join(bench_imgs, 'megadepth')
+    for i in tqdm(range(n), desc='megadepth image setup'):
+        im_pair_scale[i, 0], new_im1[i] = resize_megadepth(megadepth_data['im1'][i], res_path, bench_path, max_sz=max_sz)
+        im_pair_scale[i, 1], new_im2[i] = resize_megadepth(megadepth_data['im2'][i], res_path, bench_path, max_sz=max_sz)
+    megadepth_data['im_pair_scale'] = im_pair_scale
+ 
+    megadepth_data['im1'] = new_im1   
+    megadepth_data['im2'] = new_im2   
+ 
+    return megadepth_data
+
+
+def setup_images_scannet(scannet_data, data_file='bench_data/megadepth_scannet.pbz2', bench_path='bench_data', bench_imgs='imgs', max_sz=None):       
+    n = len(scannet_data['im1'])
+    im_pair_scale = np.zeros((n, 2, 2))
+    
+    new_im1 = [None] * n
+    new_im2 = [None] * n
+    
+    res_path = os.path.join(bench_imgs, 'scannet')
+    for i in tqdm(range(n), desc='scannet image setup'):
+        im_pair_scale[i, 0], new_im1[i] = resize_scannet(scannet_data['im1'][i], res_path, bench_path)
+        im_pair_scale[i, 1], new_im2[i] = resize_scannet(scannet_data['im2'][i], res_path, bench_path)
+    scannet_data['im_pair_scale'] = im_pair_scale
+         
+    scannet_data['im1'] = new_im1   
+    scannet_data['im2'] = new_im2       
+    
+    return scannet_data
+
+
+def download_megadepth(bench_path ='bench_data'):   
+    os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)   
+
+    file_to_download = os.path.join(bench_path, 'downloads', 'megadepth_scannet_gt_data.zip')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1GtpHBN6RLcgSW5RPPyqYLyfbn7ex360G/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    out_dir = os.path.join(bench_path, 'gt_data')
+    if not os.path.isdir(out_dir):    
+        with zipfile.ZipFile(file_to_download, "r") as zip_ref:
+            zip_ref.extractall(bench_path)    
+
+    file_to_download = os.path.join(bench_path, 'downloads', 'megadepth_test_1500.tar.gz')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1Vwk_htrvWmw5AtJRmHw10ldK57ckgZ3r/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+    
+    out_dir = os.path.join(bench_path, 'megadepth_test_1500')
+    if not os.path.isdir(out_dir):    
+        with tarfile.open(file_to_download, "r") as tar_ref:
+            tar_ref.extractall(bench_path)
+    
+    return
+
+
+def download_scannet(bench_path ='bench_data'):   
+    os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)   
+
+    file_to_download = os.path.join(bench_path, 'downloads', 'megadepth_scannet_gt_data.zip')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1GtpHBN6RLcgSW5RPPyqYLyfbn7ex360G/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    out_dir = os.path.join(bench_path, 'gt_data')
+    if not os.path.isdir(out_dir):    
+        with zipfile.ZipFile(file_to_download, "r") as zip_ref:
+            zip_ref.extractall(bench_path)    
+    
+    file_to_download = os.path.join(bench_path, 'downloads', 'scannet_test_1500.tar.gz')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/13KCCdC1k3IIZ4I3e4xJoVMvDA84Wo-AG/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    out_dir = os.path.join(bench_path, 'scannet_test_1500')
+    if not os.path.isdir(out_dir):    
+        with tarfile.open(file_to_download, "r") as tar_ref:
+            tar_ref.extractall(bench_path)
+    
+    return
+
+
+def benchmark_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', dataset='megadepth', debug_pairs=None, force=False, sample_size=800, seed=42, covisibility_range=[0.1, 0.7], new_sample=False, scene_list=None):        
+    if (dataset == 'megadepth') or (dataset == 'scannet'):
+        return megadepth_scannet_setup(bench_path=bench_path, bench_imgs=bench_imgs, bench_gt=bench_gt, dataset=dataset, debug_pairs=debug_pairs, force=force)
+    
+    if dataset == 'imc':
+        return imc_phototourism_setup(bench_path=bench_path, bench_imgs=bench_imgs, dataset=dataset, sample_size=sample_size, seed=seed, covisibility_range=covisibility_range, new_sample=new_sample, force=force, scene_list=scene_list)
+        
+
+def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', dataset='megadepth', debug_pairs=None, force=False, max_sz=1200):        
+    if dataset == 'megadepth':
+        download = download_megadepth
+        img_list = megadepth_1500_list
+        setup_images = setup_images_megadepth
+
+    if dataset == 'scannet':
+        download = download_scannet
+        img_list = scannet_1500_list
+        setup_images = setup_images_scannet
+
+    os.makedirs(bench_path, exist_ok=True)
+    db_file = os.path.join(bench_path, dataset + '.hdf5')    
+    db = pickled_hdf5.pickled_hdf5(db_file, mode='a')    
+
+    data_key = '/' + dataset
+
+    data, is_found = db.get(data_key)                    
+    if (not is_found) or force:
+        download(bench_path)        
+        data = img_list(os.path.join(bench_path, bench_gt, dataset))
+    
+        # for debugging, use only first debug_pairs image pairs
+        if not (debug_pairs is None):
+            for what in data.keys():
+                data[what] = [data[what][i] for i in range(debug_pairs)]
+    
+        data = setup_images(data, bench_path=bench_path, bench_imgs=bench_imgs, max_sz=max_sz)    
+        
+        pairs = [(im1, im2) for im1, im2 in zip(data['im1'], data['im2'])]
+        gt = {}
+        for i in range(len(data['im1'])):
+            if not data['im1'][i] in gt:
+                gt[data['im1'][i]] = {}
+            
+            gt[data['im1'][i]][data['im2'][i]] = {
+                'K1': data['K1'][i],
+                'K2': data['K2'][i],
+                'R': data['R'][i],
+                'T': data['T'][i],
+                'image_pair_scale': data['im_pair_scale'][i],
+                }
+                
+        data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs, dataset)}
+        db.add(data_key, data)
+        db.close()
+        
+    return data['image_pairs'], data['gt'], data['image_path']
+
+
+# Pickle a file and then compress it into a file with extension 
+def compressed_pickle(title, data, add_ext=False):
+    if add_ext:
+        ext = '.pbz2'
+    else:
+        ext = ''
+        
+    with bz2.BZ2File(title + ext, 'w') as f: 
+        cPickle.dump(data, f)
+        
+
+# Load any compressed pickle file
+def decompress_pickle(file):
+    data = bz2.BZ2File(file, 'rb')
+    data = cPickle.load(data)
+    return data
+
+
+def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='imc', sample_size=800, seed=42, covisibility_range=[0.1, 0.7], new_sample=False, force=False):
+    
+    os.makedirs(bench_path, exist_ok=True)
+    db_file = os.path.join(bench_path, dataset + '.hdf5')    
+    db = pickled_hdf5.pickled_hdf5(db_file, mode='a')   
+
+    data_key = '/' + dataset
+
+    data, is_found = db.get(data_key)                    
+    if is_found and (not force):
+        db.close()
+        return data
+
+    rng = np.random.default_rng(seed=seed)    
+    os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)
+
+    file_to_download = os.path.join(bench_path, 'downloads', 'image-matching-challenge-2022.zip')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1RyqsKr_X0Itkf34KUv2C7XP35drKSXht/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    out_dir = os.path.join(bench_path, 'imc_phototourism')
+    if not os.path.isdir(out_dir):    
+        with zipfile.ZipFile(file_to_download, "r") as zip_ref:
+            zip_ref.extractall(out_dir)        
+        
+    scenes = sorted([scene for scene in os.listdir(os.path.join(out_dir, 'train')) if os.path.isdir(os.path.join(out_dir, 'train', scene))])
+
+    scale_file = os.path.join(out_dir, 'train', 'scaling_factors.csv')
+    scale_dict = {}
+    with open(scale_file, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            scale_dict[row['scene']] = float(row['scaling_factor'])
+        
+    im1 = []
+    im2 = []
+    K1 = []
+    K2 = []
+    R = []
+    T = []
+    scene_scales = []
+    covisibility = []
+    
+    if new_sample:
+        sampled_idx = {}
+    else:
+        file_to_download = os.path.join(bench_path, 'downloads', 'imc_sampled_idx.pbz2')    
+        if not os.path.isfile(file_to_download):    
+            url = "https://drive.google.com/file/d/13AE6pbkJ8bNfVYjkxYvpVN6mkok98NuM/view?usp=drive_link"
+            gdown.download(url, file_to_download, fuzzy=True)
+        
+        sampled_idx = decompress_pickle(file_to_download)
+    
+    for sn in tqdm(range(len(scenes)), desc='imc'):    
+        scene = scenes[sn]
+                        
+        work_path = os.path.join(out_dir, 'train', scene)
+        pose_file  = os.path.join(work_path, 'calibration.csv')
+        covis_file  = os.path.join(work_path, 'pair_covisibility.csv')
+
+        if (not os.path.isfile(pose_file)) or (not os.path.isfile(covis_file)):
+            continue
+        
+        im1_ = []
+        im2_ = []
+        covis_val = []
+        with open(covis_file, newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                pp = row['pair'].split('-')
+                im1_.append(os.path.join(scene, pp[0]))
+                im2_.append(os.path.join(scene, pp[1]))
+                covis_val.append(float(row['covisibility']))
+
+        covis_val = np.asarray(covis_val)
+        
+        if new_sample:
+            mask_val = (covis_val >= covisibility_range[0]) & (covis_val <= covisibility_range[1])
+
+            n = covis_val.shape[0]
+            
+            full_idx = np.arange(n)  
+            full_idx = full_idx[mask_val]
+
+            m = full_idx.shape[0]
+            
+            idx = rng.permutation(m)[:sample_size]
+            full_idx = np.sort(full_idx[idx])
+
+            sampled_idx[scene] = full_idx
+        else:
+            full_idx = sampled_idx[scene]
+                    
+        covis_val = covis_val[full_idx]
+        im1_ = [im1_[i] for i in full_idx]
+        im2_ = [im2_[i] for i in full_idx]
+        
+        img_path = os.path.join(bench_path, bench_imgs, 'imc_phototourism')
+        os.makedirs(os.path.join(img_path, scene), exist_ok=True)
+
+        im1_new = []        
+        im2_new = []
+
+        for im in im1_:
+            im_flat = os.path.split(im)
+            im_new = os.path.join(im_flat[0], '_'.join(im_flat))
+
+            im1_new.append(im_new)    
+            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1]) + '.jpg', os.path.join(img_path, im_new) + '.jpg')
+
+        for im in im2_:
+            im_flat = os.path.split(im)
+            im_new = os.path.join(im_flat[0], '_'.join(im_flat))
+
+            im2_new.append(im_new) 
+            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1]) + '.jpg', os.path.join(img_path, im_new) + '.jpg')
+
+        Kv = {}
+        Tv = {}
+        calib_file = os.path.join(work_path, 'calibration.csv')
+        with open(calib_file, newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                cam = os.path.join(scene, row['image_id'])
+                Kv[cam] = np.asarray([float(i) for i in row['camera_intrinsics'].split(' ')]).reshape((3, 3))
+                tmp = np.eye(4)
+                tmp[:3, :3] = np.asarray([float(i) for i in row['rotation_matrix'].split(' ')]).reshape((3, 3))
+                tmp[:3, 3] = np.asarray([float(i) for i in row['translation_vector'].split(' ')])
+                Tv[cam] = tmp
+
+        K1_ = []
+        K2_ = []
+        T_ = []
+        R_ = []
+        scales_ = []
+        for i in range(len(im1_)):
+            K1_.append(Kv[im1_[i]])
+            K2_.append(Kv[im2_[i]])
+            T1 = Tv[im1_[i]]
+            T2 = Tv[im2_[i]]
+            T12 = np.matmul(T2, np.linalg.inv(T1))
+            T_.append(T12[:3, 3])
+            R_.append(T12[:3, :3])
+            scales_.append(scale_dict[scene])
+            
+            
+        im1 = im1 + im1_new
+        im2 = im2 + im2_new
+        K1 = K1 + K1_
+        K2 = K2 + K2_
+        T = T + T_
+        R = R + R_
+        scene_scales = scene_scales + scales_
+        covisibility = covisibility + covis_val.tolist()  
+        
+    imc_data = {}
+    imc_data['im1'] = im1
+    imc_data['im2'] = im2
+    imc_data['K1'] = np.asarray(K1)
+    imc_data['K2'] = np.asarray(K2)
+    imc_data['T'] = np.asarray(T)
+    imc_data['R'] = np.asarray(R)
+    imc_data['scene_scales'] = np.asarray(scene_scales)
+    imc_data['covisibility'] = np.asarray(covisibility)
+    imc_data['im_pair_scale'] = np.zeros((len(im1), 2, 2))
+    
+    
+    pairs = [(im1, im2) for im1, im2 in zip(data['im1'], data['im2'])]
+    gt = {}
+    for i in range(len(data['im1'])):
+        if not data['im1'][i] in gt:
+            gt[data['im1'][i]] = {}
+        
+        gt[data['im1'][i]][data['im2'][i]] = {
+            'K1': data['K1'][i],
+            'K2': data['K2'][i],
+            'R': data['R'][i],
+            'T': data['T'][i],
+            'image_pair_scale': data['im_pair_scale'][i],
+            'scene_scale': data['scene_scale'][i],
+            'covisibility': data['covisibility'][i],            
+            }
+                
+    data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs, 'imc_phototourism')}
+    db.add(data_key, data)
+    db.close()
+        
+    return data['image_pairs'], data['gt'], data['image_path']    
+    
+
+def scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', db_file='scannet.hdf5', debug_pairs=None, force=False, **dummy_args):        
+    db = pickled_hdf5.pickled_hdf5(db_file, mode='a', label_prefix='pickled')    
+    data_key = '/scannet'                    
+
+    scannet_data, is_found = db.get(data_key)                    
+    if (not is_found) or force:
+        download_megadepth(bench_path)        
+        megadepth_data = megadepth_1500_list(os.path.join(bench_path, bench_gt, 'megadepth'))
+    
+        # for debugging, use only first debug_pairs image pairs
+        if not (debug_pairs is None):
+            for what in megadepth_data.keys():
+                megadepth_data[what] = [megadepth_data[what][i] for i in range(debug_pairs)]
+    
+        megadepth_data = setup_images_megadepth(megadepth_data, bench_path=bench_path, bench_imgs=bench_imgs)    
+        
+        db.add(data_key, megadepth_data)
+        db.close()
+        
+    return megadepth_data
 
 
 def go_iter(to_iter, msg='', active=True, params=None):
@@ -265,10 +772,10 @@ class image_pairs:
 #                 yield ii, jj
 
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False):    
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path=''):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs), msg='          processed pairs'):
+    for pair in go_iter(image_pairs(imgs, add_path=add_path), msg='          processed pairs'):
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
 
                 
@@ -2255,14 +2762,20 @@ if __name__ == '__main__':
 #           to_colmap_module(),
 #       ]     
         
-        pipeline = [
-            deep_joined_module(what='aliked'),
-            lightglue_module(what='aliked'),
-            magsac_module(),
-            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            to_colmap_module(),
-        ]         
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]         
                 
 #       imgs = '../data/ET_random_rotated'
-        imgs = '../data/ET'
-        run_pairs(pipeline, imgs)
+
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs)
+
+        imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+        imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
+
+        print('doh!')
