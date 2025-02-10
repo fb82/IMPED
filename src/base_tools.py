@@ -2844,6 +2844,7 @@ class pairwise_benchmark_module:
             'angular_thresholds': [5, 10, 20],
             'metric_thresholds': [0.5, 1, 2],
             'am_scaling' : 10, # current metric error requires that angular_thresholds[i] / metric_thresholds[i] = am_scaling
+            'save_to': None,
             }
                                 
         self.id_string, self.args = set_args('pairwise_benchmark', args, self.args)    
@@ -2866,6 +2867,9 @@ class pairwise_benchmark_module:
             fe = 'F'
         else:
             fe = 'E'
+            
+        if not (self.args['save_to'] is None):
+            f = open(self.args['save_to'], 'w')
 
         R_error = []
         t_error = []
@@ -2898,23 +2902,28 @@ class pairwise_benchmark_module:
     
                 auc.append([a, auc_R, auc_t, auc_max_Rt])
                 acc.append([a, acc_[0].item(), acc_[1].item(), acc_[2].item()])
-    
-            print("")                
-            print("             R        t        max(R,t)")
-            for i, a in enumerate(self.args['angular_thresholds']):       
-                print(f"AUC@{str(a).ljust(2,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")
-    
-            print("")
-            print("             R        t        max(R,t)")
-            for i, a in enumerate(self.args['angular_thresholds']):       
-                print(f"Acc@{str(a).ljust(2,' ')} ({fe}) : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")
-    
-    
+
             avg_inliers = inliers.type(torch.float).mean().to('cpu').numpy().item()
             avg_precision = (inliers / n).type(torch.float).mean().to('cpu').numpy().item()
-    
-            print("")
-            print(f"Average precision ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+
+            if self.args['save_to'] is None:
+                print("             R        t        max(R,t)")
+                for i, a in enumerate(self.args['angular_thresholds']):       
+                    print(f"AUC@{str(a).ljust(2,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")        
+                for i, a in enumerate(self.args['angular_thresholds']):       
+                    print(f"Acc@{str(a).ljust(2,' ')} ({fe}) : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")        
+                print(f"Prec ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+            else:
+                print("what; angular th; metric th; F/E; R; t; max(R,t); inliers; matches; prec", file=f)
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"AUC; {str(a)}; nan; {fe}; {auc[i][1]}; {auc[i][2]}; {auc[i][3]}; nan; nan; nan", file=f)    
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"Acc; {str(a)}; nan; {fe}; {acc[i][1]}; {acc[i][2]}; {acc[i][3]}; nan; nan; nan", file=f)    
+                print(f"Prec; nan; nan; {fe}; nan; nan; nan; {avg_inliers}; {n}; {avg_precision}", file=f)
         else:
             for a, m in zip(self.args['angular_thresholds'], self.args['metric_thresholds']):       
                 auc_R = error_auc(R_error, a).item()
@@ -2928,33 +2937,42 @@ class pairwise_benchmark_module:
 
                 auc.append([a, auc_R, auc_t, auc_max_Rt])
                 acc.append([a, acc_[0].item(), acc_[1].item(), acc_[2].item()])
-    
-            print("")                
-            print("                 R        t        max(R,t)")
-            for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
-                a = am[0]
-                m = am[1]
-                print(f"@AUC{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")
-    
-            print("")
-            print("             R        t        max(R,t)")
-            for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
-                a = am[0]
-                m = am[1]
-                print(f"@Acc{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")
-    
-    
+
             avg_inliers = inliers.type(torch.float).mean().to('cpu').numpy().item()
             avg_precision = (inliers / n).type(torch.float).mean().to('cpu').numpy().item()
-    
-            print("")
-            print(f"Average precision ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+
+            if self.args['save_to'] is None:    
+                print("                 R        t        max(R,t)")
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"@AUC{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")    
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"@Acc{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")    
+                print(f"Prec ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+            else:
+                print("what; angular th; metric th; F/E; R; t; max(R,t); inliers; matches; prec", file=f)
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"AUC; {str(a)}; {str(m)}; {fe}; {auc[i][1]}; {auc[i][2]}; {auc[i][3]}; nan; nan; nan", file=f)    
+                for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                    a = am[0]
+                    m = am[1]
+                    print(f"Acc; {str(a)}; {str(m)}; {fe}; {acc[i][1]}; {acc[i][2]}; {acc[i][3]}; nan; nan; nan", file=f)    
+                print(f"Prec; nan; nan; {fe}; nan; nan; nan; {avg_inliers}; {n}; {avg_precision}", file=f)
 
         self.aux_hdf5.close()
+
+        if not (self.args['save_to'] is None):
+            f.close()
 
 
     def get_id(self): 
         return self.id_string
+
 
     def run(self, **args):
         if self.args['use_fundamental']:
@@ -3314,34 +3332,34 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)
 
-#       imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+        imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
 #       imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
-        imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
-
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=True),
-#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=False),
-#       ]         
-
-#       imgs = [imgs_megadepth[i] for i in range(10)]
-#       run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)
+#       imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
 
         pipeline = [
             deep_joined_module(what='aliked'),
             lightglue_module(what='aliked'),
             magsac_module(),
             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=False),
-            pairwise_benchmark_module(id_more='megadepth_fundamental_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=True),
-#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=False),
-#           pairwise_benchmark_module(id_more='megadepth_essential_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=True),
+            pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=True),
+            pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=False),
         ]         
 
-        imgs = [imgs_imc[i] for i in range(10)]
-        run_pairs(pipeline, imgs, add_path=to_add_path_imc)
+        imgs = [imgs_megadepth[i] for i in range(10)]
+        run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)
+
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=False),
+#           pairwise_benchmark_module(id_more='megadepth_fundamental_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=True),
+#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=False),
+#           pairwise_benchmark_module(id_more='megadepth_essential_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=True),
+#       ]         
+
+#       imgs = [imgs_imc[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
            
         print('doh!')
