@@ -101,17 +101,18 @@ def scannet_1500_list(ppath='bench_data/gt_data/scannet'):
     return data
 
 
-def resize_megadepth(im, res_path='imgs/megadepth', bench_path='bench_data', force=False, max_sz=1200):
+def resize_megadepth(im, res_path='imgs', bench_path='bench_data', force=False, max_sz=1200):
     aux = im.split('/')
-    flat_img = os.path.join(aux[0], '_'.join((aux[0], aux[-1])))
+    flat_img = os.path.join('megadepth', aux[0], '_'.join((aux[0], aux[-1])))
+    flat_img = os.path.splitext(flat_img)[0] + '.png'
     
-    mod_im = os.path.join(bench_path, res_path, os.path.splitext(flat_img)[0] + '.png')
+    mod_im = os.path.join(bench_path, res_path, flat_img)
     ori_im= os.path.join(bench_path, 'megadepth_test_1500/Undistorted_SfM', im)
 
     if os.path.isfile(mod_im) and not force:
         # PIL does not load image, so it's faster to get only image size
-        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), mod_im 
-        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], mod_im
+        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), flat_img 
+        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], flat_img
 
     img = cv2.imread(ori_im)
     sz_ori = np.array(img.shape)[:2][::-1]
@@ -124,24 +125,25 @@ def resize_megadepth(im, res_path='imgs/megadepth', bench_path='bench_data', for
         sc = sz_ori/sz_new
         os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
         cv2.imwrite(mod_im, img)
-        return sc, mod_im
+        return sc, flat_img
     else:
         os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
         cv2.imwrite(mod_im, img)
-        return np.array([1., 1.]), mod_im
+        return np.array([1., 1.]), flat_img
 
 
-def resize_scannet(im, res_path='imgs/scannet', bench_path='bench_data', force=False):
+def resize_scannet(im, res_path='imgs', bench_path='bench_data', force=False):
     aux = im.split('/')
-    flat_img = os.path.join(aux[0], '_'.join((aux[0], aux[-1])))
+    flat_img = os.path.join('scannet', aux[0], '_'.join((aux[0], aux[-1])))
+    flat_img = os.path.splitext(flat_img)[0] + '.png'
 
-    mod_im = os.path.join(bench_path, res_path, os.path.splitext(flat_img)[0] + '.png')
+    mod_im = os.path.join(bench_path, res_path, flat_img)
     ori_im= os.path.join(bench_path, 'scannet_test_1500', im)
 
     if os.path.isfile(mod_im) and not force:
         # PIL does not load image, so it's faster to get only image size
-        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), mod_im 
-        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], mod_im
+        return np.asarray(Image.open(ori_im).size) / np.asarray(Image.open(mod_im).size), flat_img 
+        # return np.array(cv2.imread(ori_im).shape)[:2][::-1] / np.array(cv2.imread(mod_im).shape)[:2][::-1], flat_img
 
     img = cv2.imread(ori_im)
     sz_ori = np.array(img.shape)[:2][::-1]
@@ -151,7 +153,7 @@ def resize_scannet(im, res_path='imgs/scannet', bench_path='bench_data', force=F
     sc = sz_ori/sz_new
     os.makedirs(os.path.dirname(mod_im), exist_ok=True)                 
     cv2.imwrite(mod_im, img)
-    return sc, mod_im
+    return sc, flat_img
 
 
 def setup_images_megadepth(megadepth_data, data_file='bench_data/megadepth_scannet.pbz2', bench_path='bench_data', bench_imgs='imgs', max_sz=1200):
@@ -161,7 +163,7 @@ def setup_images_megadepth(megadepth_data, data_file='bench_data/megadepth_scann
     new_im1 = [None] * n
     new_im2 = [None] * n
     
-    res_path = os.path.join(bench_imgs, 'megadepth')
+    res_path = bench_imgs
     for i in tqdm(range(n), desc='megadepth image setup'):
         im_pair_scale[i, 0], new_im1[i] = resize_megadepth(megadepth_data['im1'][i], res_path, bench_path, max_sz=max_sz)
         im_pair_scale[i, 1], new_im2[i] = resize_megadepth(megadepth_data['im2'][i], res_path, bench_path, max_sz=max_sz)
@@ -180,7 +182,7 @@ def setup_images_scannet(scannet_data, data_file='bench_data/megadepth_scannet.p
     new_im1 = [None] * n
     new_im2 = [None] * n
     
-    res_path = os.path.join(bench_imgs, 'scannet')
+    res_path = bench_imgs
     for i in tqdm(range(n), desc='scannet image setup'):
         im_pair_scale[i, 0], new_im1[i] = resize_scannet(scannet_data['im1'][i], res_path, bench_path)
         im_pair_scale[i, 1], new_im2[i] = resize_scannet(scannet_data['im2'][i], res_path, bench_path)
@@ -249,7 +251,7 @@ def benchmark_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_dat
         return megadepth_scannet_setup(bench_path=bench_path, bench_imgs=bench_imgs, bench_gt=bench_gt, dataset=dataset, debug_pairs=debug_pairs, force=force)
     
     if dataset == 'imc':
-        return imc_phototourism_setup(bench_path=bench_path, bench_imgs=bench_imgs, dataset=dataset, sample_size=sample_size, seed=seed, covisibility_range=covisibility_range, new_sample=new_sample, force=force, scene_list=scene_list)
+        return imc_phototourism_setup(bench_path=bench_path, bench_imgs=bench_imgs, dataset=dataset, sample_size=sample_size, seed=seed, covisibility_range=covisibility_range, new_sample=new_sample, force=force)
         
 
 def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', dataset='megadepth', debug_pairs=None, force=False, max_sz=1200):        
@@ -295,7 +297,7 @@ def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt
                 'image_pair_scale': data['im_pair_scale'][i],
                 }
                 
-        data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs, dataset)}
+        data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs)}
         db.add(data_key, data)
         db.close()
         
@@ -331,7 +333,7 @@ def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='
     data, is_found = db.get(data_key)                    
     if is_found and (not force):
         db.close()
-        return data
+        return data['image_pairs'], data['gt'], data['image_path']   
 
     rng = np.random.default_rng(seed=seed)    
     os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)
@@ -374,7 +376,7 @@ def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='
         
         sampled_idx = decompress_pickle(file_to_download)
     
-    for sn in tqdm(range(len(scenes)), desc='imc'):    
+    for sn in tqdm(range(len(scenes)), desc='imc setup'):    
         scene = scenes[sn]
                         
         work_path = os.path.join(out_dir, 'train', scene)
@@ -426,17 +428,17 @@ def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='
 
         for im in im1_:
             im_flat = os.path.split(im)
-            im_new = os.path.join(im_flat[0], '_'.join(im_flat))
+            im_new = os.path.join('imc_phototourism', im_flat[0], '_'.join(im_flat)) + '.jpg'
 
             im1_new.append(im_new)    
-            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1]) + '.jpg', os.path.join(img_path, im_new) + '.jpg')
+            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1] + '.jpg'), os.path.join(bench_path, bench_imgs, im_new))
 
         for im in im2_:
             im_flat = os.path.split(im)
-            im_new = os.path.join(im_flat[0], '_'.join(im_flat))
+            im_new = os.path.join('imc_phototourism', im_flat[0], '_'.join(im_flat)) + '.jpg'
 
             im2_new.append(im_new) 
-            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1]) + '.jpg', os.path.join(img_path, im_new) + '.jpg')
+            shutil.copyfile(os.path.join(bench_path, 'imc_phototourism', 'train', scene, 'images', os.path.split(im)[1] + '.jpg'), os.path.join(bench_path, bench_imgs, im_new))
 
         Kv = {}
         Tv = {}
@@ -485,26 +487,26 @@ def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='
     imc_data['R'] = np.asarray(R)
     imc_data['scene_scales'] = np.asarray(scene_scales)
     imc_data['covisibility'] = np.asarray(covisibility)
-    imc_data['im_pair_scale'] = np.zeros((len(im1), 2, 2))
+    imc_data['im_pair_scale'] = np.full((len(im1), 2, 2), 1)
     
     
-    pairs = [(im1, im2) for im1, im2 in zip(data['im1'], data['im2'])]
+    pairs = [(im1, im2) for im1, im2 in zip(imc_data['im1'], imc_data['im2'])]
     gt = {}
-    for i in range(len(data['im1'])):
-        if not data['im1'][i] in gt:
-            gt[data['im1'][i]] = {}
+    for i in range(len(imc_data['im1'])):
+        if not imc_data['im1'][i] in gt:
+            gt[imc_data['im1'][i]] = {}
         
-        gt[data['im1'][i]][data['im2'][i]] = {
-            'K1': data['K1'][i],
-            'K2': data['K2'][i],
-            'R': data['R'][i],
-            'T': data['T'][i],
-            'image_pair_scale': data['im_pair_scale'][i],
-            'scene_scale': data['scene_scale'][i],
-            'covisibility': data['covisibility'][i],            
+        gt[imc_data['im1'][i]][imc_data['im2'][i]] = {
+            'K1': imc_data['K1'][i],
+            'K2': imc_data['K2'][i],
+            'R': imc_data['R'][i],
+            'T': imc_data['T'][i],
+            'image_pair_scale': imc_data['im_pair_scale'][i],
+            'scene_scale': imc_data['scene_scales'][i],
+            'covisibility': imc_data['covisibility'][i],            
             }
                 
-    data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs, 'imc_phototourism')}
+    data = {'image_pairs': pairs, 'gt': gt, 'image_path': os.path.join(bench_path, bench_imgs)}
     db.add(data_key, data)
     db.close()
         
@@ -641,6 +643,7 @@ class image_pairs:
             self.imgs = file_list
             self.add_path = add_path
             self.k = 0
+            self.check_img = check_img            
     
 
     def __iter__(self):
@@ -670,8 +673,8 @@ class image_pairs:
                 raise StopIteration
 
         else:
-            while self.k < len(self.file_list):            
-                i, j = self.file_list[self.k]
+            while self.k < len(self.imgs):            
+                i, j = self.imgs[self.k]
                 self.k = self.k + 1
 
                 ii = os.path.join(self.add_path, i)
@@ -772,11 +775,19 @@ class image_pairs:
 #                 yield ii, jj
 
 
+def finalize_pipeline(pipeline):
+    for pipe_module in pipeline:
+        if hasattr(pipe_module, 'finalize'):
+            pipe_module.finalize()
+    
+
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path=''):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
     for pair in go_iter(image_pairs(imgs, add_path=add_path), msg='          processed pairs'):
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+        
+    finalize_pipeline(pipeline)
 
                 
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
@@ -909,6 +920,10 @@ class dog_module:
         return self.id_string
 
 
+    def finalize(self):
+        return
+
+
     def run(self, **args):    
         
         im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
@@ -949,6 +964,10 @@ class keynet_module:
     def get_id(self):
         return self.id_string
         
+
+    def finalize(self):
+        return
+
     
     def run(self, **args):
         img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
@@ -980,6 +999,10 @@ class hz_module:
         
     def get_id(self): 
         return self.id_string
+
+
+    def finalize(self):
+        return
 
     
     def run(self, **args):  
@@ -1018,6 +1041,10 @@ class show_kpts_module:
                 
     def get_id(self): 
         return self.id_string
+
+    
+    def finalize(self):
+        return
 
     
     def run(self, **args): 
@@ -1101,6 +1128,10 @@ class show_matches_module:
                 
     def get_id(self): 
         return self.id_string
+
+    
+    def finalize(self):
+        return
 
     
     def run(self, **args):         
@@ -1221,6 +1252,11 @@ class patch_module:
 
     def get_id(self): 
         return self.id_string
+    
+    
+    def finalize(self):
+        return
+
 
     def run(self, **args):    
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
@@ -1263,8 +1299,13 @@ class deep_descriptor_module:
         self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.args['patch_params'])
         self.id_string = base_string + self.id_string
 
+
     def get_id(self): 
         return self.id_string
+
+
+    def finalize(self):
+        return
 
 
     def run(self, **args):    
@@ -1301,6 +1342,10 @@ class sift_module:
         return self.id_string
 
 
+    def finalize(self):
+        return
+
+
     def run(self, **args):
         im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)        
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])                
@@ -1333,6 +1378,10 @@ class smnn_module:
 
     def get_id(self): 
         return self.id_string
+    
+
+    def finalize(self):
+        return
 
 
     def run(self, **args):
@@ -1416,6 +1465,12 @@ class image_muxer_module:
 
     def get_id(self): 
         return self.id_string
+    
+    
+    def finalize(self):
+        finalize_pipeline(self.pipeline)
+        
+        return
 
 
     def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):        
@@ -1501,6 +1556,10 @@ class magsac_module:
     def get_id(self): 
         return self.id_string
 
+
+    def finalize(self):
+        return
+
         
     def run(self, **args):  
         pt1_ = args['kp'][0]
@@ -1578,7 +1637,11 @@ class poselib_module:
 
     def get_id(self): 
         return self.id_string
+
     
+    def finalize(self):
+        return
+
         
     def run(self, **args):  
         pt1_ = args['kp'][0]
@@ -2098,6 +2161,13 @@ class pipeline_muxer_module:
         return self.id_string
 
 
+    def finalize(self):        
+        for pipeline in self.pipeline:
+            finalize_pipeline(pipeline)
+
+        return
+
+
     def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):
         if pipe_data is None: pipe_data = {}
 
@@ -2127,7 +2197,11 @@ class deep_joined_module:
             'resize': 1024,           # this is default, set to None to disable
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
-                        
+        
+        if 'what' in args:
+            self.what = args['what']
+            del args['what']
+        
         self.id_string, self.args = set_args(self.what, args, self.args)        
 
         if self.what == 'disk':            
@@ -2146,6 +2220,10 @@ class deep_joined_module:
     def get_id(self): 
         return self.id_string
     
+    
+    def finalize(self):
+        return
+
 
     def run(self, **args):
         # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])         
@@ -2181,6 +2259,10 @@ class lightglue_module:
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
 
+        if 'what' in args:
+            self.what = args['what']
+            del args['what']
+
         self.id_string, self.args = set_args('lightglue', args, self.args)        
 
         if self.what == 'disk':            
@@ -2199,7 +2281,11 @@ class lightglue_module:
     def get_id(self): 
         return self.id_string
     
-
+    
+    def finalize(self):
+        return
+    
+    
     def run(self, **args):           
         # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])
         # dict_keys(['matches0', 'matches1', 'matching_scores0', 'matching_scores1', 'stop', 'matches', 'scores', 'prune0', 'prune1'])
@@ -2253,6 +2339,10 @@ class loftr_module:
 
     def get_id(self): 
         return self.id_string
+    
+    
+    def finalize(self):
+        return
 
 
     def run(self, **args):
@@ -2364,6 +2454,10 @@ class sampling_module:
     def get_id(self): 
         return self.id_string
     
+    
+    def finalize(self):
+        return
+
 
     def run(self, **args):           
         pipe_data = args
@@ -2515,7 +2609,7 @@ class to_colmap_module:
             self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.id_string)
                 
 
-    def __del__(self):
+    def finalize(self):
         self.db.commit()
         self.db.close()
         if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):
@@ -2647,6 +2741,451 @@ class to_colmap_module:
         return {}
 
 
+def relative_pose_error_angular(R_gt, t_gt, R, t, ignore_gt_t_thr=0.0):
+    # angle error between 2 vectors
+    # t_gt = T_0to1[:3, 3]
+    n = np.linalg.norm(t) * np.linalg.norm(t_gt)
+    t_err = np.rad2deg(np.arccos(np.clip(np.dot(t, t_gt) / n, -1.0, 1.0)))
+    t_err = np.minimum(t_err, 180 - t_err)  # handle E ambiguity
+    if np.linalg.norm(t_gt) < ignore_gt_t_thr:  # pure rotation is challenging
+        t_err = 0
+
+    # angle error between 2 rotation matrices
+    # R_gt = T_0to1[:3, :3]
+    cos = (np.trace(np.dot(R.T, R_gt)) - 1) / 2
+    cos = np.clip(cos, -1., 1.)  # handle numercial errors
+    R_err = np.rad2deg(np.abs(np.arccos(cos)))
+
+    return t_err, R_err
+
+
+def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, max_iters=10000):
+    if len(kpts0) < 5:
+        return None
+    # normalize keypoints
+    kpts0 = (kpts0 - K0[[0, 1], [2, 2]][None]) / K0[[0, 1], [0, 1]][None]
+    kpts1 = (kpts1 - K1[[0, 1], [2, 2]][None]) / K1[[0, 1], [0, 1]][None]
+
+    # normalize ransac threshold
+    ransac_thr = thresh / np.mean([K0[0, 0], K1[1, 1], K0[0, 0], K1[1, 1]])
+
+    # compute pose with cv2
+    E, mask = cv2.findEssentialMat(
+        kpts0, kpts1, np.eye(3), threshold=ransac_thr, prob=conf, method=cv2.RANSAC, maxIters=max_iters)
+    if E is None:
+        print("\nE is None while trying to recover pose.\n")
+        return None
+
+    # recover pose from E
+    best_num_inliers = 0
+    ret = None
+    for _E in np.split(E, len(E) / 3):
+        n, R, t, _ = cv2.recoverPose(
+            _E, kpts0, kpts1, np.eye(3), 1e9, mask=mask)
+        if n > best_num_inliers:
+            ret = (R, t[:, 0], mask.ravel() > 0)
+            best_num_inliers = n
+
+    return ret
+
+
+def relative_pose_error_metric(R_gt, t_gt, R, t, scale_cf=1.0, use_gt_norm=True, t_ambiguity=True):
+    t_gt = t_gt * scale_cf
+    t = t * scale_cf
+    if use_gt_norm: 
+        n_gt = np.linalg.norm(t_gt)
+        n = np.linalg.norm(t)
+        t = t / n * n_gt
+
+    if t_ambiguity:
+        t_err = np.minimum(np.linalg.norm(t_gt - t), np.linalg.norm(t_gt + t))
+    else:
+        t_err = np.linalg.norm(t_gt - t)
+
+    if not isinstance(R, list):
+        R = [R]
+        
+    R_err = []
+    for R_ in R:        
+        cos = (np.trace(np.dot(R_.T, R_gt)) - 1) / 2
+        cos = np.clip(cos, -1., 1.)  # handle numercial errors
+        R_err.append(np.rad2deg(np.abs(np.arccos(cos))))
+    
+    R_err = np.min(R_err)
+
+    return t_err, R_err
+
+
+def error_auc(errors, thr):
+    errors = [0] + sorted(errors)
+    recall = list(np.linspace(0, 1, len(errors)))
+
+    last_index = np.searchsorted(errors, thr)
+    y = recall[:last_index] + [recall[last_index-1]]
+    x = errors[:last_index] + [thr]
+    return np.trapezoid(y, x) / thr    
+
+
+class pairwise_benchmark_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.pass_through = True
+
+        self.args = { 
+            'id_more': '',
+            'gt': None,
+            'to_add_path': '',
+            'aux_hdf5': 'stats.hdf5',
+            'err_th_list': list(range(1,16)),
+            'essential_th': 0.5,
+            'use_fundamental': True,
+            'use_metric': False,
+            'angular_thresholds': [5, 10, 20],
+            'metric_thresholds': [0.5, 1, 2],
+            'am_scaling' : 10, # current metric error requires that angular_thresholds[i] / metric_thresholds[i] = am_scaling
+            }
+                                
+        self.id_string, self.args = set_args('pairwise_benchmark', args, self.args)    
+        
+        if self.args['gt'] is None:
+            warnings.warn("no gt data given!")
+
+        self.args['to_add_path_size'] = len(self.args['to_add_path'])    
+
+        if self.args['err_th_list'] is None:
+            self.args['err_th_list'] = list(range(1,16))            
+                        
+        self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.id_string)
+                
+
+    def finalize(self):
+        keys = self.aux_hdf5.get_keys()
+
+        if self.args['use_fundamental']:
+            fe = 'F'
+        else:
+            fe = 'E'
+
+        R_error = []
+        t_error = []
+        n = 0
+        inliers = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+        auc = []
+        acc = []
+
+        for key in keys:      
+            val, is_found = self.aux_hdf5.get(key)
+
+            R_error.append(val['R_error'])
+            t_error.append(val['t_error'])
+            n = n + val['n']
+            inliers = inliers + val['inliers']
+                        
+            aux = np.asarray([R_error, t_error]).T
+            if self.args['use_metric']:
+                aux[:, 1] = aux[:, 1] * self.args['am_scaling']
+            
+            max_Rt_err = np.max(aux, axis=1)        
+            tmp = np.concatenate((aux, np.expand_dims(max_Rt_err, axis=1)), axis=1)
+
+        if not self.args['use_metric']:    
+            for a in self.args['angular_thresholds']:       
+                auc_R = error_auc(R_error, a).item()
+                auc_t = error_auc(t_error, a).item()
+                auc_max_Rt = error_auc(max_Rt_err, a).item()
+                acc_ = np.sum(tmp < a, axis=0)/np.shape(tmp)[0]
+    
+                auc.append([a, auc_R, auc_t, auc_max_Rt])
+                acc.append([a, acc_[0].item(), acc_[1].item(), acc_[2].item()])
+    
+            print("")                
+            print("             R        t        max(R,t)")
+            for i, a in enumerate(self.args['angular_thresholds']):       
+                print(f"AUC@{str(a).ljust(2,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")
+    
+            print("")
+            print("             R        t        max(R,t)")
+            for i, a in enumerate(self.args['angular_thresholds']):       
+                print(f"Acc@{str(a).ljust(2,' ')} ({fe}) : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")
+    
+    
+            avg_inliers = inliers.type(torch.float).mean().to('cpu').numpy().item()
+            avg_precision = (inliers / n).type(torch.float).mean().to('cpu').numpy().item()
+    
+            print("")
+            print(f"Average precision ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+        else:
+            for a, m in zip(self.args['angular_thresholds'], self.args['metric_thresholds']):       
+                auc_R = error_auc(R_error, a).item()
+                auc_t = error_auc(t_error, m).item()
+                auc_max_Rt = error_auc(max_Rt_err, a).item()
+                                
+                aa = (aux[:, 0] < a)[:, np.newaxis]
+                mm = (aux[:, 1] < m)[:, np.newaxis]
+                tmp = np.concatenate((aa, mm, aa & mm), axis=1)
+                acc_ = np.sum(tmp, axis=0) / np.shape(tmp)[0]
+
+                auc.append([a, auc_R, auc_t, auc_max_Rt])
+                acc.append([a, acc_[0].item(), acc_[1].item(), acc_[2].item()])
+    
+            print("")                
+            print("                 R        t        max(R,t)")
+            for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                a = am[0]
+                m = am[1]
+                print(f"@AUC{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")
+    
+            print("")
+            print("             R        t        max(R,t)")
+            for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
+                a = am[0]
+                m = am[1]
+                print(f"@Acc{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")
+    
+    
+            avg_inliers = inliers.type(torch.float).mean().to('cpu').numpy().item()
+            avg_precision = (inliers / n).type(torch.float).mean().to('cpu').numpy().item()
+    
+            print("")
+            print(f"Average precision ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+
+        self.aux_hdf5.close()
+
+
+    def get_id(self): 
+        return self.id_string
+
+    def run(self, **args):
+        if self.args['use_fundamental']:
+            return self.run_fundamental(**args)
+        else:
+            return self.run_essential(**args)
+            
+    
+    def run_fundamental(self, **args):
+        err_th_list = self.args['err_th_list']
+        
+        img1 = args['img'][0]
+        img2 = args['img'][1]
+        
+        if self.args['use_metric']:
+            key_metric = '_metric'
+        else:
+            key_metric = ''
+        
+        data_key = '/' + os.path.split(img1)[-1] + '/' + os.path.split(img2)[-1] + '/fundamental' + key_metric
+        
+        out_data, is_found = self.aux_hdf5.get(data_key)
+        if is_found:
+            return {}
+
+        cannot_do = False
+
+        img1_key = img1[self.args['to_add_path_size'] + 1:]
+        img2_key = img2[self.args['to_add_path_size'] + 1:]
+        
+        if cannot_do or (not (img1_key in self.args['gt'])):
+            cannot_do = True
+                        
+        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+            cannot_do = None
+        
+        if not cannot_do:
+            gt = self.args['gt'][img1_key][img2_key]
+        else:
+            gt = None
+
+        if not (gt is None):
+            K1 = gt['K1']
+            K2 = gt['K2']    
+            R_gt = gt['R']
+            t_gt = gt['T']
+            
+            if self.args['use_metric']:
+                scene_scale = gt['scene_scale']
+    
+            mm = args['m_idx'][args['m_mask']]
+        
+            pts1 = args['kp'][0][mm[:, 0]]
+            pts2 = args['kp'][1][mm[:, 1]]
+                       
+            if torch.is_tensor(pts1):
+                pts1 = pts1.detach().cpu().numpy()
+                pts2 = pts2.detach().cpu().numpy()
+        
+            scales = gt['image_pair_scale']
+        
+            pts1 = pts1 * scales[0]
+            pts2 = pts2 * scales[1]
+        
+            nn = pts1.shape[0]
+
+            inl_sum = torch.zeros(len(err_th_list), device=device, dtype=torch.int)
+        
+            if nn < 8:
+                Rt_ = None
+            else:
+                if 'F' in args:
+                    s1 = torch.eye(3, device=device)
+                    s2 = torch.eye(3, device=device)
+
+                    s1[0, 0] = 1 / scales[0, 0]
+                    s1[1, 1] = 1 / scales[0, 1]
+
+                    s2[0, 0] = 1 / scales[1, 0]
+                    s2[1, 1] = 1 / scales[1, 1]
+
+                    F = s2 @ args['F'].type(torch.float) @ s1
+                    F = F / F[2, 2]
+                    F = F.to('cpu').numpy()
+                else:
+                    F = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
+
+                if F is None:
+                    Rt_ = None
+                else:
+                    E = K2.T @ F @ K1
+                    Rt_ = cv2.decomposeEssentialMat(E)
+        
+            if nn > 0:
+                F_gt = torch.tensor(K2.T, device=device, dtype=torch.float64).inverse() @ \
+                       torch.tensor([[0, -t_gt[2], t_gt[1]],
+                                    [t_gt[2], 0, -t_gt[0]],
+                                    [-t_gt[1], t_gt[0], 0]], device=device) @ \
+                       torch.tensor(R_gt, device=device) @ \
+                       torch.tensor(K1, device=device, dtype=torch.float64).inverse()
+                F_gt = F_gt / F_gt.sum()
+        
+                pt1_ = torch.vstack((torch.tensor(pts1.T, device=device), torch.ones((1, nn), device=device)))
+                pt2_ = torch.vstack((torch.tensor(pts2.T, device=device), torch.ones((1, nn), device=device)))
+        
+                l1_ = F_gt @ pt1_
+                d1 = pt2_.permute(1,0).unsqueeze(-2).bmm(l1_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l1_[:2]**2).sum(0).sqrt()
+        
+                l2_ = F_gt.T @ pt2_
+                d2 = pt1_.permute(1,0).unsqueeze(-2).bmm(l2_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l2_[:2]**2).sum(0).sqrt()
+        
+                epi_max_err = torch.maximum(d1, d2)
+                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=device).unsqueeze(0)).sum(dim=0).type(torch.int)        
+            
+            if Rt_ is None:
+                R_error = np.inf
+                t_error = np.inf
+            else:
+                R_a, t_a, = Rt_[0], Rt_[2].squeeze()
+                R_b, t_b, = Rt_[1], Rt_[2].squeeze()
+
+                if not self.args['use_metric']:
+                    t_err_a, R_err_a = relative_pose_error_angular(R_gt, t_gt, R_a, t_a)
+                    t_err_b, R_err_b = relative_pose_error_angular(R_gt, t_gt, R_b, t_b)
+            
+                    if max(R_err_a, t_err_a) < max(R_err_b, t_err_b):
+                        R_err, t_err = R_err_a, t_err_b
+                    else:
+                        R_err, t_err = R_err_b, t_err_b
+                else:
+                    t_err, R_err = relative_pose_error_metric(R_gt, t_gt, [Rt_[0], Rt_[1]], Rt_[2].squeeze(), scale_cf=scene_scale)
+        
+                R_error = R_err
+                t_error = t_err
+                
+            out_data = {'R_error': R_error.item(), 't_error': t_error.item(), 'n': nn, 'inliers': inl_sum}
+        else:
+            warnings.warn("image pair not in gt data!")            
+            out_data = None
+
+        self.aux_hdf5.add(data_key, out_data)
+        return {}
+
+
+    def run_essential(self, **args):        
+        img1 = args['img'][0]
+        img2 = args['img'][1]
+        
+        if self.args['use_metric']:
+            key_metric = '_metric'
+        else:
+            key_metric = ''
+                
+        data_key = '/' + os.path.split(img1)[-1] + '/' + os.path.split(img2)[-1] + '/essential' + key_metric
+        
+        out_data, is_found = self.aux_hdf5.get(data_key)
+        if is_found:
+            return {}
+
+        cannot_do = False
+
+        img1_key = img1[self.args['to_add_path_size'] + 1:]
+        img2_key = img2[self.args['to_add_path_size'] + 1:]
+        
+        if cannot_do or (not (img1_key in self.args['gt'])):
+            cannot_do = True
+                        
+        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+            cannot_do = None
+        
+        if not cannot_do:
+            gt = self.args['gt'][img1_key][img2_key]
+        else:
+            gt = None
+
+        if not (gt is None):
+            K1 = gt['K1']
+            K2 = gt['K2']    
+            R_gt = gt['R']
+            t_gt = gt['T']
+
+            if self.args['use_metric']:
+                scene_scale = gt['scene_scale']
+    
+            mm = args['m_idx'][args['m_mask']]
+        
+            pts1 = args['kp'][0][mm[:, 0]]
+            pts2 = args['kp'][1][mm[:, 1]]
+                       
+            if torch.is_tensor(pts1):
+                pts1 = pts1.detach().cpu().numpy()
+                pts2 = pts2.detach().cpu().numpy()
+        
+            scales = gt['image_pair_scale']
+        
+            pts1 = pts1 * scales[0]
+            pts2 = pts2 * scales[1]
+        
+            nn = pts1.shape[0]
+
+            inl_sum = 0
+        
+            if nn < 5:
+                Rt = None
+            else:
+                Rt = estimate_pose(pts1, pts2, K1, K2, self.args['essential_th'])                                                        
+
+            if Rt is None:
+                R_error = np.inf
+                t_error = np.inf                          
+            else:
+                R, t, inliers = Rt
+
+                if not self.args['use_metric']:
+                    t_err, R_err = relative_pose_error_angular(R_gt, t_gt, R, t)
+                else:
+                    t_err, R_err = relative_pose_error_metric(R_gt, t_gt, R, t, scale_cf=scene_scale)
+        
+                R_error = R_err
+                t_error = t_err
+                inl_sum = inliers.sum()
+                
+            out_data = {'R_error': R_error.item(), 't_error': t_error.item(), 'n': nn, 'inliers': inl_sum}
+        else:
+            warnings.warn("image pair not in gt data!")            
+            out_data = None
+
+        self.aux_hdf5.add(data_key, out_data)
+        return {}
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():     
 #       pipeline = [
@@ -2775,7 +3314,34 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)
 
-        imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
-        imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
+#       imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+#       imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
+        imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
 
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=True),
+#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=False),
+#       ]         
+
+#       imgs = [imgs_megadepth[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)
+
+        pipeline = [
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
+            magsac_module(),
+            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=False),
+            pairwise_benchmark_module(id_more='megadepth_fundamental_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=True, use_metric=True),
+#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=False),
+#           pairwise_benchmark_module(id_more='megadepth_essential_metric', gt=gt_imc, to_add_path=to_add_path_imc, use_fundamental=False, use_metric=True),
+        ]         
+
+        imgs = [imgs_imc[i] for i in range(10)]
+        run_pairs(pipeline, imgs, add_path=to_add_path_imc)
+           
         print('doh!')
