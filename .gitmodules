@@ -4,12 +4,6 @@
 [submodule "src/hz"]
 	path = src/hz
 	url = https://github.com/fb82/HarrisZ.git
-[submodule "src/roma"]
-	path = src/roma
-	url = https://github.com/Parskatt/RoMa.git
-[submodule "src/dkm"]
-	path = src/dkm
-	url = https://github.com/Parskatt/DKM.git
 [submodule "src/quadtreeattention"]
 	path = src/quadtreeattention
 	url = https://github.com/Tangshitao/QuadTreeAttention.git
