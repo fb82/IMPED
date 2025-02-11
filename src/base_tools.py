@@ -21,6 +21,9 @@ import csv
 import shutil
 import bz2
 import _pickle as cPickle
+import argparse
+
+from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
 import colmap_db.database as coldb
 import matplotlib.pyplot as plt
@@ -31,6 +34,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
+enable_quadtree = False
 
 
 def megadepth_1500_list(ppath='bench_data/gt_data/megadepth'):
@@ -193,6 +197,68 @@ def setup_images_scannet(scannet_data, data_file='bench_data/megadepth_scannet.p
     
     return scannet_data
 
+
+def download_aspanformer(weight_path='../weights/aspanformer'):    
+    file = 'weights_aspanformer.tar'    
+    url = 'https://drive.google.com/file/d/1eavM9dTkw9nbc-JqlVVfGPU5UvTTfc6k/view?usp=share_link'
+
+    os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
+
+    file_to_download = os.path.join(weight_path, 'download', file)    
+    if not os.path.isfile(file_to_download):    
+        gdown.download(url, file_to_download, fuzzy=True)
+        
+        with tarfile.open(file_to_download, "r") as tar_ref:
+            tar_ref.extractall(weight_path)
+            
+        shutil.move(os.path.join(weight_path, 'weights', 'indoor.ckpt'), os.path.join(weight_path, 'indoor.ckpt'))
+        shutil.move(os.path.join(weight_path, 'weights', 'outdoor.ckpt'), os.path.join(weight_path, 'outdoor.ckpt'))
+        os.rmdir(os.path.join(weight_path, 'weights'))
+        
+
+def download_quadtreeattention(weight_path='../weights/quadtreeattention'):    
+    file_list = [
+        'indoor.ckpt',
+        'outdoor.ckpt',
+    ]
+    
+    url_list = [
+        'https://drive.google.com/file/d/1pSK_8GP1WkqKL5m7J4aHvhFixdLP6Yfa/view?usp=sharing',
+        'https://drive.google.com/file/d/1UOYdzbrXHU9kvVy9tscCCO7BB3G4rWK4/view?usp=sharing',
+    ]
+
+    os.makedirs(weight_path, exist_ok=True)   
+
+    for file, url in zip(file_list, url_list):
+
+        file_to_download = os.path.join(weight_path, file)    
+        if not os.path.isfile(file_to_download):    
+            gdown.download(url, file_to_download, fuzzy=True)
+
+
+def download_matchformer(weight_path='../weights/matchformer'):    
+    file_list = [
+        'indoor-large-SEA.ckpt',
+        'indoor-lite-LA.ckpt',
+        'outdoor-large-LA.ckpt',
+        'outdoor-lite-SEA.ckpt',
+    ]
+    
+    url_list = [
+        'https://drive.google.com/file/d/1EjeSvU3ARZg5mn2PlqNDWMu9iwS7Zf_m/view?usp=drive_link',
+        'https://drive.google.com/file/d/11ClOQ_VrlsT7PxK6jQr5AW1Fd0YMbB3R/view?usp=drive_link',
+        'https://drive.google.com/file/d/1Ii-z3dwNwGaxoeFVSE44DqHdMhubYbQf/view?usp=drive_link',
+        'https://drive.google.com/file/d/1etaU9mM8bGT2AKT56ph6iqUdpV1daFBz/view?usp=drive_link',
+    ]
+
+    os.makedirs(weight_path, exist_ok=True)   
+
+    for file, url in zip(file_list, url_list):
+
+        file_to_download = os.path.join(weight_path, file)    
+        if not os.path.isfile(file_to_download):    
+            gdown.download(url, file_to_download, fuzzy=True)
+    
 
 def download_megadepth(bench_path ='bench_data'):   
     os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)   
@@ -2431,6 +2497,7 @@ class loftr_module:
 
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
+
 class sampling_module:
     def __init__(self, **args):
         self.single_image = False
@@ -3204,6 +3271,731 @@ class pairwise_benchmark_module:
         return {}
 
 
+class roma_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False   
+        self.pass_through = False
+                        
+        self.args = {
+            'id_more': '',
+            'outdoor': True,
+            'use_tiny': False,
+            'coarse_resolution': 280,
+            'upsample_resolution': 432,
+            'max_keypoints': 2000,
+            'patch_radius': 16,
+            }
+
+        self.id_string, self.args = set_args('roma', args, self.args)        
+
+        roma_args = {}
+        if not (self.args['coarse_resolution'] is None):
+            roma_args['coarse_res'] = self.args['coarse_resolution']
+        if not (self.args['upsample_resolution'] is None):
+            roma_args['upsample_res'] = self.args['upsample_resolution']
+
+        if self.args['use_tiny']:
+            self.roma_model = tiny_roma_v1_outdoor(device=device)            
+        else:
+            if self.args['outdoor'] == True:
+                self.roma_model = roma_outdoor(device=device, **roma_args)
+            else:
+                self.roma_model = roma_indoor(device=device, **roma_args)
+
+
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        W_A, H_A = Image.open(args['img'][0]).size
+        W_B, H_B = Image.open(args['img'][1]).size
+    
+        # Match
+        if self.args['use_tiny']:
+            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1])
+        else:
+            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1], device=device)
+        # Sample matches for estimation
+        
+        sampling_args = {}
+        if not (self.args['max_keypoints'] is None):
+            sampling_args['num'] = self.args['max_keypoints']
+        
+        matches, certainty = self.roma_model.sample(warp, certainty, **sampling_args)
+        kpts1, kpts2 = self.roma_model.to_pixel_coordinates(matches, H_A, W_A, H_B, W_B)    
+
+        kps1 = kpts1.detach().to(device)
+        kps2 = kpts2.detach().to(device)
+        
+        kp = [kps1, kps2]
+        kH = [
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            ]
+        
+        kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+        kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[0][:, 2, 2] = 1
+
+        kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+        kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[1][:, 2, 2] = 1
+
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx[:, 0] = torch.arange(kp[0].shape[0])
+        m_idx[:, 1] = torch.arange(kp[0].shape[0])
+
+        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+
+        m_val = certainty.detach().to(device)        
+
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+
+
+os.chdir('r2d2')
+from tools import common as r2d2_common
+from tools.dataloader import norm_RGB as r2d2_norm_RGB
+import nets.patchnet as r2d2_patchnet 
+os.chdir('..')
+
+
+class r2d2_module:
+    def load_network(model_fn): 
+        checkpoint = torch.load(model_fn, weights_only=False)
+        # print("\n>> Creating net = " + checkpoint['net']) 
+        net = eval('r2d2_patchnet.' + checkpoint['net'])
+        # nb_of_weights = r2d2_common.model_size(net)
+        # print(f" ( Model size: {nb_of_weights/1000:.0f}K parameters )")
+    
+        # initialization
+        weights = checkpoint['state_dict']
+        net.load_state_dict({k.replace('module.',''):v for k,v in weights.items()})
+        return net.eval()
+    
+    
+    class NonMaxSuppression(torch.nn.Module):
+        def __init__(self, rel_thr=0.7, rep_thr=0.7):
+            r2d2_patchnet.nn.Module.__init__(self)
+            self.max_filter = torch.nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+            self.rel_thr = rel_thr
+            self.rep_thr = rep_thr
+
+        
+        def forward(self, reliability, repeatability, **kw):
+            assert len(reliability) == len(repeatability) == 1
+            reliability, repeatability = reliability[0], repeatability[0]
+    
+            # local maxima
+            maxima = (repeatability == self.max_filter(repeatability))
+    
+            # remove low peaks
+            maxima *= (repeatability >= self.rep_thr)
+            maxima *= (reliability   >= self.rel_thr)
+    
+            return maxima.nonzero().t()[2:4]
+    
+    
+    def extract_multiscale( net, img, detector, scale_f=2**0.25, 
+                            min_scale=0.0, max_scale=1, 
+                            min_size=256, max_size=1024, 
+                            verbose=False):
+        old_bm = torch.backends.cudnn.benchmark 
+        torch.backends.cudnn.benchmark = False # speedup
+        
+        # extract keypoints at multiple scales
+        B, three, H, W = img.shape
+        assert B == 1 and three == 3, "should be a batch with a single RGB image"
+        
+        assert max_scale <= 1
+        s = 1.0 # current scale factor
+        
+        X,Y,S,C,Q,D = [],[],[],[],[],[]
+        while  s+0.001 >= max(min_scale, min_size / max(H,W)):
+            if s-0.001 <= min(max_scale, max_size / max(H,W)):
+                nh, nw = img.shape[2:]
+                if verbose: print(f"extracting at scale x{s:.02f} = {nw:4d}x{nh:3d}")
+                # extract descriptors
+                with torch.no_grad():
+                    res = net(imgs=[img])
+                    
+                # get output and reliability map
+                descriptors = res['descriptors'][0]
+                reliability = res['reliability'][0]
+                repeatability = res['repeatability'][0]
+    
+                # normalize the reliability for nms
+                # extract maxima and descs
+                y,x = detector(**res) # nms
+                c = reliability[0,0,y,x]
+                q = repeatability[0,0,y,x]
+                d = descriptors[0,:,y,x].t()
+                n = d.shape[0]
+    
+                # accumulate multiple scales
+                X.append(x.float() * W/nw)
+                Y.append(y.float() * H/nh)
+                S.append((32/s) * torch.ones(n, dtype=torch.float32, device=d.device))
+                C.append(c)
+                Q.append(q)
+                D.append(d)
+            s /= scale_f
+    
+            # down-scale the image for next iteration
+            nh, nw = round(H*s), round(W*s)
+            img = r2d2_patchnet.F.interpolate(img, (nh,nw), mode='bilinear', align_corners=False)
+    
+        # restore value
+        torch.backends.cudnn.benchmark = old_bm
+    
+        Y = torch.cat(Y)
+        X = torch.cat(X)
+        S = torch.cat(S) # scale
+        scores = torch.cat(C) * torch.cat(Q) # scores = reliability * repeatability
+        XYS = torch.stack([X,Y,S], dim=-1)
+        D = torch.cat(D)
+        return XYS, D, scores
+
+
+    def __init__(self, **args):
+        self.single_image = True
+        self.pipeliner = False
+        self.pass_through = False
+                        
+        self.args = { 
+            'id_more': '',
+            'patch_radius': 16,            
+            'top-k': 5000,
+            'scale_f': 2**0.25,
+            'min_size': 256,
+            'max_size': 1024,
+            'min_scale': 0,
+            'max_scale': 1,
+            'reliability-thr': 0.7,
+            'repeatability-thr': 0.7,
+            'model': 'r2d2/models/r2d2_WAF_N16.pt',
+            }
+                
+        self.id_string, self.args = set_args('r2d2', args, self.args)        
+
+        if device.type == 'cuda':
+            cuda = 0
+        else:
+            cuda = -1
+
+        self.iscuda = r2d2_common.torch_set_gpu(cuda)
+    
+        # load the network...
+        self.net = r2d2_module.load_network(self.args['model'])
+        if self.iscuda: self.net = self.net.cuda()
+    
+        # create the non-maxima detector
+        self.detector = r2d2_module.NonMaxSuppression(
+            rel_thr = self.args['reliability-thr'], 
+            rep_thr = self.args['repeatability-thr'])
+
+
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        img = Image.open(args['img'][args['idx']]).convert('RGB')
+        W, H = img.size
+        img = r2d2_norm_RGB(img)[None] 
+        if self.iscuda: img = img.cuda()
+        
+        # extract keypoints/descriptors for a single image
+        xys, desc, scores = r2d2_module.extract_multiscale(self.net, img, self.detector,
+            scale_f   = self.args['scale_f'], 
+            min_scale = self.args['min_scale'], 
+            max_scale = self.args['max_scale'],
+            min_size  = self.args['min_size'], 
+            max_size  = self.args['max_size'], 
+            verbose = False)
+
+        xys = xys.cpu().numpy()
+        desc = desc.cpu().numpy()
+        scores = scores.cpu().numpy()
+        idxs = scores.argsort()[-self.args['top-k'] or None:]
+        
+        keypoints = torch.tensor(xys[idxs], device=device) 
+        descriptors = torch.tensor(desc[idxs], device=device) 
+        scores = torch.tensor(scores[idxs], device=device)
+
+        kp = keypoints[:, :2]       
+        desc = descriptors
+        scales = keypoints[:, 2] / 2
+
+        kH = torch.zeros((kp.shape[0], 3, 3), device=device)        
+        kH[:, [0, 1], 2] = -kp / self.args['patch_radius']
+        kH[:, 0, 0] = 1 / scales
+        kH[:, 1, 1] = 1 / scales
+        kH[:, 2, 2] = 1
+
+        kr = scores        
+        
+        # todo: add feats['keypoint_scores'] as kr        
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
+
+
+if enable_quadtree:
+    os.chdir('quadtreeattention/FeatureMatching')
+    from src.config.default import qta_get_cfg_defaults
+    from src.utils.misc import qta_lower_config
+    from src.loftr import qta_LoFTR
+    os.chdir('../..')
+    
+    class quadtreeattention_module:
+        def __init__(self, **args):
+            self.single_image = False
+            self.pipeliner = False   
+            self.pass_through = False
+                            
+            self.args = {
+                'id_more': '',
+                'outdoor': True,
+                'resize': None,                          # self.resize = [800, 600]
+                'patch_radius': 16,
+                }
+    
+            self.id_string, self.args = set_args('quadtreeattention', args, self.args)        
+    
+            download_quadtreeattention()
+    
+            if self.args['outdoor'] == True:
+                self.weights = '../weights/quadtreeattention/outdoor.ckpt'
+                self.config_path = 'quadtreeattention/FeatureMatching/configs/loftr/outdoor/loftr_ds_quadtree.py'
+            else:
+                self.weights = '../weights/quadtreeattention/indoor.ckpt'
+                self.config_path = 'quadtreeattention/FeatureMatching/configs/loftr/indoor/loftr_ds_quadtree.py'
+    
+            parser = argparse.ArgumentParser(description='QuadTreeAttention online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+            parser.add_argument('--weight', type=str, default=self.weights, help="Path to the checkpoint.")
+            parser.add_argument('--config_path', type=str, default=self.config_path, help="Path to the config.")
+    
+            opt = parser.parse_args()
+        
+            # init default-cfg and merge it with the main- and data-cfg
+            config = qta_get_cfg_defaults()
+            config.merge_from_file(opt.config_path)
+            _config = qta_lower_config(config)
+        
+            # Matcher: LoFTR
+            self.matcher = qta_LoFTR(config=_config['loftr'])
+            state_dict = torch.load(opt.weight, map_location='cpu', weights_only=False)['state_dict']
+            self.matcher.load_state_dict(state_dict, strict=True)
+
+            self.matcher.eval()
+
+            if device.type == 'cuda':        
+                self.matcher.to('cuda')
+    
+        def get_id(self): 
+            return self.id_string
+        
+        
+        def finalize(self):
+            return
+    
+    
+        def run(self, **args):
+            image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
+            image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
+    
+            hw1 = image0.shape[1:]
+            hw2 = image1.shape[1:]
+    
+            if not (self.args['resize'] is None):        
+                ms = min(self.resize)
+                Ms = max(self.resize)
+    
+                if hw1[0] > hw1[1]:
+                    sz = [Ms, ms]                
+                    ratio_ori = float(hw1[0]) / hw1[1]                 
+                else:
+                    sz = [ms, Ms]
+                    ratio_ori = float(hw1[1]) / hw1[0]
+    
+                ratio_new = float(Ms) / ms
+                if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                    sz = [ms, ms]
+    
+                K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+    
+                if hw2[0] > hw2[1]:
+                    sz = [Ms, ms]                
+                    ratio_ori = float(hw2[0]) / hw2[1]                 
+                else:
+                    sz = [ms, Ms]
+                    ratio_ori = float(hw2[1]) / hw2[0]
+    
+                ratio_new = float(Ms) / ms
+                if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                    sz = [ms, ms]
+    
+                K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+                        
+            hw1_ = image0.shape[1:]
+            hw2_ = image1.shape[1:]
+    
+            batch = {
+                "image0": image0.unsqueeze(0),    # LofTR works on grayscale images
+                "image1": image1.unsqueeze(0),
+            }
+    
+            self.matcher(batch)
+            kps1 = batch['mkpts0_f'].detach().to(device).squeeze()
+            kps2 = batch['mkpts1_f'].detach().to(device).squeeze()
+            m_val = batch['mconf'].detach().to(device)
+            m_mask = m_val > 0
+    
+            kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
+            kps1[:, 1] = kps1[:, 1] * (hw1[0] / float(hw1_[0]))
+        
+            kps2[:, 0] = kps2[:, 0] * (hw2[1] / float(hw2_[1]))
+            kps2[:, 1] = kps2[:, 1] * (hw2[0] / float(hw2_[0]))
+            
+            kp = [kps1, kps2]
+            kH = [
+                torch.zeros((kp[0].shape[0], 3, 3), device=device),
+                torch.zeros((kp[0].shape[0], 3, 3), device=device),
+                ]
+            
+            kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+            kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+            kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+            kH[0][:, 2, 2] = 1
+    
+            kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+            kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+            kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+            kH[1][:, 2, 2] = 1
+    
+            kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+    
+            m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+            m_idx[:, 0] = torch.arange(kp[0].shape[0])
+            m_idx[:, 1] = torch.arange(kp[0].shape[0])
+    
+            return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+
+
+os.chdir('matchformer')
+from model.matchformer import Matchformer
+from model.utils.misc import lower_config as mf_lower_config
+from config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
+os.chdir('..')
+  
+class matchformer_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False   
+        self.pass_through = False
+                        
+        self.args = {
+            'id_more': '',
+            'model': 'outdoor-large-LA',
+            'resize': None,                          # self.resize = [800, 600]
+            'patch_radius': 16,
+            }
+
+        self.id_string, self.args = set_args('matchformer', args, self.args)        
+
+        download_matchformer()
+        cfgs = os.listdir('../data/matchfomer_cfgs')
+        for fname in cfgs:
+            dst = os.path.join('matchformer/config', fname)
+            src = os.path.join('../data/matchfomer_cfgs', fname)
+            if not os.path.isfile(dst):
+                shutil.copy(src, dst)
+
+        self.weights = os.path.join('../weights/matchformer/', self.args['model'] + '.ckpt')
+        self.config_path = os.path.join('matchformer/config', self.args['model'] + '.py')
+        self.base_cfg = 'matchformer/config/defaultmf.py'
+
+
+        parser = argparse.ArgumentParser(description='MatchFormer online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser.add_argument('--weight', type=str, default=self.weights, help="Path to the checkpoint.")
+        parser.add_argument('--config_path', type=str, default=self.base_cfg, help="Path to the config.")
+        parser.add_argument('--config_path_other', type=str, default=self.config_path, help="Path to the config.")
+
+        opt = parser.parse_args()
+    
+        # init default-cfg and merge it with the main- and data-cfg
+        config = mf_get_cfg_defaults()
+        config.merge_from_file(opt.config_path_other)
+        _config = mf_lower_config(config)
+    
+        # Matcher: LoFTR
+        self.matcher = Matchformer(config=_config['matchformer'])        
+        self.matcher.load_state_dict({k.replace('matcher.',''):v  for k,v in torch.load(opt.weight, map_location='cpu', weights_only=False).items()})
+
+        self.matcher.eval()
+        
+        if device.type == 'cuda':        
+            self.matcher.to('cuda')
+
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
+        image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
+
+        hw1 = image0.shape[1:]
+        hw2 = image1.shape[1:]
+
+        if not (self.args['resize'] is None):        
+            ms = min(self.resize)
+            Ms = max(self.resize)
+
+            if hw1[0] > hw1[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw1[0]) / hw1[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw1[1]) / hw1[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+
+            if hw2[0] > hw2[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw2[0]) / hw2[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw2[1]) / hw2[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+                    
+        hw1_ = image0.shape[1:]
+        hw2_ = image1.shape[1:]
+
+        batch = {
+            "image0": image0.unsqueeze(0),    # LofTR works on grayscale images
+            "image1": image1.unsqueeze(0),
+        }
+
+        self.matcher(batch)
+        kps1 = batch['mkpts0_f'].detach().to(device).squeeze()
+        kps2 = batch['mkpts1_f'].detach().to(device).squeeze()
+        m_val = batch['mconf'].detach().to(device)
+        m_mask = m_val > 0
+
+        kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
+        kps1[:, 1] = kps1[:, 1] * (hw1[0] / float(hw1_[0]))
+    
+        kps2[:, 0] = kps2[:, 0] * (hw2[1] / float(hw2_[1]))
+        kps2[:, 1] = kps2[:, 1] * (hw2[0] / float(hw2_[0]))
+        
+        kp = [kps1, kps2]
+        kH = [
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            ]
+        
+        kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+        kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[0][:, 2, 2] = 1
+
+        kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+        kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[1][:, 2, 2] = 1
+
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx[:, 0] = torch.arange(kp[0].shape[0])
+        m_idx[:, 1] = torch.arange(kp[0].shape[0])
+
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+
+
+os.chdir('aspanformer')
+from src.ASpanFormer.aspanformer import ASpanFormer 
+from src.config.default import get_cfg_defaults as as_get_cfg_defaults
+from src.utils.misc import lower_config as as_lower_config
+os.chdir('..')
+  
+class aspanformer_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False   
+        self.pass_through = False
+                        
+        self.args = {
+            'id_more': '',
+            'outdoor': True,
+            'resize': [1024, 1024],
+            'patch_radius': 16,
+            }
+
+        self.id_string, self.args = set_args('aspanformer', args, self.args)        
+
+        download_aspanformer()
+
+        if self.args['outdoor']:
+            self.weights = os.path.join('../weights/aspanformer/outdoor.ckpt')
+            self.config_path = os.path.join('aspanformer/configs/aspan/outdoor/aspan_test.py')
+        else:
+            self.weights = os.path.join('../weights/aspanformer/indoor.ckpt')
+            self.config_path = os.path.join('aspanformer/configs/aspan/indoor/aspan_test.py')
+            
+
+        parser = argparse.ArgumentParser(description='AspanFormer online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser.add_argument('--weights_path', type=str, default=self.weights, help="Path to the checkpoint.")
+        parser.add_argument('--config_path', type=str, default=self.config_path, help="Path to the config.")
+        parser.add_argument('--long_dim0', type=int, default=self.args['resize'][0], help='resize for longest dim of image0.')
+        parser.add_argument('--long_dim1', type=int, default=self.args['resize'][1], help='resize for longest dim of image1.')
+
+        args = parser.parse_args()
+
+        config = as_get_cfg_defaults()
+        config.merge_from_file(args.config_path)
+        _config = as_lower_config(config)
+        self.matcher = ASpanFormer(config=_config['aspan'])
+        state_dict = torch.load(args.weights_path, map_location='cpu', weights_only=False)['state_dict']
+        self.matcher.load_state_dict(state_dict,strict=False)
+
+        if device.type == 'cuda':        
+            self.matcher.cuda()
+
+        self.matcher.eval()
+
+    
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
+        image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
+
+        # img0,img1=cv2.imread(args.img0_path),cv2.imread(args.img1_path)
+        # img0_g,img1_g=cv2.imread(args.img0_path,0),cv2.imread(args.img1_path,0)
+        # img0,img1=demo_utils.resize(img0,args.long_dim0),demo_utils.resize(img1,args.long_dim1)
+        # img0_g,img1_g=demo_utils.resize(img0_g,args.long_dim0),demo_utils.resize(img1_g,args.long_dim1)
+        # data={'image0':torch.from_numpy(img0_g/255.)[None,None].cuda().float(),
+        #       'image1':torch.from_numpy(img1_g/255.)[None,None].cuda().float()} 
+        # with torch.no_grad():   
+        #   matcher(data,online_resize=True)
+        #   corr0,corr1=data['mkpts0_f'].cpu().numpy(),data['mkpts1_f'].cpu().numpy()
+
+        hw1 = image0.shape[1:]
+        hw2 = image1.shape[1:]
+
+        if not (self.args['resize'] is None):        
+            ms = min(self.resize)
+            Ms = max(self.resize)
+
+            if hw1[0] > hw1[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw1[0]) / hw1[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw1[1]) / hw1[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+
+            if hw2[0] > hw2[1]:
+                sz = [Ms, ms]                
+                ratio_ori = float(hw2[0]) / hw2[1]                 
+            else:
+                sz = [ms, Ms]
+                ratio_ori = float(hw2[1]) / hw2[0]
+
+            ratio_new = float(Ms) / ms
+            if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
+                sz = [ms, ms]
+
+            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+                    
+        hw1_ = image0.shape[1:]
+        hw2_ = image1.shape[1:]
+
+        batch = {
+            "image0": image0.unsqueeze(0),    # LofTR works on grayscale images
+            "image1": image1.unsqueeze(0),
+        }
+
+        self.matcher.eval()
+        
+        if device.type == 'cuda':        
+            self.matcher.to('cuda')
+
+        self.matcher(batch)
+        kps1 = batch['mkpts0_f'].detach().to(device).squeeze()
+        kps2 = batch['mkpts1_f'].detach().to(device).squeeze()
+        m_val = batch['mconf'].detach().to(device)
+        m_mask = m_val > 0
+
+        kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
+        kps1[:, 1] = kps1[:, 1] * (hw1[0] / float(hw1_[0]))
+    
+        kps2[:, 0] = kps2[:, 0] * (hw2[1] / float(hw2_[1]))
+        kps2[:, 1] = kps2[:, 1] * (hw2[0] / float(hw2_[0]))
+        
+        kp = [kps1, kps2]
+        kH = [
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            ]
+        
+        kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+        kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[0][:, 2, 2] = 1
+
+        kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+        kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[1][:, 2, 2] = 1
+
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx[:, 0] = torch.arange(kp[0].shape[0])
+        m_idx[:, 1] = torch.arange(kp[0].shape[0])
+
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():     
 #       pipeline = [
@@ -3329,24 +4121,44 @@ if __name__ == '__main__':
                 
 #       imgs = '../data/ET_random_rotated'
 
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)
+#       pipeline = [
+#           roma_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]     
 
-        imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+#       pipeline = [
+#           r2d2_module(),
+#           smnn_module(),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#       ]   
+
+        pipeline = [
+            matchformer_module(),
+            magsac_module(),
+            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(),
+        ]  
+
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)
+
+#       imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
 #       imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
 #       imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
 
-        pipeline = [
-            deep_joined_module(what='aliked'),
-            lightglue_module(what='aliked'),
-            magsac_module(),
-            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=True),
-            pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=False),
-        ]         
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(id_more='megadepth_fundamental', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=True),
+#           pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, use_fundamental=False),
+#       ]         
 
-        imgs = [imgs_megadepth[i] for i in range(10)]
-        run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)
+#       imgs = [imgs_megadepth[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)
 
 #       pipeline = [
 #           deep_joined_module(what='aliked'),

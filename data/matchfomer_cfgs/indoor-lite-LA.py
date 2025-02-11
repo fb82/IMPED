@@ -1,0 +1,8 @@
+from config.defaultmf import _CN as cfg 
+
+cfg.MATCHFORMER.BACKBONE_TYPE = 'litela'
+cfg.MATCHFORMER.SCENS = 'indoor'
+cfg.MATCHFORMER.RESOLUTION = (8,4)
+cfg.MATCHFORMER.COARSE.D_MODEL = 192
+cfg.MATCHFORMER.COARSE.D_FFN = 192
+

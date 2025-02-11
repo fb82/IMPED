@@ -1,0 +1,7 @@
+from config.defaultmf import _CN as cfg 
+
+cfg.MATCHFORMER.BACKBONE_TYPE = 'largesea'
+cfg.MATCHFORMER.SCENS = 'indoor'
+cfg.MATCHFORMER.RESOLUTION = (8,2)#
+cfg.MATCHFORMER.COARSE.D_MODEL = 256
+cfg.MATCHFORMER.COARSE.D_FFN = 256

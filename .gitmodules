@@ -22,3 +22,6 @@
 [submodule "src/lpm"]
 	path = src/lpm
 	url = https://github.com/jiayi-ma/LPM_Python.git
+[submodule "src/adalam"]
+	path = src/adalam
+	url = https://github.com/cavalli1234/AdaLAM.git
