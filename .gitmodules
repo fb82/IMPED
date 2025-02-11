@@ -4,3 +4,27 @@
 [submodule "src/hz"]
 	path = src/hz
 	url = https://github.com/fb82/HarrisZ.git
+[submodule "src/roma"]
+	path = src/roma
+	url = https://github.com/Parskatt/RoMa.git
+[submodule "src/dkm"]
+	path = src/dkm
+	url = https://github.com/Parskatt/DKM.git
+[submodule "src/quadtreeattention"]
+	path = src/quadtreeattention
+	url = https://github.com/Tangshitao/QuadTreeAttention.git
+[submodule "src/matchformer"]
+	path = src/matchformer
+	url = https://github.com/jamycheung/MatchFormer.git
+[submodule "src/gms"]
+	path = src/gms
+	url = https://github.com/JiawangBian/GMS-Feature-Matcher.git
+[submodule "src/aspanformer"]
+	path = src/aspanformer
+	url = https://github.com/apple/ml-aspanformer.git
+[submodule "src/r2d2"]
+	path = src/r2d2
+	url = https://github.com/naver/r2d2.git
+[submodule "src/lpm"]
+	path = src/lpm
+	url = https://github.com/jiayi-ma/LPM_Python.git
