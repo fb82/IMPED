@@ -2322,6 +2322,7 @@ class lightglue_module:
             'id_more': '',
             'num_features': 8000,
             'resize': 1024,           # this is default, set to None to disable
+            'desc_cf': 1,                    # 255 to use R2S2 with what='sift'
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
 
@@ -2362,9 +2363,23 @@ class lightglue_module:
         width, height = Image.open(args['img'][1]).size
         sz2 = torch.tensor([width / 2, height / 2], device=device)
 
-        feats1 = {'keypoints': args['kp'][0].unsqueeze(0), 'descriptors': args['desc'][0].unsqueeze(0), 'image_size': sz1.unsqueeze(0)} 
-        feats2 = {'keypoints': args['kp'][1].unsqueeze(0), 'descriptors': args['desc'][1].unsqueeze(0), 'image_size': sz2.unsqueeze(0)} 
+        feats1 = {'keypoints': args['kp'][0].unsqueeze(0), 'descriptors': args['desc'][0].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz1.unsqueeze(0)} 
+        feats2 = {'keypoints': args['kp'][1].unsqueeze(0), 'descriptors': args['desc'][1].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz2.unsqueeze(0)} 
         
+        if (self.what == 'sift') or (self.what == 'doghardnet'):
+            lafs1 = homo2laf(args['kp'][0], args['kH'][0])
+            lafs2 = homo2laf(args['kp'][1], args['kH'][1])
+            
+            kp1 = opencv_kpts_from_laf(lafs1)
+            kp2 = opencv_kpts_from_laf(lafs2)
+
+            feats1['oris'] = torch.tensor([kp.angle for kp in kp1], device=device).unsqueeze(0)
+            feats2['oris'] = torch.tensor([kp.angle for kp in kp2], device=device).unsqueeze(0)
+
+            feats1['scales'] = torch.tensor([kp.size for kp in kp1], device=device).unsqueeze(0)
+            feats2['scales'] = torch.tensor([kp.size for kp in kp2], device=device).unsqueeze(0)
+            
+            
         matches12 = self.matcher({'image0': feats1, 'image1': feats2})
         feats1_, feats2_, matches12 = [lg_rbd(x) for x in [feats1, feats2, matches12]]
 
@@ -4126,7 +4141,8 @@ if __name__ == '__main__':
 
         pipeline = [
             r2d2_module(),
-            smnn_module(),
+#           smnn_module(),
+            lightglue_module(what='sift', desc_cf=255),
             magsac_module(),
             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         ]   
