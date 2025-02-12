@@ -2419,8 +2419,8 @@ class loftr_module:
         hw2 = image1.shape[1:]
 
         if not (self.args['resize'] is None):        
-            ms = min(self.resize)
-            Ms = max(self.resize)
+            ms = min(self.args['resize'])
+            Ms = max(self.args['resize'])
 
             if hw1[0] > hw1[1]:
                 sz = [Ms, ms]                
@@ -2433,7 +2433,7 @@ class loftr_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+            image0 = K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
 
             if hw2[0] > hw2[1]:
                 sz = [Ms, ms]                
@@ -2446,7 +2446,7 @@ class loftr_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+            image1 = K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
                     
         hw1_ = image0.shape[1:]
         hw2_ = image1.shape[1:]
@@ -2493,7 +2493,7 @@ class loftr_module:
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
 
-        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+        m_mask = m_val > 0
 
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
@@ -3568,7 +3568,7 @@ if enable_quadtree:
             self.args = {
                 'id_more': '',
                 'outdoor': True,
-                'resize': None,                          # self.resize = [800, 600]
+                'resize': None,                      # self.resize = [800, 600]
                 'patch_radius': 16,
                 }
     
@@ -3620,8 +3620,8 @@ if enable_quadtree:
             hw2 = image1.shape[1:]
     
             if not (self.args['resize'] is None):        
-                ms = min(self.resize)
-                Ms = max(self.resize)
+                ms = min(self.args['resize'])
+                Ms = max(self.args['resize'])
     
                 if hw1[0] > hw1[1]:
                     sz = [Ms, ms]                
@@ -3634,7 +3634,7 @@ if enable_quadtree:
                 if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                     sz = [ms, ms]
     
-                K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+                image0 = K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
     
                 if hw2[0] > hw2[1]:
                     sz = [Ms, ms]                
@@ -3647,7 +3647,7 @@ if enable_quadtree:
                 if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                     sz = [ms, ms]
     
-                K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+                image1 = K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
                         
             hw1_ = image0.shape[1:]
             hw2_ = image1.shape[1:]
@@ -3765,8 +3765,8 @@ class matchformer_module:
         hw2 = image1.shape[1:]
 
         if not (self.args['resize'] is None):        
-            ms = min(self.resize)
-            Ms = max(self.resize)
+            ms = min(self.args['resize'])
+            Ms = max(self.args['resize'])
 
             if hw1[0] > hw1[1]:
                 sz = [Ms, ms]                
@@ -3779,7 +3779,7 @@ class matchformer_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+            image0 = K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
 
             if hw2[0] > hw2[1]:
                 sz = [Ms, ms]                
@@ -3792,7 +3792,7 @@ class matchformer_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+            image1 = K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
                     
         hw1_ = image0.shape[1:]
         hw2_ = image1.shape[1:]
@@ -3854,7 +3854,7 @@ class aspanformer_module:
         self.args = {
             'id_more': '',
             'outdoor': True,
-            'resize': [1024, 1024],
+            'resize': None,                              # default [1024, 1024]
             'patch_radius': 16,
             }
 
@@ -3873,22 +3873,22 @@ class aspanformer_module:
         parser = argparse.ArgumentParser(description='AspanFormer online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument('--weights_path', type=str, default=self.weights, help="Path to the checkpoint.")
         parser.add_argument('--config_path', type=str, default=self.config_path, help="Path to the config.")
-        parser.add_argument('--long_dim0', type=int, default=self.args['resize'][0], help='resize for longest dim of image0.')
-        parser.add_argument('--long_dim1', type=int, default=self.args['resize'][1], help='resize for longest dim of image1.')
 
-        args = parser.parse_args()
+        as_args = parser.parse_args()
 
         config = as_get_cfg_defaults()
-        config.merge_from_file(args.config_path)
+        config.merge_from_file(as_args.config_path)
         _config = as_lower_config(config)
         self.matcher = ASpanFormer(config=_config['aspan'])
-        state_dict = torch.load(args.weights_path, map_location='cpu', weights_only=False)['state_dict']
+        state_dict = torch.load(as_args.weights_path, map_location='cpu', weights_only=False)['state_dict']
         self.matcher.load_state_dict(state_dict,strict=False)
 
         if device.type == 'cuda':        
             self.matcher.cuda()
 
         self.matcher.eval()
+        
+        self.first_warning = True
 
     
     def get_id(self): 
@@ -3899,26 +3899,27 @@ class aspanformer_module:
         return
 
 
-    def run(self, **args):
+    def run(self, **args): 
+        if not self.first_warning:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return self.run_actually(**args)
+        else:
+            return self.run_actually(**args)
+
+    def run_actually(self, **args): 
+        if self.first_warning:
+            self.first_warning = False
+
         image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
         image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
-
-        # img0,img1=cv2.imread(args.img0_path),cv2.imread(args.img1_path)
-        # img0_g,img1_g=cv2.imread(args.img0_path,0),cv2.imread(args.img1_path,0)
-        # img0,img1=demo_utils.resize(img0,args.long_dim0),demo_utils.resize(img1,args.long_dim1)
-        # img0_g,img1_g=demo_utils.resize(img0_g,args.long_dim0),demo_utils.resize(img1_g,args.long_dim1)
-        # data={'image0':torch.from_numpy(img0_g/255.)[None,None].cuda().float(),
-        #       'image1':torch.from_numpy(img1_g/255.)[None,None].cuda().float()} 
-        # with torch.no_grad():   
-        #   matcher(data,online_resize=True)
-        #   corr0,corr1=data['mkpts0_f'].cpu().numpy(),data['mkpts1_f'].cpu().numpy()
 
         hw1 = image0.shape[1:]
         hw2 = image1.shape[1:]
 
         if not (self.args['resize'] is None):        
-            ms = min(self.resize)
-            Ms = max(self.resize)
+            ms = min(self.args['resize'])
+            Ms = max(self.args['resize'])
 
             if hw1[0] > hw1[1]:
                 sz = [Ms, ms]                
@@ -3931,7 +3932,7 @@ class aspanformer_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
+            image0 = K.geometry.resize(image0, (sz[0], sz[1]), antialias=True)
 
             if hw2[0] > hw2[1]:
                 sz = [Ms, ms]                
@@ -3944,25 +3945,21 @@ class aspanformer_module:
             if np.abs(ratio_ori - ratio_new) > np.abs(1 - ratio_new):
                 sz = [ms, ms]
 
-            K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
+            image1 = K.geometry.resize(image1, (sz[0], sz[1]), antialias=True)
                     
         hw1_ = image0.shape[1:]
         hw2_ = image1.shape[1:]
 
-        batch = {
+        data = {
             "image0": image0.unsqueeze(0),    # LofTR works on grayscale images
             "image1": image1.unsqueeze(0),
         }
+                  
+        self.matcher(data)
 
-        self.matcher.eval()
-        
-        if device.type == 'cuda':        
-            self.matcher.to('cuda')
-
-        self.matcher(batch)
-        kps1 = batch['mkpts0_f'].detach().to(device).squeeze()
-        kps2 = batch['mkpts1_f'].detach().to(device).squeeze()
-        m_val = batch['mconf'].detach().to(device)
+        kps1 = data['mkpts0_f'].detach().to(device).squeeze()
+        kps2 = data['mkpts1_f'].detach().to(device).squeeze()
+        m_val = data['mconf'].detach().to(device)
         m_mask = m_val > 0
 
         kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
@@ -3992,7 +3989,7 @@ class aspanformer_module:
         m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
-
+                
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
@@ -4127,19 +4124,19 @@ if __name__ == '__main__':
 #           to_colmap_module(),
 #       ]     
 
-#       pipeline = [
-#           r2d2_module(),
-#           smnn_module(),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#       ]   
-
         pipeline = [
-            matchformer_module(),
+            r2d2_module(),
+            smnn_module(),
             magsac_module(),
             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            to_colmap_module(),
-        ]  
+        ]   
+
+#       pipeline = [
+#           aspanformer_module(),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]  
 
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
