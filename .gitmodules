@@ -25,3 +25,6 @@
 [submodule "src/adalam"]
 	path = src/adalam
 	url = https://github.com/cavalli1234/AdaLAM.git
+[submodule "src/fcgnn"]
+	path = src/fcgnn
+	url = https://github.com/xuy123456/fcgnn.git
