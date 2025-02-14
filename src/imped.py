@@ -7,11 +7,8 @@ from tqdm import tqdm
 import torch
 import kornia as K
 from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
-from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 import cv2
 import numpy as np
-import hz.hz as hz
 from PIL import Image
 import poselib
 import gdown
@@ -22,16 +19,10 @@ import shutil
 import bz2
 import _pickle as cPickle
 import argparse
-import lpm.LPM as lpm
-from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 import math
-import gms.python.gms_matcher as gms
-import adalam.adalam.adalam as adalam
-import fcgnn.fcgnn as fcgnn
 import copy
 import wget
 
-import colmap_db.database as coldb
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
 import plot.utils as viz_utils
@@ -40,8 +31,8 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
-enable_quadtree = False
 
+enable_quadtree = False
 
 def megadepth_1500_list(ppath='bench_data/gt_data/megadepth'):
     npz_list = [i for i in os.listdir(ppath) if (os.path.splitext(i)[1] == '.npz')]
@@ -1048,6 +1039,8 @@ class keynet_module:
 
         return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(device).squeeze(0)}
 
+
+import hz.hz as hz
 
 class hz_module:
     def __init__(self, **args):
@@ -2255,6 +2248,9 @@ class pipeline_muxer_module:
         return self.pipe_gather(pipe_data_block)
 
 
+from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
+from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
+
 class deep_joined_module:
     def __init__(self, **args):
         self.single_image = True
@@ -2558,6 +2554,8 @@ class sampling_module:
                           sampling_offset=self.args['sampling_offset'],
                           overlapping_cells=self.args['overlapping_cells'])    
 
+
+import colmap_db.database as coldb
 
 class coldb_ext(coldb.COLMAPDatabase):
     def __init__(self, *args, **kwargs):
@@ -3292,6 +3290,8 @@ class pairwise_benchmark_module:
         return {}
 
 
+from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
+
 class roma_module:
     def __init__(self, **args):
         self.single_image = False
@@ -3383,12 +3383,12 @@ class roma_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-os.chdir('r2d2')
+cur_dir = os.getcwd()
+os.chdir(os.path.join(os.path.split(__file__)[0], 'r2d2'))
 from tools import common as r2d2_common
 from tools.dataloader import norm_RGB as r2d2_norm_RGB
 import nets.patchnet as r2d2_patchnet 
-os.chdir('..')
-
+os.chdir(cur_dir)
 
 class r2d2_module:
     def load_network(model_fn): 
@@ -3400,7 +3400,7 @@ class r2d2_module:
     
         # initialization
         weights = checkpoint['state_dict']
-        net.load_state_dict({k.replace('module.',''):v for k,v in weights.items()})
+        net.load_state_dict({k.replace('module.',''): v for k,v in weights.items()})
         return net.eval()
     
     
@@ -3574,11 +3574,12 @@ class r2d2_module:
 
 
 if enable_quadtree:
-    os.chdir('quadtreeattention/FeatureMatching')
+    cur_dir = os.getcwd()
+    os.chdir(os.path.join(os.path.split(__file__)[0], 'quadtreeattention/FeatureMatching'))    
     from src.config.default import qta_get_cfg_defaults
     from src.utils.misc import qta_lower_config
     from src.loftr import qta_LoFTR
-    os.chdir('../..')
+    os.chdir(cur_dir)
     
     class quadtreeattention_module:
         def __init__(self, **args):
@@ -3715,11 +3716,12 @@ if enable_quadtree:
             return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-os.chdir('matchformer')
+cur_dir = os.getcwd()
+os.chdir(os.path.join(os.path.split(__file__)[0], 'matchformer'))
 from model.matchformer import Matchformer
 from model.utils.misc import lower_config as mf_lower_config
 from config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
-os.chdir('..')
+os.chdir(cur_dir)
   
 class matchformer_module:
     def __init__(self, **args):
@@ -3860,11 +3862,12 @@ class matchformer_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-os.chdir('aspanformer')
+cur_dir = os.getcwd()
+os.chdir(os.path.join(os.path.split(__file__)[0], 'aspanformer'))
 from src.ASpanFormer.aspanformer import ASpanFormer 
 from src.config.default import get_cfg_defaults as as_get_cfg_defaults
 from src.utils.misc import lower_config as as_lower_config
-os.chdir('..')
+os.chdir(cur_dir)
   
 class aspanformer_module:
     def __init__(self, **args):
@@ -4014,6 +4017,8 @@ class aspanformer_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
+import lpm.LPM as lpm
+
 class lpm_module:
     def __init__(self, **args):       
         self.single_image = False    
@@ -4053,6 +4058,8 @@ class lpm_module:
         
         return {'m_mask': mm}
 
+
+import gms.python.gms_matcher as gms
 
 class gms_module:
     class gms_matcher_custom(gms.GmsMatcher):
@@ -4181,6 +4188,8 @@ class gms_module:
         return {'m_mask': mm}
 
 
+import adalam.adalam.adalam as adalam
+
 class adalam_module:
     class adalamfilter_custom(adalam.AdalamFilter):
         def __init__(self, custom_config=None):         
@@ -4300,6 +4309,8 @@ def download_fcgnn(weight_path='../weights/fcgnn'):
         wget.download(url, file_to_download)
 
 
+import fcgnn.fcgnn as fcgnn
+
 class fcgnn_module:
     class fcgnn_custom(fcgnn.GNN):
         def __init__(self, depth=9):
@@ -4402,6 +4413,246 @@ class fcgnn_module:
         
         # masked keypoints are refined too but the patch shape remain the same!
         return {'kp': kp, 'm_mask': mm}
+
+
+def download_oanet(weight_path='../weights/oanet'):
+    url = "https://drive.google.com/file/d/1Yuk_ZBlY_xgUUGXCNQX-eh8BO2ni_qhm/view?usp=sharing"
+
+    os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
+
+    file_to_download = os.path.join(weight_path, 'download', 'sift-gl3d.tar.gz')    
+    if not os.path.isfile(file_to_download):    
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    model_file = os.path.join(weight_path, 'model_best.pth')
+    if not os.path.isfile(model_file):
+        with tarfile.open(file_to_download, "r") as tar_ref:
+            tar_ref.extract('gl3d/sift-4000/model_best.pth', path=weight_path)
+        
+        shutil.copy(os.path.join(weight_path, 'gl3d/sift-4000/model_best.pth'), model_file)
+        shutil.rmtree(os.path.join(weight_path, 'gl3d'))
+
+
+import oanet.learnedmatcher_custom as oanet
+
+class oanet_module:
+    def __init__(self, **args):  
+
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+                
+        self.args = {
+            'id_more': '',
+            'weights': '../weights/oanet/model_best.pth',
+            'inlier_threshold': 1,
+            }
+        
+        download_oanet()
+        
+        self.id_string, self.args = set_args('oanet', args, self.args)                     
+        self.lm = oanet.LearnedMatcher(self.args['weights'], inlier_threshold=self.args['inlier_threshold'], use_ratio=0, use_mutual=0, corr_file=-1)        
+        
+               
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+        
+    def run(self, **args): 
+        mi = args['m_idx']
+        mm = args['m_mask']
+
+        m12 = mi[mm]
+
+        k1 = args['kp'][0]
+        k2 = args['kp'][1]
+        
+        k1 = k1[m12[:, 0]]
+        k2 = k2[m12[:, 1]]        
+        
+        pt1 = np.ascontiguousarray(k1.detach().cpu())
+        pt2 = np.ascontiguousarray(k2.detach().cpu())
+                
+        l = pt1.shape[0]
+        
+        if l > 1:
+            _, _, _, _, mask = self.lm.infer(pt1, pt2)
+            
+            mask_aux = torch.tensor(mask, device=device)         
+            aux = mm.clone()
+            mm[aux] = mask_aux
+        
+            return {'m_mask': mm}
+        else:
+            return {'m_mask': args['m_mask']}
+
+
+import uuid
+from acne.config import get_config as acne_get_config
+import acne.acne_custom as acne
+
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
+
+def download_acne(weight_path='../weights/acne'):
+    os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
+
+    file_to_download = os.path.join(weight_path, 'download', 'acne_weights.zip')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1yluw3u3F8qH3oTB3dxVw1re4HI6a0TuQ/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)        
+
+    file_to_unzip = file_to_download
+    model_dir = os.path.join(weight_path, 'logs')    
+    if not os.path.isdir(model_dir):    
+        with zipfile.ZipFile(file_to_unzip,"r") as zip_ref:
+            zip_ref.extractall(path=weight_path)
+
+
+class acne_module:
+    current_net = None
+    current_obj_id = None
+    
+    def __init__(self, **args):
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+                
+        self.args = {
+            'id_more': '',
+            'outdoor': True,
+            'what': 'ACNe_F',
+            }
+        
+        download_acne()
+        
+        self.id_string, self.args = set_args('acne', args, self.args)                     
+        self.acne_id = uuid.uuid4()
+
+        if self.args['outdoor']:
+            # Model of ACNe_F trained with outdoor dataset.              
+            model_path = "logs/main.py---gcn_opt=reweight_vanilla_sigmoid_softmax---bn_opt=gn---weight_opt=sigmoid_softmax---loss_multi_logit=1---use_fundamental=2---data_name=oan_outdoor/models-best"
+        else:
+            # Model of ACNe_F trained with indoor dataset.                      
+             model_path = "logs/main.py---gcn_opt=reweight_vanilla_sigmoid_softmax---bn_opt=gn---weight_opt=sigmoid_softmax---loss_multi_logit=1---use_fundamental=2---data_name=oan_indoor/models-best"        
+
+        self.model_path = os.path.join('../weights/acne', model_path)
+        self.acne_id = uuid.uuid4()  
+        
+        self.outdoor = self.args['outdoor']
+        self.prev_outdoor = self.args['outdoor']      
+        
+        
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        force_reload = False
+        if (self.outdoor != self.prev_outdoor):
+            force_reload = True
+            warnings.warn("acne modules with both indoor and outdoor model detected, computation will be very slow...")
+            self.prev_outdoor = self.outdoor
+            
+            if self.outdoor:
+                # Model of ACNe_F trained with outdoor dataset.              
+                model_path = "logs/main.py---gcn_opt=reweight_vanilla_sigmoid_softmax---bn_opt=gn---weight_opt=sigmoid_softmax---loss_multi_logit=1---use_fundamental=2---data_name=oan_outdoor/models-best"
+            else:
+                # Model of ACNe_F trained with indoor dataset.                      
+                model_path = "logs/main.py---gcn_opt=reweight_vanilla_sigmoid_softmax---bn_opt=gn---weight_opt=sigmoid_softmax---loss_multi_logit=1---use_fundamental=2---data_name=oan_indoor/models-best"
+            self.model_path = os.path.join('../weights/acne', model_path)
+
+        if (acne_module.current_obj_id != self.acne_id) or force_reload:
+            if not (acne_module.current_obj_id is None):
+                acne_module.current_net.sess.close()
+                tf.reset_default_graph()
+
+            config, unparsed = acne_get_config()
+        
+            paras = {
+                "CNe_E":{
+                    "bn_opt":"bn"},
+                "ACNe_E":{
+                    "gcn_opt":"reweight_vanilla_sigmoid_softmax",  "bn_opt":"gn",
+                    "weight_opt":"sigmoid_softmax"},
+                "CNe_F":{
+                    "bn_opt":"bn", "use_fundamental":2},
+                "ACNe_F":{
+                    "gcn_opt":"reweight_vanilla_sigmoid_softmax",  "bn_opt":"gn",
+                    "weight_opt":"sigmoid_softmax", "use_fundamental":2},
+            }
+        
+            para = paras[self.args['what']]
+    
+            for ki, vi in para.items():
+               setattr(config, ki, vi)
+               
+            self.use_fundamental = config.use_fundamental # E:0, F:2.
+        
+            # Instantiate wrapper class
+            self.net = acne.NetworkTest(config, self.model_path)
+            acne_module.current_net = self.net
+            acne_module.current_obj_id = self.acne_id
+            
+        sz1 = Image.open(args['img'][0]).size
+        sz2 = Image.open(args['img'][1]).size
+
+        mi = args['m_idx']
+        mm = args['m_mask']
+
+        m12 = mi[mm]
+
+        k1 = args['kp'][0]
+        k2 = args['kp'][1]
+        
+        k1 = k1[m12[:, 0]]
+        k2 = k2[m12[:, 1]]
+        
+        pt1 = np.ascontiguousarray(k1.detach().cpu())
+        pt2 = np.ascontiguousarray(k2.detach().cpu())
+                
+        l = pt1.shape[0]
+        
+        if l > 0:    
+            corrs = np.hstack((pt1, pt2)).astype(np.float32)
+        
+            K1 = np.array(
+                [[1, 0, sz1[0] / 2.0],
+                 [0, 1, sz1[1] / 2.0],
+                 [0, 0 ,1]])
+        
+            K2 = np.array(
+                [[1, 0, sz2[0] / 2.0],
+                 [0, 1, sz2[1] / 2.0],
+                 [0, 0, 1]])
+        
+            # Prepare input. 
+            xs, T1, T2 = acne.prepare_xs(corrs, K1, K2, self.use_fundamental)
+            xs = np.array(xs).reshape(1, 1, -1, 4) # reconstruct a batch. Bx1xNx4
+        
+            # Compute Essential/Fundamental matrix
+            E, w_com, score_local = self.net.compute_E(xs)
+            E = E[0]
+            score_local = score_local[0]
+            w_com = w_com[0]
+        
+            mask = w_com > 1e-5
+            mask_aux = torch.tensor(mask, device=device)         
+            aux = mm.clone()
+            mm[aux] = mask_aux
+
+            return {'m_mask': mm}
+        else:
+            return {'m_mask': args['m_mask']}
 
 
 if __name__ == '__main__':    
@@ -4549,7 +4800,7 @@ if __name__ == '__main__':
             deep_descriptor_module(),
             smnn_module(),
             show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-            fcgnn_module(),
+            acne_module(),
             show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
             magsac_module(),
             show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),

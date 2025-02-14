@@ -9,53 +9,6 @@ from .oan_cuda import OANet
 from .oan_cuda import device as device_to_use
 
 
-class oanet_module:
-    def __init__(self, **args):  
-        for k, v in args.items():
-           setattr(self, k, v)
-
-        oanet_dir = os.path.split(__file__)[0]
-        model_file = os.path.join(oanet_dir, 'model_best.pth')
-        file_to_download = os.path.join(oanet_dir, 'sift-gl3d.tar.gz')    
-        if not os.path.isfile(model_file):    
-            url = "https://drive.google.com/file/d/1Yuk_ZBlY_xgUUGXCNQX-eh8BO2ni_qhm/view?usp=sharing"
-            gdown.download(url, file_to_download, fuzzy=True)
-    
-            with tarfile.open(file_to_download,"r") as tar_ref:
-                tar_ref.extract('gl3d/sift-4000/model_best.pth', path=oanet_dir)
-            
-            shutil.copy(os.path.join(oanet_dir, 'gl3d/sift-4000/model_best.pth'), model_file)
-            shutil.rmtree(os.path.join(oanet_dir, 'gl3d'))
-            os.remove(file_to_download)
-                
-        self.lm = LearnedMatcher(model_file, inlier_threshold=1, use_ratio=0, use_mutual=0, corr_file=-1)        
-        
-               
-    def get_id(self):
-        return ('oanet').lower()
-
-
-    def run(self, **args):  
-        pt1 = np.ascontiguousarray(args['pt1'].detach().cpu())
-        pt2 = np.ascontiguousarray(args['pt2'].detach().cpu())
-                
-        l = pt1.shape[0]
-        
-        if l > 1:                
-            _, _, _, _, mask = self.lm.infer(pt1, pt2)
-                    
-            pt1 = args['pt1'][mask]
-            pt2 = args['pt2'][mask]            
-            Hs = args['Hs'][mask]            
-        else:
-            pt1 = args['pt1']
-            pt2 = args['pt2']           
-            Hs = args['Hs']   
-            mask = []
-                        
-        return {'pt1': pt1, 'pt2': pt2, 'Hs': Hs, 'mask': mask}
-
-
 class LearnedMatcher(object):
     def __init__(self, model_path, inlier_threshold=0, use_ratio=2, use_mutual=2, corr_file=-1):
         self.default_config = {}
@@ -73,7 +26,7 @@ class LearnedMatcher(object):
         self.device = device_to_use
 
         # print('load model from ' + model_path)
-        checkpoint = torch.load(model_path,map_location=self.device)
+        checkpoint = torch.load(model_path,map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint['state_dict'])
         self.model.to(self.device)
         self.model.eval()
