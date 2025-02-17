@@ -2557,6 +2557,18 @@ class sampling_module:
 
 import colmap_db.database as coldb
 
+SIMPLE_RADIAL = 2
+
+UNDEFINED = 0  # Not provided
+DEGENERATE = 1 # Degenerate configuration (e.g., no overlap or not enough inliers).
+CALIBRATED = 2 # Essential matrix.
+UNCALIBRATED = 3 # Fundamental matrix.
+PLANAR = 4 # Homography, planar scene with baseline.
+PANORAMIC = 5 # Homography, pure rotation without baseline.
+PLANAR_OR_PANORAMIC = 6 # Homography, planar or panoramic.
+WATERMARK = 7 # Watermark, pure 2D translation in image borders.
+MULTIPLE = 8 # Multi-model configuration, i.e. the inlier matches result from multiple individual, non-degenerate configurations.
+
 class coldb_ext(coldb.COLMAPDatabase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2589,13 +2601,19 @@ class coldb_ext(coldb.COLMAPDatabase):
         keypoints = np.asarray(keypoints, np.float32)
         
         if self.get_keypoints(image_id) is None:
-            self.add_keypoints(image_id, keypoints)
-        else: 
-            self.execute(
-                "UPDATE keypoints SET rows=?, cols=?, data=? WHERE image_id=?",
-                keypoints.shape + (coldb.array_to_blob(keypoints), ) + (image_id, ),
-                )
-
+            if keypoints.shape[0] > 0:
+                self.add_keypoints(image_id, keypoints)
+        else:
+            if keypoints.shape[0] > 0:
+                self.execute(
+                    "UPDATE keypoints SET rows=?, cols=?, data=? WHERE image_id=?",
+                    keypoints.shape + (coldb.array_to_blob(keypoints), ) + (image_id, ),
+                    )
+            else:
+                self.execute(
+                    "DELETE FROM keypoints WHERE image_id=?",
+                    (image_id, ),
+                    )
 
     def get_matches(self, image_id1, image_id2):
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
@@ -2610,6 +2628,35 @@ class coldb_ext(coldb.COLMAPDatabase):
             return m
 
 
+    def get_two_view_geometry(self, image_id1, image_id2):
+        pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+        cursor = self.execute("SELECT data, rows, cols, config, E, F, H FROM two_view_geometries where pair_id=?", (pair_id, ))
+        m = cursor.fetchone()
+        if m is None:
+            return None, None
+        else:
+            model = {}
+            m, r, c, config, E, F, H = m
+            m = np.reshape(coldb.blob_to_array(m[0], np.float32), (r, c))
+
+            if (config == PLANAR) or (config == PANORAMIC) or (config == PLANAR_OR_PANORAMIC):
+                model['H'] = np.reshape(coldb.blob_to_array(H[0], np.float32), (3, 3))
+
+            if (config == CALIBRATED):
+                model['E'] = np.reshape(coldb.blob_to_array(E[0], np.float32), (3, 3))
+
+            if (config == UNCALIBRATED):
+                model['F'] = np.reshape(coldb.blob_to_array(F[0], np.float32), (3, 3))
+
+            if image_id1 > image_id2:
+                m = m[:, ::-1]
+                if 'H' in model: model['H'] = np.linalg.inv(model['H']) 
+                if 'F' in model: model['F'] = np.transpose(model['F']) 
+                if 'E' in model: model['E'] = np.transpose(model['E']) 
+
+            return m, model
+
+
     def update_matches(self, image_id1, image_id2, matches):
         assert len(matches.shape) == 2
         assert matches.shape[1] == 2
@@ -2617,17 +2664,97 @@ class coldb_ext(coldb.COLMAPDatabase):
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
 
         if self.get_matches(image_id1, image_id2) is None:
-            self.add_matches(image_id1, image_id2, matches)
+            if matches.shape[0] > 0:
+                self.add_matches(image_id1, image_id2, matches)
         else:
             matches = np.asarray(matches, np.uint32)
 
             if image_id1 > image_id2:
                 matches = matches[:, ::-1]
 
-            self.execute(
-                "UPDATE matches SET rows=?, cols=?, data=? WHERE pair_id=?",
-                matches.shape + (coldb.array_to_blob(matches), ) + (pair_id, ),
-                )
+            if matches.shape[0] > 0:
+                self.execute(
+                    "UPDATE matches SET rows=?, cols=?, data=? WHERE pair_id=?",
+                    matches.shape + (coldb.array_to_blob(matches), ) + (pair_id, ),
+                    )
+            else:
+                self.execute(
+                    "DELETE FROM matches WHERE pair_id=?",
+                    (pair_id, ),
+                    )
+
+
+    def update_two_view_geometry(self, image_id1, image_id2, matches, model=None):
+        assert len(matches.shape) == 2
+        assert matches.shape[1] == 2
+
+        if model is None: model = {}
+
+        pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+
+        if self.get_two_view_geometry(image_id1, image_id2)[0] is None:
+            if matches.shape[0] > 0:
+                how_many_models = 0
+                
+                if 'H' in model:
+                    config = PLANAR_OR_PANORAMIC
+                    if image_id1 > image_id2: model['H'] = np.linalg.inv(model['H'])                    
+                    how_many_models = how_many_models + 1
+                if 'F' in model:
+                    config = UNCALIBRATED
+                    if image_id1 > image_id2: model['F'] = np.tranpose(model['F'])                    
+                    how_many_models = how_many_models + 1
+                if 'E' in model:
+                    config = CALIBRATED
+                    if image_id1 > image_id2: model['E'] = np.tranpose(model['E'])                    
+                    how_many_models = how_many_models + 1
+                if how_many_models != 1:
+                    config = MULTIPLE
+                
+                self.add_two_view_geometry(image_id1, image_id2, matches, config=config, **model)
+        else:
+            matches = np.asarray(matches, np.uint32)
+
+            if image_id1 > image_id2:
+                matches = matches[:, ::-1]
+                
+                if 'H' in model: model['H'] = np.linalg.inv(model['H'])
+                if 'F' in model: model['F'] = np.transpose(model['F'])
+                if 'E' in model: model['E'] = np.transpose(model['E'])
+
+            how_many_models = 0
+            model_str = ""
+            model_tuple =  ()
+            if 'H' in model:
+                config = PLANAR_OR_PANORAMIC
+                how_many_models = how_many_models + 1
+                model_str = model_str + "H=?, "
+                model_tuple = model_tuple + (coldb.array_to_blob(model['H']), )
+            if 'F' in model:
+                config = UNCALIBRATED
+                how_many_models = how_many_models + 1
+                model_str = model_str + "F=?, "
+                model_tuple = model_tuple + (coldb.array_to_blob(model['F']), )
+            if 'E' in model:
+                config = CALIBRATED
+                how_many_models = how_many_models + 1
+                model_str = model_str + "E=?, "                    
+                model_tuple = model_tuple + (coldb.array_to_blob(model['E']), )
+            if how_many_models > 1:
+                config = MULTIPLE
+                    
+            query_str = "UPDATE two_view_geometries SET rows=?, cols=?, data=?, " + model_str + "config=? WHERE pair_id=?"
+
+            if matches.shape[0] > 0:
+                self.execute(
+                    query_str,
+                    matches.shape + (coldb.array_to_blob(matches), ) + model_tuple + (config, pair_id, ),
+                    )
+            else:
+                self.execute(
+                    "DELETE FROM two_view_geometries WHERE pair_id=?",
+                    (pair_id, ),
+                    )
 
 
 def kpts_as_colmap(idx, **args): 
@@ -2653,18 +2780,6 @@ def kpts_as_colmap(idx, **args):
     return torch.cat((kp[:, :2], w), dim=1)
 
 
-SIMPLE_RADIAL = 2
-
-UNDEFINED = 0  # Not provided
-DEGENERATE = 1 # Degenerate configuration (e.g., no overlap or not enough inliers).
-CALIBRATED = 2 # Essential matrix.
-UNCALIBRATED = 3 # Fundamental matrix.
-PLANAR = 4 # Homography, planar scene with baseline.
-PANORAMIC = 5 # Homography, pure rotation without baseline.
-PLANAR_OR_PANORAMIC = 6 # Homography, planar or panoramic.
-WATERMARK = 7 # Watermark, pure 2D translation in image borders.
-MULTIPLE = 8 # Multi-model configuration, i.e. the inlier matches result from multiple individual, non-degenerate configurations.
-
 class to_colmap_module:
     def __init__(self, **args):
         self.single_image = False
@@ -2678,8 +2793,9 @@ class to_colmap_module:
             'focal_cf': 1.2,
             'only_keypoints': False,            
             'unique': True,
-            'only_matched': True,
+            'only_matched': False,
             'no_unmatched': True,
+            'include_two_view_geometry': True,
             'sampling_mode': 'raw',
             'overlapping_cells' : False,
             'sampling_scale': 1,
@@ -2758,12 +2874,7 @@ class to_colmap_module:
         kH_old1 = torch.zeros((kp_old1.shape[0], 3, 3), device=device)
         kr_old1 = torch.full((kp_old1.shape[0], ), torch.inf, device=device)
 
-        m_idx_old = self.db.get_matches(im_ids[0], im_ids[1])    
-        if m_idx_old is None:
-            m_idx_old = torch.zeros((0, 2), device=device, dtype=torch.int)
-        else:
-            m_idx_old = torch.tensor(m_idx_old, device=device, dtype=torch.int)
-        
+        m_idx_old = torch.zeros((0, 2), device=device, dtype=torch.int)        
         m_val_old = torch.full((m_idx_old.shape[0], ), torch.inf, device=device)
         m_mask_old = torch.full((m_idx_old.shape[0], ), 1, device=device, dtype=torch.bool)
             
@@ -2821,6 +2932,15 @@ class to_colmap_module:
         if not self.args['only_keypoints']:
             m_idx = pipe_out['m_idx'].to('cpu').numpy()
             self.db.update_matches(im_ids[0], im_ids[1], m_idx)
+
+            if self.args['include_two_view_geometry']:
+
+                m_idx = pipe_out['m_idx'][pipe_out['m_mask']].to('cpu').numpy()
+                models = {}
+                for m in ['H', 'E', 'F']:
+                    if m in args: models[m] = args[m].to('cpu').numpy()
+                                
+                self.db.update_two_view_geometry(im_ids[0], im_ids[1], m_idx, model=models)
 
         self.db.commit()
         
@@ -4780,11 +4900,12 @@ if __name__ == '__main__':
                 
 #       imgs = '../data/ET_random_rotated'
 
-#       pipeline = [
-#           roma_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(),
-#       ]     
+        pipeline = [
+            loftr_module(),
+            magsac_module(),
+            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(),
+        ]     
 
 #       pipeline = [
 #           r2d2_module(),
@@ -4794,17 +4915,17 @@ if __name__ == '__main__':
 #           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]   
 
-        pipeline = [
-            dog_module(),
-            patch_module(),
-            deep_descriptor_module(),
-            smnn_module(),
-            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-            acne_module(),
-            show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
-            magsac_module(),
-            show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
-        ]
+#       pipeline = [
+#           dog_module(),
+#           patch_module(),
+#           deep_descriptor_module(),
+#           smnn_module(),
+#           show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
+#           acne_module(),
+#           show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
+#           magsac_module(),
+#           show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
+#       ]
 
 #       pipeline = [
 #           aspanformer_module(),
