@@ -2623,8 +2623,13 @@ class coldb_ext(coldb.COLMAPDatabase):
             return None
         else:
             m, r, c = m
-            m = np.reshape(coldb.blob_to_array(m[0], np.float32), (r, c))
+            
+            if r == 0: return None
+            
+            m = np.reshape(coldb.blob_to_array(m, np.uint32), (r, c))
+
             if image_id1 > image_id2: m = m[:, ::-1]
+
             return m
 
 
@@ -2637,16 +2642,19 @@ class coldb_ext(coldb.COLMAPDatabase):
         else:
             model = {}
             m, r, c, config, E, F, H = m
-            m = np.reshape(coldb.blob_to_array(m[0], np.float32), (r, c))
+            
+            if r == 0: return None, None
+            
+            m = np.reshape(coldb.blob_to_array(m, np.uint32), (r, c))
 
             if (config == PLANAR) or (config == PANORAMIC) or (config == PLANAR_OR_PANORAMIC):
-                model['H'] = np.reshape(coldb.blob_to_array(H[0], np.float32), (3, 3))
+                model['H'] = np.reshape(coldb.blob_to_array(H, np.float64), (3, 3))
 
             if (config == CALIBRATED):
-                model['E'] = np.reshape(coldb.blob_to_array(E[0], np.float32), (3, 3))
+                model['E'] = np.reshape(coldb.blob_to_array(E, np.float64), (3, 3))
 
             if (config == UNCALIBRATED):
-                model['F'] = np.reshape(coldb.blob_to_array(F[0], np.float32), (3, 3))
+                model['F'] = np.reshape(coldb.blob_to_array(F, np.float64), (3, 3))
 
             if image_id1 > image_id2:
                 m = m[:, ::-1]
@@ -2802,7 +2810,7 @@ class to_colmap_module:
             'sampling_offset': 0,
         }
         
-        self.id_string, self.args = set_args('colmap' , args, self.args)
+        self.id_string, self.args = set_args('to_colmap' , args, self.args)
 
         self.db = coldb_ext(self.args['db'])
         self.db.create_tables()
@@ -2945,6 +2953,160 @@ class to_colmap_module:
         self.db.commit()
         
         return {}
+
+
+def kpts_from_colmap(kp): 
+    w_ = kp[:, 2:]
+    kp = kp[:, :2]
+    w = torch.zeros((kp.shape[0], 3, 3), device=device)
+    w[:, 2, 2] = 1
+    w[:, :2, :2] = w_.reshape(-1, 2, 2)
+         
+    t = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    t[:, [0, 1], 2] = kp
+    t[:, 0, 0] = 1
+    t[:, 1, 1] = 1
+    t[:, 2, 2] = 1           
+     
+    kH = t.bmm(w).inverse()
+     
+    kr = torch.full((kp.shape[0], ), np.inf, device=device)    
+             
+    return kp, kH, kr
+
+
+class from_colmap_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.pass_through = True
+
+        self.args = {
+            'id_more': '',
+            'db': 'colmap.db',
+            'only_keypoints': False,            
+            'include_two_view_geometry': True,
+        }
+        
+        self.id_string, self.args = set_args('from_colmap' , args, self.args)
+
+        self.db = coldb_ext(self.args['db'])
+        if self.args['only_keypoints']:
+            self.single_image = True
+                
+
+    def finalize(self):
+        self.db.close()
+
+                
+    def get_id(self): 
+        return self.id_string
+
+    
+    def run(self, **args):   
+        if self.single_image:
+            im = args['img'][args['idx']]
+            _, img = os.path.split(im)           
+            im_id = self.db.get_image_id(img)
+
+            if im_id is None:
+                kp = torch.zeros((0, 2), device=device)
+                kr = torch.zeros((0, ), device=device)
+                kH = torch.zeros((0, 3, 3), device=device)
+            else:                
+                kp_ = self.db.get_keypoints(im_id)
+                kp, kH, kr = kpts_from_colmap(torch.tensor(kp_, device=device))
+
+            return {'kp': kp, 'kH': kH, 'kr': kr}
+        
+        else:
+            out_data = {}
+            
+            im0 = args['img'][0]            
+            _, img0 = os.path.split(im0)           
+            im0_id = self.db.get_image_id(img0)
+
+            if im0_id is None:
+                kp0 = torch.zeros((0, 2), device=device)
+                kr0 = torch.zeros((0, ), device=device)
+                kH0 = torch.zeros((0, 3, 3), device=device)
+            else:                
+                kp0_ = self.db.get_keypoints(im0_id)
+                kp0, kH0, kr0 = kpts_from_colmap(torch.tensor(kp0_, device=device))
+
+            im1 = args['img'][1]            
+            _, img1 = os.path.split(im1)           
+            im1_id = self.db.get_image_id(img1)
+
+            if im1_id is None:
+                kp1 = torch.zeros((0, 2), device=device)
+                kr1 = torch.zeros((0, ), device=device)
+                kH1 = torch.zeros((0, 3, 3), device=device)
+            else:                
+                kp1_ = self.db.get_keypoints(im1_id)
+                kp1, kH1, kr1 = kpts_from_colmap(torch.tensor(kp1_, device=device))
+
+            kp = [kp0, kp1]
+            kH = [kH0, kH1]
+            kr = [kr0, kr1]
+            
+            out_data['kp'] = kp
+            out_data['kH'] = kH
+            out_data['kr'] = kr
+
+            if (not (im0_id is None)) and (not (im1_id is None)):
+                m_idx = self.db.get_matches(im0_id, im1_id)
+                
+                if not (m_idx is None):
+                    m_idx = torch.tensor(m_idx, device=device, dtype=torch.int)
+                    
+                    if not self.args['include_two_view_geometry']:
+                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                    
+                    else:
+                        s_idx, models = self.db.get_two_view_geometry(im0_id, im1_id)
+                    
+                        if s_idx is None:
+                            m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
+                        else:
+                            s_idx = torch.tensor(s_idx, device=device, dtype=torch.int)
+                            
+                            if len(models.keys()) == 1:
+                                for model in ['H', 'F', 'E']:
+                                    if model in models: out_data[model] = torch.tensor(models[model], device=device)
+                            
+                            m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
+                            
+                            idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
+                            m_idx = m_idx[idx]
+                            idx = torch.argsort(m_idx[:, 0].type(torch.int), stable=True)
+                            m_idx = m_idx[idx]
+
+                            idx = torch.argsort(s_idx[:, 1].type(torch.int), stable=True)
+                            s_idx = s_idx[idx]
+                            idx = torch.argsort(s_idx[:, 0].type(torch.int), stable=True)
+                            s_idx = s_idx[idx]
+
+                            q0 = 0
+                            q1 = 0
+                            while (q0 < s_idx.shape[0]) and (q1 < m_idx.shape[0]):                       
+                                if (s_idx[q0, 0] < m_idx[q1, 0]) or ((s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] < m_idx[q1, 1])):
+                                    q0 = q0 + 1
+                                elif (s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] == m_idx[q1, 1]):
+                                    m_mask[q1] = 1
+                                    q0 = q0 + 1
+                                    q1 = q1 + 1
+                                else:
+                                    q1 = q1 + 1
+
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                                                    
+                    out_data['m_idx'] = m_idx
+                    out_data['m_val'] = m_val
+                    out_data['m_mask'] = m_mask
+        
+        return out_data
 
 
 def relative_pose_error_angular(R_gt, t_gt, R, t, ignore_gt_t_thr=0.0):
@@ -4900,12 +5062,19 @@ if __name__ == '__main__':
                 
 #       imgs = '../data/ET_random_rotated'
 
-        pipeline = [
-            loftr_module(),
-            magsac_module(),
-            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            to_colmap_module(),
-        ]     
+#       pipeline = [
+#           loftr_module(),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]     
+
+#       pipeline = [
+#           roma_module(),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(),
+#       ]     
 
 #       pipeline = [
 #           r2d2_module(),
@@ -4933,6 +5102,12 @@ if __name__ == '__main__':
 #           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #           to_colmap_module(),
 #       ]  
+
+        pipeline = [
+            from_colmap_module(),
+            show_kpts_module(img_prefix='sift_', prepend_pair=False),
+            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        ]   
 
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
