@@ -2583,7 +2583,27 @@ class coldb_ext(coldb.COLMAPDatabase):
         if not (image_id is None): image_id = image_id[0]
         return image_id
 
-        
+
+    def get_camera(self, camera_id):
+        cursor = self.execute("SELECT model, width, height, params, prior_focal_length FROM cameras where camera_id=?", (camera_id, ))
+        cam = cursor.fetchone()
+        if cam is None:
+            return None
+        else:
+            c, w, h, p, f = cam
+            p = coldb.blob_to_array(p, np.float64)
+            return c, w, h, p, f
+
+
+    def get_image(self, image_id):
+        cursor = self.execute("SELECT name, camera_id FROM images where image_id=?", (image_id, ))
+        img = cursor.fetchone()
+        if img is None:
+            return None
+        else:
+            return img
+
+
     def get_keypoints(self, image_id):
         cursor = self.execute("SELECT data, rows, cols FROM keypoints where image_id=?", (image_id, ))
         kpts = cursor.fetchone()
@@ -2691,6 +2711,12 @@ class coldb_ext(coldb.COLMAPDatabase):
                     (pair_id, ),
                     )
 
+    def get_images(self):
+        cursor = self.execute("SELECT image_id, name FROM images")
+        m = cursor.fetchall()        
+        
+        return m
+    
 
     def update_two_view_geometry(self, image_id1, image_id2, matches, model=None):
         assert len(matches.shape) == 2
@@ -2748,7 +2774,7 @@ class coldb_ext(coldb.COLMAPDatabase):
                 how_many_models = how_many_models + 1
                 model_str = model_str + "E=?, "                    
                 model_tuple = model_tuple + (coldb.array_to_blob(model['E']), )
-            if how_many_models > 1:
+            if how_many_models != 1:
                 config = MULTIPLE
                     
             query_str = "UPDATE two_view_geometries SET rows=?, cols=?, data=?, " + model_str + "config=? WHERE pair_id=?"
@@ -3058,7 +3084,7 @@ class from_colmap_module:
                 m_idx = self.db.get_matches(im0_id, im1_id)
                 
                 if not (m_idx is None):
-                    m_idx = torch.tensor(m_idx, device=device, dtype=torch.int)
+                    m_idx = torch.tensor(np.copy(m_idx), device=device, dtype=torch.int)
                     
                     if not self.args['include_two_view_geometry']:
                         m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
@@ -3070,7 +3096,7 @@ class from_colmap_module:
                         if s_idx is None:
                             m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
                         else:
-                            s_idx = torch.tensor(s_idx, device=device, dtype=torch.int)
+                            s_idx = torch.tensor(np.copy(s_idx), device=device, dtype=torch.int)
                             
                             if len(models.keys()) == 1:
                                 for model in ['H', 'F', 'E']:
@@ -4937,8 +4963,319 @@ class acne_module:
             return {'m_mask': args['m_mask']}
 
 
+def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
+    only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
+    include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
+    sampling_scale=1, sampling_offset=0, focal_cf=1.2):                    
+
+    aux_hdf5 = None
+    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         
+        aux_hdf5 = pickled_hdf5.pickled_hdf5('tmp.hdf5', mode='a')
+                
+    dbs = []
+    for db_name in db_names:    
+        dbs.append(coldb_ext(db_name))
+
+    db_merged = coldb_ext(db_merged_name)
+    db_merged.create_tables()
+    
+    for i, db in enumerate(tqdm(dbs, desc='Merging progress')):
+        imgs = db.get_images()
+    
+        if (to_filter is None) or (how_filter is None):
+            current_how = None
+            current_filter = None
+        else:
+            current_how = how_filter[i]
+            current_filter = to_filter[i]
+            
+        if not(current_filter is None):
+            if len(current_filter) == 0:
+                current_how = None
+                current_filter = None
+
+        img_dict = {}
+        pair_dict = {}
+        if not (current_filter is None):
+            for v in current_filter:
+                if not(isinstance(v, list) or isinstance(v, tuple)):
+                    img_dict[v] = 1
+                else:                    
+                    if not (v[0] in pair_dict): pair_dict[v[0]] = {}                    
+                    pair_dict[v[0]][v[1]] = 1
+            
+        for in0a, in0b  in enumerate(imgs):
+            for in1a, in1b in enumerate(imgs):
+                im0_id, im0_ = in0b
+                im1_id, im1_ = in1b
+                                
+                if im0_id == im1_id: continue
+                if in1a <= in0a: continue
+
+                im0 = os.path.split(im0_)[-1]
+                im1 = os.path.split(im1_)[-1]
+                
+                if current_how == 'exclude':
+                    cond0 = (im0 in img_dict) or (im1 in img_dict) 
+                    cond1 = ((im0 in pair_dict) and (im1 in pair_dict[im0])) or ((im1 in pair_dict) and (im0 in pair_dict[im1]))                    
+                    if cond0 or cond1: continue                
+ 
+                if current_how == 'include':
+                    cond0 = (im0 in img_dict) or (im1 in img_dict) 
+                    cond1 = ((im0 in pair_dict) and (im1 in pair_dict[im0])) or ((im1 in pair_dict) and (im0 in pair_dict[im1]))                    
+                    if (not cond0) and (not cond1): continue                
+
+                # print((im0, im1))
+
+                im0_id_prev = db_merged.get_image_id(im0)
+                if  im0_id_prev is None:
+                    im0_name, cam0_id = db.get_image(im0_id)
+                    
+                    if img_folder is None:
+                        cam0 = db.get_camera(cam0_id)                                       
+                        cam0_id_prev = db_merged.add_camera(cam0[0], cam0[1], cam0[2], cam0[3], cam0[4])
+                    else:
+                        w, h = Image.open(os.path.join(img_folder, im0)).size
+                        cam0_id_prev = db_merged.add_camera(SIMPLE_RADIAL, w, h, np.array([focal_cf * max(w, h), w / 2, h / 2, 0]))
+                       
+                    im0_id_prev = db_merged.add_image(im0_name, cam0_id_prev)
+                    db_merged.commit()
+
+                im1_id_prev = db_merged.get_image_id(im1)
+                if  im1_id_prev is None:
+                    im1_name, cam1_id = db.get_image(im1_id)
+                    
+                    if img_folder is None:
+                        cam1 = db.get_camera(cam1_id)
+                        cam1_id_prev = db_merged.add_camera(cam1[0], cam1[1], cam1[2], cam1[3], cam1[4])
+                    else:
+                        w, h = Image.open(os.path.join(img_folder, im1)).size
+                        cam1_id_prev = db_merged.add_camera(SIMPLE_RADIAL, w, h, np.array([focal_cf * max(w, h), w / 2, h / 2, 0]))
+                                        
+                    im1_id_prev = db_merged.add_image(im1_name, cam1_id_prev)
+                    db_merged.commit()
+         
+                kp0 = db.get_keypoints(im0_id)
+                kp1 = db.get_keypoints(im1_id)
+
+                if kp0 is None:
+                    w0 = torch.zeros((0, 6), device=device)
+                    kp0 = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count = torch.zeros(0, device=device)
+                else:
+                    w0 = torch.tensor(kp0, device=device)
+                    kp0 = torch.tensor(kp0[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count, _ = aux_hdf5.get(im0)
+                    
+                kH0 = torch.zeros((kp0.shape[0], 3, 3), device=device)
+                kr0 = torch.full((kp0.shape[0], ), torch.inf, device=device)
+        
+                if kp1 is None:
+                    w1 = torch.zeros((0, 6), device=device)
+                    kp1 = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count = torch.zeros(0, device=device)
+                else:
+                    w1 = torch.tensor(kp1, device=device)
+                    kp1 = torch.tensor(kp1[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count, _ = aux_hdf5.get(im1)
+                    
+                kH1 = torch.zeros((kp1.shape[0], 3, 3), device=device)
+                kr1 = torch.full((kp1.shape[0], ), torch.inf, device=device)
+
+                pipe = {}
+                pipe['kp'] = [kp0, kp1]
+                pipe['kH'] = [kH0, kH1]
+                pipe['kr'] = [kr0, kr1]
+                pipe['w'] = [w0, w1]
+
+                kp0_prev = db_merged.get_keypoints(im0_id_prev)
+                kp1_prev = db_merged.get_keypoints(im1_id_prev)
+                
+                if kp0_prev is None:
+                    w0_prev = torch.zeros((0, 6), device=device)
+                    kp0_prev = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count_prev = torch.zeros(0, device=device)
+                else:
+                    w0_prev = torch.tensor(kp0_prev, device=device)
+                    kp0_prev = torch.tensor(kp0_prev[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count_prev, _ = aux_hdf5.get(im0)
+                    
+                kH0_prev = torch.zeros((kp0_prev.shape[0], 3, 3), device=device)
+                kr0_prev = torch.full((kp0_prev.shape[0], ), torch.inf, device=device)
+        
+                if kp1_prev is None:
+                    w1_prev = torch.zeros((0, 6), device=device)
+                    kp1_prev = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count_prev = torch.zeros(0, device=device)
+                else:
+                    w1_prev = torch.tensor(kp1_prev, device=device)
+                    kp1_prev = torch.tensor(kp1_prev[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count_prev, _ = aux_hdf5.get(im1)
+                    
+                kH1_prev = torch.zeros((kp1_prev.shape[0], 3, 3), device=device)
+                kr1_prev = torch.full((kp1_prev.shape[0], ), torch.inf, device=device)
+
+                pipe_prev = {}
+                pipe_prev['kp'] = [kp0_prev, kp1_prev]
+                pipe_prev['kH'] = [kH0_prev, kH1_prev]
+                pipe_prev['kr'] = [kr0_prev, kr1_prev]
+                pipe_prev['w'] = [w0_prev, w1_prev]
+
+                no_matches = False
+                if only_keypoints: no_matches = True
+ 
+                matches = None
+                two_view_matches = None
+                if no_matches == False:
+                    matches = db.get_matches(im0_id, im1_id)
+                    if not (matches is None) and include_two_view_geometry:
+                        two_view_matches, models = db.get_two_view_geometry(im0_id, im1_id)
+
+                if matches is None:
+                    m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
+                    m_val = torch.full((m_idx.shape[0], ), torch.inf, device=device)
+                    m_mask = torch.full((m_idx.shape[0], ), 1, device=device, dtype=torch.bool)
+                else:                    
+                    m_idx = torch.tensor(np.copy(matches), device=device, dtype=torch.int)
+                    if two_view_matches is None:
+                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                    else:                       
+                        s_idx = torch.tensor(np.copy(two_view_matches), device=device, dtype=torch.int)
+                            
+                        if len(models.keys()) == 1:
+                            for model in ['H', 'F', 'E']:
+                                if model in models: pipe[model] = torch.tensor(models[model], device=device)
+                                
+                        m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
+                        
+                        idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
+                        m_idx = m_idx[idx]
+                        idx = torch.argsort(m_idx[:, 0].type(torch.int), stable=True)
+                        m_idx = m_idx[idx]
+
+                        idx = torch.argsort(s_idx[:, 1].type(torch.int), stable=True)
+                        s_idx = s_idx[idx]
+                        idx = torch.argsort(s_idx[:, 0].type(torch.int), stable=True)
+                        s_idx = s_idx[idx]
+
+                        q0 = 0
+                        q1 = 0
+                        while (q0 < s_idx.shape[0]) and (q1 < m_idx.shape[0]):                       
+                            if (s_idx[q0, 0] < m_idx[q1, 0]) or ((s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] < m_idx[q1, 1])):
+                                q0 = q0 + 1
+                            elif (s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] == m_idx[q1, 1]):
+                                m_mask[q1] = 1
+                                q0 = q0 + 1
+                                q1 = q1 + 1
+                            else:
+                                q1 = q1 + 1
+
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+
+                pipe['m_idx'] = m_idx
+                pipe['m_val'] = m_val
+                pipe['m_mask'] = m_mask
+                
+                if ('sampling_mode' == 'avg_all_matches') or ('sampling_mode' == 'avg_inlier_matches'):        
+                    pipe['k_counter'] = [k0_count, k1_count]
+        
+                matches_prev = None
+                two_view_matches_prev = None
+                if no_matches == False:
+                    matches_prev = db_merged.get_matches(im0_id_prev, im1_id_prev)
+                    if not (matches_prev is None) and include_two_view_geometry:
+                        two_view_matches_prev, models_prev = db.get_two_view_geometry(im0_id_prev, im1_id_prev)
+
+                if matches_prev is None:
+                    m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
+                    m_val = torch.full((m_idx.shape[0], ), torch.inf, device=device)
+                    m_mask = torch.full((m_idx.shape[0], ), 1, device=device, dtype=torch.bool)
+                else:                    
+                    m_idx = torch.tensor(np.copy(matches_prev), device=device, dtype=torch.int)
+                    if two_view_matches_prev is None:
+                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                    else:                       
+                        s_idx = torch.tensor(np.copy(two_view_matches_prev), device=device, dtype=torch.int)
+                            
+                        if len(models_prev.keys()) == 1:
+                            for model in ['H', 'F', 'E']:
+                                if model in models_prev: pipe_prev[model] = torch.tensor(models_prev[model], device=device)
+                                
+                        m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
+                        
+                        idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
+                        m_idx = m_idx[idx]
+                        idx = torch.argsort(m_idx[:, 0].type(torch.int), stable=True)
+                        m_idx = m_idx[idx]
+
+                        idx = torch.argsort(s_idx[:, 1].type(torch.int), stable=True)
+                        s_idx = s_idx[idx]
+                        idx = torch.argsort(s_idx[:, 0].type(torch.int), stable=True)
+                        s_idx = s_idx[idx]
+
+                        q0 = 0
+                        q1 = 0
+                        while (q0 < s_idx.shape[0]) and (q1 < m_idx.shape[0]):                       
+                            if (s_idx[q0, 0] < m_idx[q1, 0]) or ((s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] < m_idx[q1, 1])):
+                                q0 = q0 + 1
+                            elif (s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] == m_idx[q1, 1]):
+                                m_mask[q1] = 1
+                                q0 = q0 + 1
+                                q1 = q1 + 1
+                            else:
+                                q1 = q1 + 1
+
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+
+                pipe_prev['m_idx'] = m_idx
+                pipe_prev['m_val'] = m_val
+                pipe_prev['m_mask'] = m_mask
+                
+                if ('sampling_mode' == 'avg_all_matches') or ('sampling_mode' == 'avg_inlier_matches'):        
+                    pipe_prev['k_counter'] = [k0_count_prev, k1_count_prev]
+        
+                counter = (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches')
+                pipe_out = pipe_union([pipe_prev, pipe], unique=unique, no_unmatched=no_unmatched, only_matched=only_matched, sampling_mode=sampling_mode, sampling_scale=sampling_scale, sampling_offset=sampling_offset, overlapping_cells=overlapping_cells, preserve_order=True, counter=counter)
+
+                pts0 = pipe_out['w'][0].to('cpu').numpy()
+                pts1 = pipe_out['w'][1].to('cpu').numpy()
+                
+                if counter:
+                    aux_hdf5.add(im0, pipe_out['k_counter'][0])
+                    aux_hdf5.add(im1, pipe_out['k_counter'][1])
+                
+                db_merged.update_keypoints(im0_id_prev, pts0)
+                db_merged.update_keypoints(im1_id_prev, pts1)
+
+                if not only_keypoints:
+                    m_idx = pipe_out['m_idx'].to('cpu').numpy()
+                    db_merged.update_matches(im0_id_prev, im1_id_prev, m_idx)
+        
+                    if include_two_view_geometry:        
+                        m_idx = pipe_out['m_idx'][pipe_out['m_mask']].to('cpu').numpy()
+                        models = {}                                        
+                        db_merged.update_two_view_geometry(im0_id_prev, im1_id_prev, m_idx, model=models)
+
+                db_merged.commit()
+
+    db_merged.close()
+    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):
+        aux_hdf5.close()
+        if os.path.isfile('tmp.hdf5'): os.remove('tmp.hdf5')
+
+                    
 if __name__ == '__main__':    
-    with torch.inference_mode():     
+    with torch.inference_mode():         
 #       pipeline = [
 #           dog_module(),
 #         # show_kpts_module(id_more='first', prepend_pair=False),
@@ -5103,14 +5440,38 @@ if __name__ == '__main__':
 #           to_colmap_module(),
 #       ]  
 
+#       pipeline = [
+#           from_colmap_module(),
+#           show_kpts_module(img_prefix='sift_', prepend_pair=False),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#       ]   
+
         pipeline = [
-            from_colmap_module(),
-            show_kpts_module(img_prefix='sift_', prepend_pair=False),
-            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        ]   
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
+            magsac_module(),
+            show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(db='aliked.db'),            
+        ]         
 
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
+
+        pipeline = [
+            deep_joined_module(what='superpoint'),
+            lightglue_module(what='superpoint'),
+            magsac_module(),
+            show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(db='superpoint.db'),            
+        ]         
+
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)
+
+        merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
+
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs)
 
 #       imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
 #       imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
@@ -5141,5 +5502,3 @@ if __name__ == '__main__':
 
 #       imgs = [imgs_imc[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
-           
-        print('doh!')
