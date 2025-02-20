@@ -539,7 +539,7 @@ def mAA_on_cameras_per_th(err, thresholds, n, to_dec=3):
     return np.maximum(np.sum(aux, axis=0) - to_dec, 0) / (n - to_dec)
 
         
-def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
+def score_all(gt_csv, user_csv, strict_cluster=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
     gt_data = read_csv(gt_csv)
     user_data = read_csv(user_csv)
     
@@ -553,8 +553,9 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
             th_n = thresholds['length']
 
         model_table = []
-        registered_table = np.zeros((th_n, len(gt_dataset), len(user_dataset)))
+        registered_table = np.zeros((th_n - skip_top_thresholds, len(gt_dataset), len(user_dataset)))
         mAA_table = np.zeros((len(gt_dataset), len(user_dataset)))
+        mAA_th_table = np.zeros((th_n - skip_top_thresholds, len(gt_dataset), len(user_dataset)))
         cluster_table = np.zeros((len(gt_dataset), len(user_dataset)))
         gt_scene_sum_table = np.zeros((len(gt_dataset), len(user_dataset)))
         user_scene_sum_table = np.zeros((len(gt_dataset), len(user_dataset)))
@@ -562,8 +563,9 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
         best_gt_scene = []
         best_user_scene = []
         best_model = []
-        best_registered = np.zeros((th_n, len(gt_dataset)))
+        best_registered = np.zeros((th_n - skip_top_thresholds, len(gt_dataset)))
         best_mAA = np.zeros(len(gt_dataset))
+        best_mAA_th = np.zeros((th_n - skip_top_thresholds, len(gt_dataset)))
         best_cluster = np.zeros(len(gt_dataset))
         best_gt_scene_sum = np.zeros(len(gt_dataset))
         best_user_scene_sum = np.zeros(len(gt_dataset))
@@ -615,16 +617,17 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
 
                 # mAA                
                 mAA = mAA_on_cameras(model["err"], ths, m, skip_top_thresholds, to_dec)
-
-#               TODO: best for threshold                
-#               mAA_th = mAA_on_cameras_per_th(model["err"], ths, m, to_dec)
+                mAA_th = mAA_on_cameras_per_th(model["err"], ths, m, to_dec)
                 
-                registered_table[:, i, j] = model['no_inl']
+                registered_table[:, i, j] = model['no_inl'][:, skip_top_thresholds:]
                 mAA_table[i, j] = mAA
-                # correct even if the registration is not good
-                cluster_table[i, j] = n
-                # require that registration is good too                
-#               cluster_table[i, j] = np.mean(model['no_inl']).item()
+                mAA_th_table[:, i, j] = mAA_th[skip_top_thresholds:]
+                
+                if not strict_cluster:                
+                    cluster_table[i, j] = n
+                else:
+                    cluster_table[i, j] = np.mean(model['no_inl'])
+
                 gt_scene_sum_table[i, j] = m
                 user_scene_sum_table[i, j] = len(user_data[dataset][user_scene])
                 
@@ -637,6 +640,7 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
             best_model.append(model_row[best_ind])
             best_registered[:, i] = registered_table[:, i, best_ind]
             best_mAA[i] = mAA_table[i, best_ind]
+            best_mAA_th[:, i] = mAA_th_table[:, i, best_ind]
             best_cluster[i] = cluster_table[i, best_ind]
             best_gt_scene_sum[i] = gt_scene_sum_table[i, best_ind]
             best_user_scene_sum[i] = user_scene_sum_table[i, best_ind]
@@ -655,6 +659,7 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
             best_model.pop(outlier_idx)
             best_registered = np.delete(best_registered, outlier_idx, axis=1)            
             best_mAA = np.delete(best_mAA, outlier_idx)            
+            best_mAA_th = np.delete(best_mAA_th, outlier_idx, axis=1)            
             best_cluster = np.delete(best_cluster, outlier_idx)            
             best_gt_scene_sum = np.delete(best_gt_scene_sum, outlier_idx)            
             best_user_scene_sum = np.delete(best_user_scene_sum, outlier_idx)
@@ -680,7 +685,171 @@ def score_all(gt_csv, user_csv, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds
         geo_avg_score = (mAA_score * cluster_score)**0.5
         har_avg_score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
 
-        print(f'{dataset}: mAA = {mAA_score * 100} %, clusterness =  {cluster_score * 100} %, combined (simple product) = {combo_score* 100} %, combined (geometric mean)= {geo_avg_score * 100} %, combined (harmonic mean)= {har_avg_score * 100} %')
+        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined (simple product) = {combo_score* 100: .2f} %, combined (geometric mean) = {geo_avg_score * 100: .2f} %, combined (harmonic mean) = {har_avg_score * 100: .2f} %')
+
+
+def score_all_per_th(gt_csv, user_csv, strict_cluster=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
+    gt_data = read_csv(gt_csv)
+    user_data = read_csv(user_csv)
+    
+    for dataset in gt_data.keys():
+        gt_dataset = gt_data[dataset]
+        user_dataset = user_data[dataset]
+               
+        if isinstance(thresholds, list):            
+            th_n = len(thresholds)
+        else:
+            th_n = thresholds['length']
+
+        model_table = []
+        registered_table = np.zeros((th_n - skip_top_thresholds, len(gt_dataset), len(user_dataset)))
+        mAA_table = np.zeros((len(gt_dataset), len(user_dataset)))
+        mAA_th_table = np.zeros((th_n - skip_top_thresholds, len(gt_dataset), len(user_dataset)))
+        cluster_table = np.zeros((len(gt_dataset), len(user_dataset)))
+        gt_scene_sum_table = np.zeros((len(gt_dataset), len(user_dataset)))
+        user_scene_sum_table = np.zeros((len(gt_dataset), len(user_dataset)))
+
+        best_gt_scene = [[] for k in range(th_n - skip_top_thresholds)]
+        best_user_scene = [[] for k in range(th_n - skip_top_thresholds)]
+        best_model = [[] for k in range(th_n - skip_top_thresholds)]
+        best_registered = [np.zeros((th_n - skip_top_thresholds, len(gt_dataset))) for k in range(th_n - skip_top_thresholds)]
+        best_mAA = [np.zeros(len(gt_dataset)) for k in range(th_n - skip_top_thresholds)]
+        best_mAA_th = [np.zeros((th_n - skip_top_thresholds, len(gt_dataset))) for k in range(th_n - skip_top_thresholds)]
+        best_cluster = [np.zeros(len(gt_dataset)) for k in range(th_n - skip_top_thresholds)]
+        best_gt_scene_sum = [np.zeros(len(gt_dataset)) for k in range(th_n - skip_top_thresholds)]
+        best_user_scene_sum = [np.zeros(len(gt_dataset)) for k in range(th_n - skip_top_thresholds)]
+
+        gt_scene_list = []        
+        for i, gt_scene in enumerate(gt_dataset.keys()):
+            gt_scene_list.append(gt_scene)
+
+            model_row = []
+            user_scene_list = []
+            for j, user_scene in enumerate(user_dataset.keys()):                
+                user_scene_list.append(user_scene)
+
+                if (gt_scene == 'outliers') or (user_scene == 'outliers'):
+                    model_row.append([])
+                    continue
+                
+                if not isinstance(thresholds, dict):
+                    ths = thresholds
+                else:
+                    ths = thresholds[dataset][gt_scene]
+                
+                gt_cams = gt_data[dataset][gt_scene]
+                user_cams = user_data[dataset][user_scene]
+                
+                
+                # the denominator for mAA ratio
+                m = len(gt_cams)
+                
+                # get the image list to use
+                good_cams = []
+                for image_path in gt_cams.keys():
+                    if image_path in user_cams.keys():
+                        good_cams.append(image_path)
+                    
+                # put corresponding camera centers into matrices
+                n = len(good_cams)
+                u_cameras = np.zeros((3, n))
+                g_cameras = np.zeros((3, n))
+                
+                ii = 0
+                for k in good_cams:
+                    u_cameras[:, ii] = user_cams[k]['c']
+                    g_cameras[:, ii] = gt_cams[k]['c']
+                    ii += 1
+                    
+                # Horn camera centers registration, a different best model for each camera threshold
+                model = register_by_Horn(u_cameras, g_cameras, np.asarray(ths), inl_cf, strict_cf)
+
+                # mAA                
+                mAA = mAA_on_cameras(model["err"], ths, m, skip_top_thresholds, to_dec)
+                mAA_th = mAA_on_cameras_per_th(model["err"], ths, m, to_dec)
+                
+                registered_table[:, i, j] = model['no_inl'][:, skip_top_thresholds:]
+                mAA_table[i, j] = mAA
+                mAA_th_table[:, i, j] = mAA_th[skip_top_thresholds:]
+                
+                if not strict_cluster:                
+                    cluster_table[i, j] = n
+                else:
+                    cluster_table[i, j] = np.mean(model['no_inl'])
+
+                gt_scene_sum_table[i, j] = m
+                user_scene_sum_table[i, j] = len(user_data[dataset][user_scene])
+                
+                model_row.append(model)
+    
+            model_table.append(model_row)
+
+        for t in range(th_n - skip_top_thresholds):  
+            for i, gt_scene in enumerate(gt_dataset.keys()):                                  
+                if strict_cluster:
+                    aux = cluster_table[i]
+                else:
+                    aux = registered_table[t, i]
+    
+                best_ind = np.lexsort((-mAA_th_table[t, i], -aux))[0]
+    
+                best_gt_scene[t].append(gt_scene)
+                best_user_scene[t].append(user_scene_list[best_ind])
+                best_model[t].append(model_table[i][best_ind])
+                best_registered[t][:, i] = registered_table[:, i, best_ind]
+                best_mAA[t][i] = mAA_table[i, best_ind]
+                best_mAA_th[t][:, i] = mAA_th_table[:, i, best_ind]
+                best_cluster[t][i] = cluster_table[i, best_ind]
+                best_gt_scene_sum[t][i] = gt_scene_sum_table[i, best_ind]
+                best_user_scene_sum[t][i] = user_scene_sum_table[i, best_ind]
+            
+            outlier_idx = -1
+            for i, scene in enumerate(best_gt_scene[t]):
+                if scene == 'outliers':
+                    outlier_idx = i
+                    break            
+                
+            if outlier_idx > -1:
+                best_gt_scene[t].pop(outlier_idx)
+                best_user_scene[t].pop(outlier_idx)
+                best_model[t].pop(outlier_idx)
+                best_registered[t] = np.delete(best_registered[t], outlier_idx, axis=1)            
+                best_mAA[t] = np.delete(best_mAA[t], outlier_idx)            
+                best_mAA_th[t] = np.delete(best_mAA_th[t], outlier_idx, axis=1)            
+                best_cluster[t] = np.delete(best_cluster[t], outlier_idx)            
+                best_gt_scene_sum[t] = np.delete(best_gt_scene_sum[t], outlier_idx)            
+                best_user_scene_sum[t] = np.delete(best_user_scene_sum[t], outlier_idx)
+
+        n = 0
+        m = 0
+        for t in range(th_n - skip_top_thresholds):
+            n = n + np.sum(best_cluster[t])
+            m = m + np.sum(best_user_scene_sum[t])
+        cluster_score = n / m
+
+        a = 0
+        b = 0
+        for t in range(th_n - skip_top_thresholds):                
+            n = np.sum(best_gt_scene_sum[t])
+
+            for i, scene in enumerate(best_gt_scene[t]):
+                if not isinstance(thresholds, dict):
+                    ths = thresholds
+                else:
+                    ths = thresholds[dataset][scene]
+                        
+                tmp = best_model[t][i]['err'][:, skip_top_thresholds + t] < ths[skip_top_thresholds+t]
+                a = a + np.maximum(np.sum(tmp) - to_dec, 0)
+
+            b = b + (n - len(best_gt_scene[t]) * to_dec) 
+
+        mAA_score = a / b
+        
+        combo_score = mAA_score * cluster_score 
+        geo_avg_score = (mAA_score * cluster_score)**0.5
+        har_avg_score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+
+        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined (simple product) = {combo_score* 100: .2f} %, combined (geometric mean) = {geo_avg_score * 100: .2f} %, combined (harmonic mean) = {har_avg_score * 100: .2f} %')
 
 
 if __name__ == '__main__':      
@@ -692,12 +861,14 @@ if __name__ == '__main__':
     # submission_data = make_todo()
     # to_csv(submission_data, csv_file='../aux/submission/submission.csv')    
 
-#   print('GT vs GT')
+    print('GT vs GT')
+#   score_all_per_th('../aux/gt/gt.csv', '../aux/gt/gt.csv', thresholds=translation_thresholds_meters)
 #   score_all('../aux/gt/gt.csv', '../aux/gt/gt.csv', thresholds=translation_thresholds_meters)
 #   ETs: mAA = 100.0 %, clusterness =  100.0 %, combined (simple product) = 100.0 %, combined (geometric mean)= 100.0 %, combined (harmonic mean)= 100.0 %
 #   kermits: mAA = 100.0 %, clusterness =  100.0 %, combined (simple product) = 100.0 %, combined (geometric mean)= 100.0 %, combined (harmonic mean)= 100.0 %
 
     print('GT vs submission')
+#   score_all_per_th('../aux/gt/gt.csv', '../aux/submission/submission.csv', thresholds=translation_thresholds_meters)
     score_all('../aux/gt/gt.csv', '../aux/submission/submission.csv', thresholds=translation_thresholds_meters)
 #   ETs: mAA = 48.75 %, clusterness =  57.99999999999999 %, combined (simple product) = 28.275 %, combined (geometric mean)= 53.174241884581676 %, combined (harmonic mean)= 52.97423887587822 %
 #   kermits: mAA = 93.33333333333333 %, clusterness =  95.45454545454545 %, combined (simple product) = 89.0909090909091 %, combined (geometric mean)= 94.38798074485389 %, combined (harmonic mean)= 94.38202247191012 %
