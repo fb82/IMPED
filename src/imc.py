@@ -1,4 +1,4 @@
-# import imped
+import imped
 import torch
 import pycolmap
 import numpy as np
@@ -13,7 +13,7 @@ _EPS = np.finfo(float).eps * 4.0
 
 def compute_3D(db, img_dir, output_path):
     # pycolmap.match_exhaustive(db)
-    os.system('colmap exhaustive_matcher --database_path ' + db)
+    # os.system('colmap exhaustive_matcher --database_path ' + db)
     database_path = db
     
     return pycolmap.incremental_mapping(database_path=database_path, image_path=img_dir, output_path=output_path)
@@ -31,16 +31,34 @@ def to_csv(datasets, csv_file='../aux/gt/gt.csv'):
             dataset_name = dataset['name']
             for i in range(len(dataset['scenes'])):
                 scene = dataset['scenes'][i]
-                imgs = os.listdir(dataset['images'][i])            
-                model = pycolmap.Reconstruction(dataset['models'][i])
+                imgs = os.listdir(os.path.join(dataset['images'][i], 'images'))            
+
+                if not(dataset['csv'][i] is None):                
+                    _, model = check_gt_imc2024(dataset['csv'][i], tolerance=float('inf'))
+                    if not scene in model:
+                        warnings.warn(f"scene {scene} not found in file {dataset['csv'][i]}")
+                    else:
+                        for img in imgs:
+                            if os.path.isfile(os.path.join(dataset['images'][i], 'images', img)):
+                                if img in model[scene]:
+                                    R = model[scene][img]['R']
+                                    T = model[scene][img]['T']
+                                    f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                                else:
+                                    warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')
+
+                if not(dataset['models'][i] is None):                
+                    model = pycolmap.Reconstruction(dataset['models'][i])
                 
-                for img in imgs:
-                    if os.path.isfile(os.path.join(dataset['images'][i], img)):
-                        im = model.find_image_with_name(img)
-                        if not (im is None):
-                            R = im.cam_from_world.rotation.matrix()
-                            T = np.array(im.cam_from_world.translation)
-                            f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                    for img in imgs:
+                        if os.path.isfile(os.path.join(dataset['images'][i], 'images', img)):
+                            im = model.find_image_with_name(img)
+                            if not (im is None):
+                                R = im.cam_from_world.rotation.matrix()
+                                T = np.array(im.cam_from_world.translation)
+                                f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                            else:
+                                warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')
 
             if not (dataset['outliers'] is None):
                 imgs = os.listdir(dataset['outliers'])
@@ -49,8 +67,52 @@ def to_csv(datasets, csv_file='../aux/gt/gt.csv'):
                     T = np.full((3, ), np.nan)
                     f.write(f'{dataset_name},outliers,{img},{arr_to_str(R)},{arr_to_str(T)}\n')
 
-                    
-def run_matcher_if_needed(db, abs_scene, abs_3d):
+
+def check_gt_imc2024(csv_gt, tolerance=5, warning=False):
+    if not os.path.isfile(csv_gt): return False, None
+
+    aux = os.path.split(csv_gt)[0]
+    scene_name = os.path.split(aux)[1]
+    
+    img_folder = os.path.join(aux, 'images')
+    img_list = os.listdir(img_folder)
+    img_dict = {}
+    for img in img_list: img_dict[img] = 1
+    
+    data = {}
+
+    with open(csv_gt, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+    
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                continue
+            
+            scene = row[0]
+            image = row[-1]
+            R = np.array([float(x) for x in (row[-3].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[-2].split(';'))]).reshape(3)
+
+            if scene != scene_name:
+                continue
+            
+            if not os.path.isfile(os.path.join(img_folder, image)):
+                continue
+            
+            if not (scene in data):
+                data[scene] = {}
+                
+            img_dict.pop(image)            
+            data[scene][image] = {'R': R, 'T': t}
+
+    if len(img_dict) > 0: warnings.warn(f'scene {scene} - missing images {list(img_dict.keys())}')
+
+    return len(img_dict)<tolerance, data
+
+
+def run_matcher_if_needed(db, abs_scene, abs_3d):    
     if not os.path.isfile(db):
         os.makedirs(abs_3d, exist_ok=True)  
 
@@ -58,6 +120,7 @@ def run_matcher_if_needed(db, abs_scene, abs_3d):
             pipeline = [
                 imped.deep_joined_module(what='aliked'),
                 imped.lightglue_module(what='aliked'),
+                imped.poselib_module(),
                 imped.to_colmap_module(db=db),
             ]       
                     
@@ -70,12 +133,12 @@ def run_reconstruction_if_needed(db, models, abs_3d):
         compute_3D(db, abs_3d, models)
 
 
-def make_gt(img_file='../aux/gt/imgs', rec_file='../aux/gt/3d', check_models=True, min_model_size=3):
+def make_gt(folder='../aux/kaggle', csv_gt_name='imc2024_gt.csv', check_models=True, min_model_size=3):
     data = []
 
-    datasets = os.listdir(img_file)
+    datasets = os.listdir(folder)
     for dataset in datasets:
-        abs_dataset = os.path.join(img_file, dataset)
+        abs_dataset = os.path.join(folder, dataset)
         
         if os.path.isdir(abs_dataset):
             tmp_dataset = {}
@@ -83,46 +146,56 @@ def make_gt(img_file='../aux/gt/imgs', rec_file='../aux/gt/3d', check_models=Tru
             tmp_dataset['scenes'] = []
             tmp_dataset['images'] = []
             tmp_dataset['models'] = []
+            tmp_dataset['csv'] = []
             tmp_dataset['outliers'] = None
             
             scenes = os.listdir(abs_dataset)
 
             for scene in scenes:
-                abs_scene = os.path.join(img_file, dataset, scene)
+                abs_scene = os.path.join(folder, dataset, scene)
                 
                 if os.path.isdir(abs_scene):
                     if scene == 'outliers':
                         tmp_dataset['outliers'] = os.path.join(abs_dataset, 'outliers')
-                    else:  
-                        abs_3d = os.path.join(rec_file, dataset, scene)
+                    else:
+                        csv_gt = os.path.join(folder, dataset, scene, csv_gt_name)                        
+                        abs_3d = os.path.join(folder, dataset, scene, 'colmap')
 
                         db = os.path.join(abs_3d, 'database.db')
                         models = os.path.join(abs_3d, 'models')                            
-
+                            
                         if not check_models:
                             tmp_dataset['scenes'].append(scene)
                             tmp_dataset['images'].append(abs_scene)
                             tmp_dataset['models'].append(os.path.join(models, '0'))
                             continue
 
-                        run_matcher_if_needed(db, abs_scene, abs_3d)
-                        run_reconstruction_if_needed(db, models, abs_3d)
+                        csv_check, _ = check_gt_imc2024(csv_gt, warning=True)
+                        if not csv_check:
+                            tmp_dataset['csv'].append(None) 
+                            run_matcher_if_needed(db, os.path.join(abs_scene, 'images'), abs_3d)
+                            run_reconstruction_if_needed(db, models, abs_3d)
+
+                            best_n = 0
+                            best_model = None
+                            for model in os.listdir(models):
+                                abs_model = os.path.join(models, model)
+                                
+                                n = pycolmap.Reconstruction(abs_model).num_images()
+                                if n > best_n:
+                                    best_n = n
+                                    best_model = abs_model
                             
-                        best_n = 0
-                        best_model = None
-                        for model in os.listdir(models):
-                            abs_model = os.path.join(models, model)
-                            
-                            n = pycolmap.Reconstruction(abs_model).num_images()
-                            if n > best_n:
-                                best_n = n
-                                best_model = abs_model
-                        
-                        if best_n >= min_model_size:
+                            if best_n >= min_model_size:
+                                tmp_dataset['scenes'].append(scene)
+                                tmp_dataset['images'].append(abs_scene)                                    
+                                tmp_dataset['models'].append(best_model)   
+                        else:
+                            tmp_dataset['csv'].append(csv_gt) 
                             tmp_dataset['scenes'].append(scene)
                             tmp_dataset['images'].append(abs_scene)                                    
-                            tmp_dataset['models'].append(best_model)                            
-            
+                            tmp_dataset['models'].append(None)   
+                        
             data.append(tmp_dataset)
             
     return data                
@@ -166,6 +239,7 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
                         pipeline = [
                             imped.deep_joined_module(what='aliked'),
                             imped.lightglue_module(what='aliked'),
+                            imped.poselib_module(),
                             imped.to_colmap_module(db=db),
                         ]                   
         
@@ -540,205 +614,37 @@ def mAA_on_cameras_per_th(err, thresholds, n, to_dec=3):
     return np.maximum(np.sum(aux, axis=0) - to_dec, 0) / (n - to_dec)
 
 
-def check_data(gt_data, user_data, print_error=False):
-    ok_gt = True
-    ok_user = True
-    
+def check_data(gt_data, user_data, print_error=False):    
     for dataset in gt_data.keys():
         aux = {}
         for scene in gt_data[dataset].keys():
             for image in gt_data[dataset][scene].keys():
                 if image in aux:
-                    ok_gt = False
                     if print_error: warnings.warn(f'image {image} found duplicated in the GT dataset {dataset}')
-                    break
+                    return False
                 else:
                     aux[image] = 1
-            if not ok_gt: break        
-        if not ok_gt: break
 
         if not dataset in user_data.keys():
-            ok_user = False
             if print_error: warnings.warn(f'dataset {dataset} not found in submission')
-            break
+            return False
         
         for scene in user_data[dataset].keys():
             for image in user_data[dataset][scene].keys():
                 if not (image in aux):
-                    ok_user = False
                     if print_error: warnings.warn(f'image {image} does not belong to the GT dataset {dataset}')
-                    break
+                    return False
                 else:
                     aux.pop(image)
-            if not ok_user: break
-
+ 
         if len(aux) > 0:
-            ok_user = False
             if print_error:  warnings.warn(f'submission dataset {dataset} missing some GT images')            
-            
-        if not ok_user: break
-            
-    return ok_gt and ok_user
+            return False           
 
-    
-def score_all(gt_csv, user_csv, strict_cluster=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
-    gt_data = read_csv(gt_csv)
-    user_data = read_csv(user_csv)
-
-    assert check_data(gt_data, user_data, print_error=True)
-
-    if isinstance(thresholds, list):            
-        th_n = len(thresholds)
-    else:
-        th_n = thresholds['length']
- 
-    lt = th_n - skip_top_thresholds
- 
-    for dataset in gt_data.keys():
-        gt_dataset = gt_data[dataset]
-        user_dataset = user_data[dataset]
-               
-
-        lg = len(gt_dataset)
-        lu = len(user_dataset)
-        
-
-        model_table = []
-        registered_table = np.zeros((lt, lg, lu))
-        mAA_table = np.zeros((lg, lu))
-        mAA_th_table = np.zeros((lt, lg, lu))
-        cluster_table = np.zeros((lg, lu))
-        gt_scene_sum_table = np.zeros((lg, lu))
-        user_scene_sum_table = np.zeros((lg, lu))
-
-        best_gt_scene = []
-        best_user_scene = []
-        best_model = []
-        best_registered = np.zeros((lt, lg))
-        best_mAA = np.zeros(lg)
-        best_mAA_th = np.zeros((lt, lg))
-        best_cluster = np.zeros(lg)
-        best_gt_scene_sum = np.zeros(lg)
-        best_user_scene_sum = np.zeros(lg)
-
-        gt_scene_list = []        
-        for i, gt_scene in enumerate(gt_dataset.keys()):
-            gt_scene_list.append(gt_scene)
-
-            model_row = []
-            user_scene_list = []
-            for j, user_scene in enumerate(user_dataset.keys()):                
-                user_scene_list.append(user_scene)
-
-                if (gt_scene == 'outliers') or (user_scene == 'outliers'):
-                    model_row.append([])
-                    continue
-                
-                if not isinstance(thresholds, dict):
-                    ths = thresholds
-                else:
-                    ths = thresholds[dataset][gt_scene]
-                
-                gt_cams = gt_data[dataset][gt_scene]
-                user_cams = user_data[dataset][user_scene]
-                                
-                # the denominator for mAA ratio
-                m = len(gt_cams)
-                
-                # get the image list to use
-                good_cams = []
-                for image_path in gt_cams.keys():
-                    if image_path in user_cams.keys():
-                        good_cams.append(image_path)
-                    
-                # put corresponding camera centers into matrices
-                n = len(good_cams)
-                u_cameras = np.zeros((3, n))
-                g_cameras = np.zeros((3, n))
-                
-                ii = 0
-                for k in good_cams:
-                    u_cameras[:, ii] = user_cams[k]['c']
-                    g_cameras[:, ii] = gt_cams[k]['c']
-                    ii += 1
-                    
-                # Horn camera centers registration, a different best model for each camera threshold
-                model = register_by_Horn(u_cameras, g_cameras, np.asarray(ths), inl_cf, strict_cf)
-
-                # mAA                
-                mAA = mAA_on_cameras(model["err"], ths, m, skip_top_thresholds, to_dec)
-                mAA_th = mAA_on_cameras_per_th(model["err"], ths, m, to_dec)
-                
-                registered_table[:, i, j] = model['no_inl'][:, skip_top_thresholds:]
-                mAA_table[i, j] = mAA
-                mAA_th_table[:, i, j] = mAA_th[skip_top_thresholds:]
-                
-                if not strict_cluster:                
-                    cluster_table[i, j] = n
-                else:
-                    cluster_table[i, j] = np.mean(model['no_inl'])
-
-                gt_scene_sum_table[i, j] = m
-                user_scene_sum_table[i, j] = len(user_data[dataset][user_scene])
-                
-                model_row.append(model)
-
-            best_ind = np.lexsort((-mAA_table[i], -cluster_table[i]))[0]
-
-            best_gt_scene.append(gt_scene)
-            best_user_scene.append(user_scene_list[best_ind])
-            best_model.append(model_row[best_ind])
-            best_registered[:, i] = registered_table[:, i, best_ind]
-            best_mAA[i] = mAA_table[i, best_ind]
-            best_mAA_th[:, i] = mAA_th_table[:, i, best_ind]
-            best_cluster[i] = cluster_table[i, best_ind]
-            best_gt_scene_sum[i] = gt_scene_sum_table[i, best_ind]
-            best_user_scene_sum[i] = user_scene_sum_table[i, best_ind]
-    
-            model_table.append(model_row)
-
-        outlier_idx = -1
-        for i, scene in enumerate(best_gt_scene):
-            if scene == 'outliers':
-                outlier_idx = i
-                break
-        
-        if outlier_idx > -1:
-            best_gt_scene.pop(outlier_idx)
-            best_user_scene.pop(outlier_idx)
-            best_model.pop(outlier_idx)
-            best_registered = np.delete(best_registered, outlier_idx, axis=1)            
-            best_mAA = np.delete(best_mAA, outlier_idx)            
-            best_mAA_th = np.delete(best_mAA_th, outlier_idx, axis=1)            
-            best_cluster = np.delete(best_cluster, outlier_idx)            
-            best_gt_scene_sum = np.delete(best_gt_scene_sum, outlier_idx)            
-            best_user_scene_sum = np.delete(best_user_scene_sum, outlier_idx)
-            
-        cluster_score = np.sum(best_cluster) / np.sum(best_user_scene_sum)
-
-        n = np.sum(best_gt_scene_sum)
-        a = 0
-        for i, scene in enumerate(best_gt_scene):
-            if not isinstance(thresholds, dict):
-                ths = thresholds
-            else:
-                ths = thresholds[dataset][scene]
-                    
-            tmp = best_model[i]['err'][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
-            a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
-
-        b = (lt) * (n - len(best_gt_scene) * to_dec) 
-
-        mAA_score = a / b
-        
-        combo_score = mAA_score * cluster_score 
-        geo_avg_score = (mAA_score * cluster_score)**0.5
-        har_avg_score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
-
-        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined (simple product) = {combo_score* 100: .2f} %, combined (geometric mean) = {geo_avg_score * 100: .2f} %, combined (harmonic mean) = {har_avg_score * 100: .2f} %')
+    return True
 
 
-def score_all_ext(gt_csv, user_csv, strict_cluster=False, per_th=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
+def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False, per_th=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
     gt_data = read_csv(gt_csv)    
     user_data = read_csv(user_csv)
 
@@ -755,11 +661,9 @@ def score_all_ext(gt_csv, user_csv, strict_cluster=False, per_th=False, inl_cf =
     else:
         ll = 1
 
-    s_mAA_score = []
-    s_cluster_score = []
-    s_combo_score = []
-    s_geo_avg_score = []
-    s_har_avg_score = []
+    stat_score = []
+    stat_mAA = []
+    stat_clusterness = []
         
     for dataset in gt_data.keys():
         gt_dataset = gt_data[dataset]
@@ -932,31 +836,35 @@ def score_all_ext(gt_csv, user_csv, strict_cluster=False, per_th=False, inl_cf =
 
         mAA_score = a / b
         
-        combo_score = mAA_score * cluster_score 
-        geo_avg_score = (mAA_score * cluster_score)**0.5
-        har_avg_score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+        if combo_mode =='harmonic':
+            score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+        elif combo_mode == 'geometric':
+            score = (mAA_score * cluster_score) ** 0.5
+        elif combo_mode == 'mean':
+            score = (mAA_score + cluster_score) * 0.5
+        elif combo_mode == 'mAA':
+            score = mAA_score
+        elif combo_mode == 'clusterness':
+            score = cluster_score
+                    
+        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined = {score* 100: .2f} %')
 
-        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined (simple product) = {combo_score* 100: .2f} %, combined (geometric mean) = {geo_avg_score * 100: .2f} %, combined (harmonic mean) = {har_avg_score * 100: .2f} %')
+        stat_mAA.append(mAA)
+        stat_clusterness.append(cluster_score)
+        stat_score.append(score)
 
+    final_score = np.mean(stat_score)
+    final_mAA = np.mean(stat_mAA)
+    final_clusterness = np.mean(stat_clusterness)
 
-        s_mAA_score.append(mAA_score)
-        s_cluster_score.append(cluster_score)
-        s_combo_score.append(combo_score)
-        s_geo_avg_score.append(geo_avg_score)
-        s_har_avg_score.append(har_avg_score)
+    print(f'averaged on datasets: mAA = {final_mAA * 100: .2f} %, clusterness =  {final_clusterness * 100: .2f} %, combined = {final_score* 100: .2f} %')
 
-    mAA_score = np.mean(s_mAA_score)
-    cluster_score = np.mean(s_cluster_score)
-    combo_score = np.mean(s_combo_score)
-    geo_avg_score = np.mean(s_geo_avg_score)
-    har_avg_score = np.mean(s_har_avg_score)
-
-    print(f'averaged on datasets: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined (simple product) = {combo_score* 100: .2f} %, combined (geometric mean) = {geo_avg_score * 100: .2f} %, combined (harmonic mean) = {har_avg_score * 100: .2f} %')
+    return final_score
 
 
 if __name__ == '__main__':      
-    # gt_data = make_gt()
-    # to_csv(gt_data, csv_file='../aux/gt/gt.csv')   
+    gt_data = make_gt()
+    to_csv(gt_data, csv_file='../aux/kaggle/gt.csv')   
     
     # make_input_data(gt_data)
 
