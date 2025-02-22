@@ -5504,3 +5504,5 @@ if __name__ == '__main__':
 
 #       imgs = [imgs_imc[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
+
+#       print('doh!')
