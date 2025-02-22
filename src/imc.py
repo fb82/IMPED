@@ -1,4 +1,3 @@
-import imped
 import torch
 import pycolmap
 import numpy as np
@@ -6,8 +5,14 @@ import os
 import shutil
 import csv
 import warnings
-
 import math
+
+imped_lib = True
+try:
+    import imped
+except:
+    warnings.warn("imped unavailable")
+    imped_lib = False
 
 _EPS = np.finfo(float).eps * 4.0
 
@@ -23,18 +28,24 @@ def arr_to_str(a):
     return ';'.join([str(x) for x in a.reshape(-1)])
 
 
-def to_csv(datasets, csv_file='../aux/gt/gt.csv'):
-    with open(csv_file, 'w') as f:
+def to_csv(datasets, csv_file='../kaggle/gt.csv', recopy_in_original=True):
+    os.makedirs(os.path.split(csv_file)[0], exist_ok=True)  
+    
+    with open(csv_file, 'w') as f:        
         f.write('dataset,scene,image,rotation_matrix,translation_vector\n')
 
         for dataset in datasets:
             dataset_name = dataset['name']
             for i in range(len(dataset['scenes'])):
+                if recopy_in_original:
+                    ff = open(os.path.join(dataset['images'][i], 'imc2025_gt.csv'), 'w')
+                    ff.write('dataset,scene,image,rotation_matrix,translation_vector\n')
+
                 scene = dataset['scenes'][i]
                 imgs = os.listdir(os.path.join(dataset['images'][i], 'images'))            
 
                 if not(dataset['csv'][i] is None):                
-                    _, model = check_gt_imc2024(dataset['csv'][i], tolerance=float('inf'))
+                    _, model = check_gt_imc2025(dataset['csv'][i], tolerance=float('inf'))
                     if not scene in model:
                         warnings.warn(f"scene {scene} not found in file {dataset['csv'][i]}")
                     else:
@@ -44,11 +55,27 @@ def to_csv(datasets, csv_file='../aux/gt/gt.csv'):
                                     R = model[scene][img]['R']
                                     T = model[scene][img]['T']
                                     f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                                    if recopy_in_original:
+                                        ff.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
                                 else:
                                     warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')
-
-                if not(dataset['models'][i] is None):                
-                    model = pycolmap.Reconstruction(dataset['models'][i])
+                elif not(dataset['csv_other'][i] is None):                
+                        _, model = check_gt_imc2024(dataset['csv_other'][i], tolerance=float('inf'))
+                        if not scene in model:
+                            warnings.warn(f"scene {scene} not found in file {dataset['csv_other'][i]}")
+                        else:
+                            for img in imgs:
+                                if os.path.isfile(os.path.join(dataset['images'][i], 'images', img)):
+                                    if img in model[scene]:
+                                        R = model[scene][img]['R']
+                                        T = model[scene][img]['T']
+                                        f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                                        if recopy_in_original:
+                                            ff.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n') 
+                                    else:
+                                        warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')                  
+                elif not(dataset['model'][i] is None):                
+                    model = pycolmap.Reconstruction(dataset['model'][i])
                 
                     for img in imgs:
                         if os.path.isfile(os.path.join(dataset['images'][i], 'images', img)):
@@ -57,16 +84,84 @@ def to_csv(datasets, csv_file='../aux/gt/gt.csv'):
                                 R = im.cam_from_world.rotation.matrix()
                                 T = np.array(im.cam_from_world.translation)
                                 f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                                if recopy_in_original:
+                                    ff.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
                             else:
                                 warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')
+                else:
+                    warnings.warn(f'no GT data for all images in scene {scene} and dataset {dataset_name}')
+                                                    
+                if recopy_in_original: ff.close()
 
             if not (dataset['outliers'] is None):
-                imgs = os.listdir(dataset['outliers'])
+                if recopy_in_original:
+                    ff = open(os.path.join(dataset['outliers'], 'imc2025_gt.csv'), 'w')
+                    ff.write('dataset,scene,image,rotation_matrix,translation_vector\n')
+                
+                imgs = os.listdir(os.path.join(dataset['outliers'], 'images'))
                 for img in imgs:
                     R = np.full((3, 3), np.nan)
                     T = np.full((3, ), np.nan)
                     f.write(f'{dataset_name},outliers,{img},{arr_to_str(R)},{arr_to_str(T)}\n')
+                    if recopy_in_original:
+                        ff.write(f'{dataset_name},outliers,{img},{arr_to_str(R)},{arr_to_str(T)}\n')
 
+                if recopy_in_original: ff.close()
+
+
+def check_gt_imc2025(csv_gt, tolerance=5, warning=False):
+    if not os.path.isfile(csv_gt): return False, None
+    
+    aux = os.path.split(csv_gt)[0]
+    scene_name = os.path.split(aux)[1]
+
+    aux_ = os.path.split(aux)[0]
+    dataset_name = os.path.split(aux_)[1]
+    
+    img_folder = os.path.join(aux, 'images')
+    img_list = os.listdir(img_folder)
+    img_dict = {}
+    for img in img_list: img_dict[img] = 1
+    
+    data = {}
+
+    with open(csv_gt, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+    
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                continue
+            
+            dataset = row[0]
+            scene = row[1]
+            image = row[2]
+            R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+
+            if dataset != dataset_name:
+                continue
+
+            if scene != scene_name:
+                continue
+            
+            if not os.path.isfile(os.path.join(img_folder, image)):
+                continue
+
+            if not (dataset in data):
+                data[dataset] = {}
+            
+            if not (scene in data):
+                data[dataset][scene] = {}
+                
+            img_dict.pop(image)            
+            data[dataset][scene][image] = {'R': R, 'T': t}
+
+    if len(img_dict) > 0: warnings.warn(f'scene {scene} - missing images {list(img_dict.keys())}')
+
+    return len(img_dict)<tolerance, data
+    
 
 def check_gt_imc2024(csv_gt, tolerance=5, warning=False):
     if not os.path.isfile(csv_gt): return False, None
@@ -112,28 +207,28 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False):
     return len(img_dict)<tolerance, data
 
 
-def run_matcher_if_needed(db, abs_scene, abs_3d):    
-    if not os.path.isfile(db):
-        os.makedirs(abs_3d, exist_ok=True)  
-
-        with torch.inference_mode():    
-            pipeline = [
-                imped.deep_joined_module(what='aliked'),
-                imped.lightglue_module(what='aliked'),
-                imped.poselib_module(),
-                imped.to_colmap_module(db=db),
-            ]       
-                    
-            imped.run_pairs(pipeline, abs_scene, db_name=os.path.splitext(db)[0] + '.hdf5')
-
-
-def run_reconstruction_if_needed(db, models, abs_3d):
+def get_3d_model(db, abs_scene, abs_3d, models):    
     if not os.path.isdir(models):
-        os.makedirs(models, exist_ok=True)          
-        compute_3D(db, abs_3d, models)
+        if not os.path.isfile(db):
+            if imped_lib:
+                os.makedirs(abs_3d, exist_ok=True)  
+
+                with torch.inference_mode():    
+                    pipeline = [
+                        imped.deep_joined_module(what='aliked'),
+                        imped.lightglue_module(what='aliked'),
+                        imped.poselib_module(),
+                        imped.to_colmap_module(db=db),
+                    ]       
+                            
+                    imped.run_pairs(pipeline, abs_scene, db_name=os.path.splitext(db)[0] + '.hdf5')
+
+        if os.path.isfile(db):
+            os.makedirs(models, exist_ok=True)          
+            pycolmap.incremental_mapping(database_path=db, image_path=abs_3d, output_path=models)            
 
 
-def make_gt(folder='../aux/kaggle', csv_gt_name='imc2024_gt.csv', check_models=True, min_model_size=3):
+def make_gt(folder='../kaggle', csv_other_name='imc2024_gt.csv', min_model_size=3):
     data = []
 
     datasets = os.listdir(folder)
@@ -145,8 +240,9 @@ def make_gt(folder='../aux/kaggle', csv_gt_name='imc2024_gt.csv', check_models=T
             tmp_dataset['name'] = dataset
             tmp_dataset['scenes'] = []
             tmp_dataset['images'] = []
-            tmp_dataset['models'] = []
+            tmp_dataset['model'] = []
             tmp_dataset['csv'] = []
+            tmp_dataset['csv_other'] = []
             tmp_dataset['outliers'] = None
             
             scenes = os.listdir(abs_dataset)
@@ -158,23 +254,27 @@ def make_gt(folder='../aux/kaggle', csv_gt_name='imc2024_gt.csv', check_models=T
                     if scene == 'outliers':
                         tmp_dataset['outliers'] = os.path.join(abs_dataset, 'outliers')
                     else:
-                        csv_gt = os.path.join(folder, dataset, scene, csv_gt_name)                        
+                        csv_gt_other = os.path.join(folder, dataset, scene, csv_other_name)                        
+                        csv_gt = os.path.join(folder, dataset, scene, scene + '.csv')                        
                         abs_3d = os.path.join(folder, dataset, scene, 'colmap')
-
                         db = os.path.join(abs_3d, 'database.db')
-                        models = os.path.join(abs_3d, 'models')                            
-                            
-                        if not check_models:
-                            tmp_dataset['scenes'].append(scene)
-                            tmp_dataset['images'].append(abs_scene)
-                            tmp_dataset['models'].append(os.path.join(models, '0'))
-                            continue
+                        models = os.path.join(abs_3d, 'models')    
 
-                        csv_check, _ = check_gt_imc2024(csv_gt, warning=True)
-                        if not csv_check:
-                            tmp_dataset['csv'].append(None) 
-                            run_matcher_if_needed(db, os.path.join(abs_scene, 'images'), abs_3d)
-                            run_reconstruction_if_needed(db, models, abs_3d)
+                        cur_csv_gt_other = None                        
+                        cur_csv_gt = None                        
+                        cur_model = None
+                        
+                        csv_check, _ = check_gt_imc2025(csv_gt, warning=True)
+                        if csv_check:
+                            cur_csv_gt = csv_gt
+                        else:
+                            csv_check_other, _ = check_gt_imc2024(csv_gt_other, warning=True)
+ 
+                        if csv_check_other:
+                            cur_csv_gt_other = csv_gt_other
+                                                        
+                        if not csv_check and not csv_check_other:                            
+                            get_3d_model(db, os.path.join(abs_scene, 'images'), abs_3d, models)
 
                             best_n = 0
                             best_model = None
@@ -186,15 +286,14 @@ def make_gt(folder='../aux/kaggle', csv_gt_name='imc2024_gt.csv', check_models=T
                                     best_n = n
                                     best_model = abs_model
                             
-                            if best_n >= min_model_size:
-                                tmp_dataset['scenes'].append(scene)
-                                tmp_dataset['images'].append(abs_scene)                                    
-                                tmp_dataset['models'].append(best_model)   
-                        else:
-                            tmp_dataset['csv'].append(csv_gt) 
-                            tmp_dataset['scenes'].append(scene)
-                            tmp_dataset['images'].append(abs_scene)                                    
-                            tmp_dataset['models'].append(None)   
+                            if best_n > min_model_size:
+                                cur_model = best_model 
+                                                                
+                        tmp_dataset['scenes'].append(scene)
+                        tmp_dataset['images'].append(abs_scene)                                    
+                        tmp_dataset['model'].append(cur_model)   
+                        tmp_dataset['csv_other'].append(cur_csv_gt_other)   
+                        tmp_dataset['csv'].append(cur_csv_gt)
                         
             data.append(tmp_dataset)
             
@@ -863,8 +962,11 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
 
 
 if __name__ == '__main__':      
+#   TODO: add scale in make_gt colmap 
+#   TODO: check image name in same dataset for  
+
     gt_data = make_gt()
-    to_csv(gt_data, csv_file='../aux/kaggle/gt.csv')   
+    to_csv(gt_data)   
     
     # make_input_data(gt_data)
 
