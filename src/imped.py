@@ -26,6 +26,8 @@ import wget
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
 import plot.utils as viz_utils
+import sys
+
  
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
@@ -3691,12 +3693,12 @@ class roma_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-cur_dir = os.getcwd()
-os.chdir(os.path.join(os.path.split(__file__)[0], 'r2d2'))
-from tools import common as r2d2_common
-from tools.dataloader import norm_RGB as r2d2_norm_RGB
-import nets.patchnet as r2d2_patchnet 
-os.chdir(cur_dir)
+conf_path = os.path.split(__file__)[0]
+sys.path.append(os.path.join(conf_path, 'r2d2'))
+
+from r2d2.tools import common as r2d2_common
+from r2d2.tools.dataloader import norm_RGB as r2d2_norm_RGB
+import r2d2.nets.patchnet as r2d2_patchnet 
 
 class r2d2_module:
     def load_network(model_fn): 
@@ -4024,12 +4026,12 @@ if enable_quadtree:
             return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-cur_dir = os.getcwd()
-os.chdir(os.path.join(os.path.split(__file__)[0], 'matchformer'))
-from model.matchformer import Matchformer
-from model.utils.misc import lower_config as mf_lower_config
-from config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
-os.chdir(cur_dir)
+conf_path = os.path.split(__file__)[0]
+sys.path.append(os.path.join(conf_path, 'matchformer'))
+
+from matchformer.model.matchformer import Matchformer
+from matchformer.model.utils.misc import lower_config as mf_lower_config
+from matchformer.config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
   
 class matchformer_module:
     def __init__(self, **args):
@@ -4170,12 +4172,12 @@ class matchformer_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-cur_dir = os.getcwd()
-os.chdir(os.path.join(os.path.split(__file__)[0], 'aspanformer'))
-from src.ASpanFormer.aspanformer import ASpanFormer 
-from src.config.default import get_cfg_defaults as as_get_cfg_defaults
-from src.utils.misc import lower_config as as_lower_config
-os.chdir(cur_dir)
+conf_path = os.path.split(__file__)[0]
+sys.path.append(os.path.join(conf_path, 'aspanformer'))
+
+from aspanformer.src.ASpanFormer.aspanformer import ASpanFormer 
+from aspanformer.src.config.default import get_cfg_defaults as as_get_cfg_defaults
+from aspanformer.src.utils.misc import lower_config as as_lower_config
   
 class aspanformer_module:
     def __init__(self, **args):
