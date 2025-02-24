@@ -2974,7 +2974,7 @@ class to_colmap_module:
                 m_idx = pipe_out['m_idx'][pipe_out['m_mask']].to('cpu').numpy()
                 models = {}
                 for m in ['H', 'E', 'F']:
-                    if m in args: models[m] = args[m].to('cpu').numpy()
+                    if (m in args) and not (models[m] is None): models[m] = args[m].to('cpu').numpy()
                                 
                 self.db.update_two_view_geometry(im_ids[0], im_ids[1], m_idx, model=models)
 
