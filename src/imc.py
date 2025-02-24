@@ -1107,7 +1107,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
         elif combo_mode == 'clusterness':
             score = cluster_score
                     
-        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness =  {cluster_score * 100: .2f} %, combined = {score* 100: .2f} %')
+        print(f'{dataset}: mAA = {mAA_score * 100: .2f} %, clusterness = {cluster_score * 100: .2f} %, combined = {score* 100: .2f} %')
 
         stat_mAA.append(mAA)
         stat_clusterness.append(cluster_score)
@@ -1117,7 +1117,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
     final_mAA = np.mean(stat_mAA)
     final_clusterness = np.mean(stat_clusterness)
 
-    print(f'averaged on datasets: mAA = {final_mAA * 100: .2f} %, clusterness =  {final_clusterness * 100: .2f} %, combined = {final_score* 100: .2f} %')
+    print(f'averaged on datasets: mAA = {final_mAA * 100: .2f} %, clusterness = {final_clusterness * 100: .2f} %, combined = {final_score* 100: .2f} %')
 
     return final_score
 
