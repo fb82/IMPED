@@ -6,6 +6,7 @@ import shutil
 import csv
 import warnings
 import math
+import uuid
 
 imped_lib = True
 try:
@@ -16,19 +17,12 @@ except:
 
 _EPS = np.finfo(float).eps * 4.0
 
-def compute_3D(db, img_dir, output_path):
-    # pycolmap.match_exhaustive(db)
-    # os.system('colmap exhaustive_matcher --database_path ' + db)
-    database_path = db
-    
-    return pycolmap.incremental_mapping(database_path=database_path, image_path=img_dir, output_path=output_path)
-
     
 def arr_to_str(a):
     return ';'.join([str(x) for x in a.reshape(-1)])
 
 
-def to_csv(datasets, csv_file='../kaggle/gt.csv', recopy_in_original=True):
+def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=True):
     os.makedirs(os.path.split(csv_file)[0], exist_ok=True)  
     
     with open(csv_file, 'w') as f:        
@@ -76,13 +70,25 @@ def to_csv(datasets, csv_file='../kaggle/gt.csv', recopy_in_original=True):
                                         warnings.warn(f'no GT data for image {img} in scene {scene} and dataset {dataset_name}')                  
                 elif not(dataset['model'][i] is None):                
                     model = pycolmap.Reconstruction(dataset['model'][i])
-                
+
+                    scale = 1.0
+                    scale_file = os.path.join(dataset['images'][i], 'colmap', 'scales.csv')
+                    if os.path.isfile(scale_file):
+                        with open(scale_file, newline='\n') as csvfile:    
+                            csv_lines = csv.reader(csvfile, delimiter=',')
+                            next(csv_lines)
+                            for row in csv_lines:
+                                if row[0] == scene: 
+                                    scale = float(row[1])
+                                    break
+                    warnings.warn(f'3D model scale for scene {scene} is {str(scale)}')
+
                     for img in imgs:
                         if os.path.isfile(os.path.join(dataset['images'][i], 'images', img)):
                             im = model.find_image_with_name(img)
                             if not (im is None):
                                 R = im.cam_from_world.rotation.matrix()
-                                T = np.array(im.cam_from_world.translation)
+                                T = scale * np.array(im.cam_from_world.translation)
                                 f.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
                                 if recopy_in_original:
                                     ff.write(f'{dataset_name},{scene},{img},{arr_to_str(R)},{arr_to_str(T)}\n')
@@ -228,7 +234,7 @@ def get_3d_model(db, abs_scene, abs_3d, models):
             pycolmap.incremental_mapping(database_path=db, image_path=abs_3d, output_path=models)            
 
 
-def make_gt(folder='../kaggle', csv_other_name='imc2024_gt.csv', min_model_size=3):
+def make_gt(folder='../kaggle_raw_data', csv_other_name='imc2024_gt.csv', min_model_size=3):
     data = []
 
     datasets = os.listdir(folder)
@@ -287,8 +293,14 @@ def make_gt(folder='../kaggle', csv_other_name='imc2024_gt.csv', min_model_size=
                                     best_model = abs_model
                             
                             if best_n > min_model_size:
-                                cur_model = best_model 
-                                                                
+                                cur_model = best_model
+
+                                scale_file = os.path.join(abs_3d, 'scales.csv')
+                                if not os.path.isfile(scale_file):
+                                    with open(scale_file, 'w') as f:        
+                                        f.write('scene,scale\n')            
+                                        f.write(f'{scene},1.0\n')            
+                                                                                                
                         tmp_dataset['scenes'].append(scene)
                         tmp_dataset['images'].append(abs_scene)                                    
                         tmp_dataset['model'].append(cur_model)   
@@ -300,7 +312,7 @@ def make_gt(folder='../kaggle', csv_other_name='imc2024_gt.csv', min_model_size=
     return data                
     
 
-def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_size=3):
+def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_model_size=3):
     data = []
 
     datasets = os.listdir(img_file)
@@ -315,14 +327,16 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
             tmp_dataset['name'] = dataset
             tmp_dataset['scenes'] = []
             tmp_dataset['images'] = []
-            tmp_dataset['models'] = []
+            tmp_dataset['model'] = []
+            tmp_dataset['csv_other'] = []
+            tmp_dataset['csv'] = []
             tmp_dataset['outliers'] = None            
             
             while True:            
-                img_path = os.path.join(rec_file, dataset, 'cluster' + str(cluster), 'imgs')
+                img_path = os.path.join(rec_file, dataset, 'cluster' + str(cluster), 'images')
                 db = os.path.join(rec_file, dataset, 'cluster' + str(cluster), 'database.db')
                 abs_3d = os.path.join(rec_file, dataset, 'cluster' + str(cluster))
-                models = os.path.join(abs_3d, 'models')
+                models = os.path.join(abs_3d, 'model')
     
                 os.makedirs(img_path, exist_ok=True)
                 
@@ -333,21 +347,12 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
                 if len(os.listdir(img_path)) < min_model_size:
                     break
                         
-                if not os.path.isfile(db):                                
-                    with torch.inference_mode():    
-                        pipeline = [
-                            imped.deep_joined_module(what='aliked'),
-                            imped.lightglue_module(what='aliked'),
-                            imped.poselib_module(),
-                            imped.to_colmap_module(db=db),
-                        ]                   
-        
-                        imped.run_pairs(pipeline, img_path, db_name=os.path.splitext(db)[0] + '.hdf5')
-                        del pipeline[-1]               
-                
-                if not os.path.isdir(models):                
-                    compute_3D(db, abs_3d, models)
-    
+                if not imped_lib:                    
+                    warnings.warn('imped not found, cannot match images and generate 3d model')
+                    break
+
+                get_3d_model(db, img_path, abs_3d, models)
+
                 best_n = 0
                 best_model = None
                 for model in os.listdir(models):
@@ -357,7 +362,7 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
                     if n > best_n:
                         best_n = n
                         best_model = abs_model
-                        
+                                        
                 if best_model is None:
                     break
     
@@ -368,8 +373,10 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
                 
                 tmp_dataset['scenes'].append('cluster' + str(cluster))
                 tmp_dataset['images'].append(img_path)
-                tmp_dataset['models'].append(best_model)
-                
+                tmp_dataset['model'].append(best_model)
+                tmp_dataset['csv_other'].append(None)
+                tmp_dataset['csv'].append(None)
+                                
                 for img in os.listdir(img_path):
                     im = current_3d.find_image_with_name(img)
                     
@@ -390,32 +397,104 @@ def make_todo(img_file='../aux/todo', rec_file='../aux/submission', min_model_si
             if len(os.listdir(outlier_path)) > 0:
                 tmp_dataset['outliers'] = outlier_path
 
-        data.append(tmp_dataset)
+            data.append(tmp_dataset)
     
     return data
 
 
-def make_input_data(datasets, folder='../aux/todo'):
-    for dataset in datasets:
-        dataset_name = dataset['name']
-        
-        abs_dataset = os.path.join(folder, dataset_name)        
-        os.makedirs(abs_dataset, exist_ok=True)
-                
-        for i in range(len(dataset['scenes'])):
-            imgs = os.listdir(dataset['images'][i])            
-            model = pycolmap.Reconstruction(dataset['models'][i])
+def make_input_data(csv_gt='../kaggle_raw_data/gt.csv', input_folder='../kaggle_raw_data', input_tth='../kaggle_raw_data/thresholds.csv', out_folder='../kaggle_data', mapping_csv='../kaggle_data/mapping.csv', final_gt_csv='../kaggle_data/gt.csv', final_tth='../kaggle_data/thresholds.csv', obfuscate_data=False):
+    data = {}
+    with open(csv_gt, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+    
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                continue
             
-            for img in imgs:
-                if os.path.isfile(os.path.join(dataset['images'][i], img)):
-                    im = model.find_image_with_name(img)
-                    if not (im is None):
-                        shutil.copy(os.path.join(dataset['images'][i], img), os.path.join(abs_dataset, img))
-                        
-        if not (dataset['outliers'] is None):
-            imgs = os.listdir(dataset['outliers'])
-            for img in imgs:
-                shutil.copy(os.path.join(dataset['outliers'], img), os.path.join(abs_dataset, img))
+            dataset, scene, image, R, T = row
+
+            if not dataset in data: data[dataset] = {}
+            if not scene in data[dataset]: data[dataset][scene] = {}
+            if not image in data[dataset][scene]: data[dataset][scene][image] = {'R': R, 'T': T}
+
+    tth = tth_from_csv(input_tth)
+
+    if isinstance(tth, dict):
+        tth_new = {}
+        tth_new['default'] = tth['default']
+    else:
+        tth_new = tth
+        
+    os.makedirs(os.path.split(final_gt_csv)[0], exist_ok=True)
+    f_map = open(mapping_csv, 'w')        
+    f_map.write('dataset_raw,scene_raw,image_raw,dataset,scene,image\n')            
+
+    os.makedirs(os.path.split(mapping_csv)[0], exist_ok=True)    
+    f_gt = open(final_gt_csv, 'w')        
+    f_gt.write('dataset,scene,image,rotation_matrix,translation_vector\n')            
+
+    dataset_dict = {}
+
+    for dataset in data:
+        img_dict = {}
+                
+        if obfuscate_data:
+            out_dataset = uuid.uuid4().hex[:16]
+            while out_dataset in dataset_dict:
+                out_dataset = uuid.uuid4().hex[:16]
+            dataset_dict[out_dataset] = 1
+        else:
+            out_dataset = dataset
+
+        scene_dict = {}
+                
+        for scene in data[dataset]:
+
+            if obfuscate_data and (scene != 'outliers'):
+                out_scene = uuid.uuid4().hex[:16]
+                while out_scene in scene_dict:
+                    out_scene = uuid.uuid4().hex[:16]
+                scene_dict[out_scene] = 1                    
+            else:
+                out_scene = scene
+
+            if isinstance(tth, dict):
+                if (dataset in tth) and (scene in tth[dataset]): 
+                    if not (out_dataset in tth_new): tth_new[out_dataset] = {}
+                    tth_new[out_dataset][out_scene] = tth[dataset][scene]
+
+            for image_src in data[dataset][scene]:
+
+                if obfuscate_data:
+                    image_dst = uuid.uuid4().hex[:16]
+                    while image_dst in img_dict:
+                        image_dst = uuid.uuid4().hex[:16]
+                else: 
+                    suffix = ''
+                    while (image_src + suffix) in img_dict: 
+                        if suffix == '':
+                            suffix = '0'
+                        else:
+                            suffix = str(int(suffix) + 1)
+                    image_dst = image_src + suffix
+                
+                img_dict[image_dst] = 1
+                
+                os.makedirs(os.path.join(out_folder, out_dataset), exist_ok=True)
+                im_src = os.path.join(input_folder, dataset, scene, 'images', image_src)
+                im_dst = os.path.join(out_folder, out_dataset, image_dst)
+                
+                shutil.copy(im_src, im_dst)
+
+                f_map.write(f"{dataset},{scene},{image_src},{out_dataset},{out_scene},{image_dst}\n")                
+                f_gt.write(f"{out_dataset},{out_scene},{image_dst},{data[dataset][scene][image_src]['R']},{data[dataset][scene][image_src]['T']}\n")                
+
+    f_map.close()
+    f_gt.close()
+    
+    tth_to_csv(tth_new, csv_file=final_tth)
 
 
 def vector_norm(data, axis=None, out=None):
@@ -680,23 +759,6 @@ def read_csv(filename):
     return data
 
 
-# mAA evaluation thresholds per scene, different accoring to the scene
-translation_thresholds_meters = {
-    'ETs':
-    {
-       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-             'ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-     'another_ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-    },    
-    'kermits':
-    {
-         'kermit': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-    },
-    'length': 6,
-}
-    
-
 # mAA computation
 def mAA_on_cameras(err, thresholds, n, skip_top_thresholds, to_dec=3):
     '''mAA is the mean of mAA_i, where for each threshold th_i in <thresholds>, excluding the first <skip_top_thresholds values>,
@@ -743,16 +805,21 @@ def check_data(gt_data, user_data, print_error=False):
     return True
 
 
-def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False, per_th=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=[0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]):
+def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False, per_th=False, inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=None):
     gt_data = read_csv(gt_csv)    
     user_data = read_csv(user_csv)
 
     assert check_data(gt_data, user_data, print_error=True)
+
+    if thresholds is None:
+        thresholds = [0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2]
+    else:
+        thresholds = tth_from_csv(thresholds)
     
     if isinstance(thresholds, list):            
         th_n = len(thresholds)
     else:
-        th_n = thresholds['length']
+        th_n = thresholds['default'].shape[0]
 
     lt = th_n - skip_top_thresholds
     if per_th:
@@ -805,7 +872,10 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                 if not isinstance(thresholds, dict):
                     ths = thresholds
                 else:
-                    ths = thresholds[dataset][gt_scene]
+                    if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
+                        ths = thresholds[dataset][gt_scene]
+                    else:
+                        ths = thresholds['default']
                 
                 gt_cams = gt_data[dataset][gt_scene]
                 user_cams = user_data[dataset][user_scene]
@@ -913,7 +983,10 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                     if not isinstance(thresholds, dict):
                         ths = thresholds
                     else:
-                        ths = thresholds[dataset][scene]
+                        if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
+                            ths = thresholds[dataset][gt_scene]
+                        else:
+                            ths = thresholds['default']      
                             
                     tmp = best_model[t][i]['err'][:, skip_top_thresholds + t] < ths[skip_top_thresholds+t]
                     a = a + np.maximum(np.sum(tmp) - to_dec, 0)
@@ -926,7 +999,10 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                 if not isinstance(thresholds, dict):
                     ths = thresholds
                 else:
-                    ths = thresholds[dataset][scene]
+                    if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
+                        ths = thresholds[dataset][gt_scene]
+                    else:
+                        ths = thresholds['default']
                         
                 tmp = best_model[0][i]['err'][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
                 a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
@@ -961,26 +1037,73 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
     return final_score
 
 
-if __name__ == '__main__':      
-#   TODO: add scale in make_gt colmap 
-#   TODO: check image name in same dataset for  
+# mAA evaluation thresholds per scene, different accoring to the scene
+tth = {
+    'ETs':
+    {
+       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
+             'ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
+     'another_ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
+    },    
+    'kermits':
+    {
+         'kermit': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
+       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
+    },
+    'default': np.array([0.01, 0.02, 0.05, 0.1, 0.15, 0.2]),
+}
 
+    
+def tth_to_csv(tth, csv_file='../kaggle_raw_data/thresholds.csv'):    
+    os.makedirs(os.path.split(csv_file)[0], exist_ok=True)  
+    
+    with open(csv_file, 'w') as f:        
+        f.write('dataset,scene,thresholds\n')
+
+        for dataset in tth:
+            if dataset == 'default':
+                f.write(f"default,default,{arr_to_str(tth['default'])}\n")
+            else:
+                for scene in tth[dataset]:
+                    f.write(f'{dataset},{scene},{arr_to_str(tth[dataset][scene])}\n')
+    
+def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):    
+    tth = {}
+
+    with open(csv_file, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+    
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                continue
+            
+            dataset = row[0]
+            scene = row[1]
+            th = np.array([float(x) for x in (row[2].split(';'))])
+
+            if dataset == 'default':
+                tth['default'] = th
+            else:
+                if not dataset in tth: tth[dataset] = {}
+                tth[dataset][scene] = th
+                
+    return tth
+
+
+if __name__ == '__main__':   
+    tth_to_csv(tth)    
     gt_data = make_gt()
     to_csv(gt_data)   
     
-    # make_input_data(gt_data)
+    make_input_data(obfuscate_data=True)
 
-    # submission_data = make_todo()
-    # to_csv(submission_data, csv_file='../aux/submission/submission.csv')    
+    # submission = make_todo()
+    # to_csv(submission, csv_file='../kaggle_submission/submission.csv')    
 
     print('GT vs GT')
-    score_all_ext('../aux/gt/gt.csv', '../aux/gt/gt.csv', thresholds=translation_thresholds_meters, per_th=False, strict_cluster=False)
-#   ETs: mAA =  100.00 %, clusterness =   100.00 %, combined (simple product) =  100.00 %, combined (geometric mean) =  100.00 %, combined (harmonic mean) =  100.00 %
-#   kermits: mAA =  100.00 %, clusterness =   100.00 %, combined (simple product) =  100.00 %, combined (geometric mean) =  100.00 %, combined (harmonic mean) =  100.00 %
-#   averaged on datasets: mAA =  100.00 %, clusterness =   100.00 %, combined (simple product) =  100.00 %, combined (geometric mean) =  100.00 %, combined (harmonic mean) =  100.00 %
+    score_all_ext('../kaggle_data/gt.csv', '../kaggle_data/gt.csv', thresholds='../kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
 
     print('GT vs submission')
-    score_all_ext('../aux/gt/gt.csv', '../aux/submission/submission.csv', thresholds=translation_thresholds_meters, per_th=False, strict_cluster=False)
-#   ETs: mAA =  48.75 %, clusterness =   58.00 %, combined (simple product) =  28.27 %, combined (geometric mean) =  53.17 %, combined (harmonic mean) =  52.97 %
-#   kermits: mAA =  93.33 %, clusterness =   95.45 %, combined (simple product) =  89.09 %, combined (geometric mean) =  94.39 %, combined (harmonic mean) =  94.38 %
-#   averaged on datasets: mAA =  71.04 %, clusterness =   76.73 %, combined (simple product) =  58.68 %, combined (geometric mean) =  73.78 %, combined (harmonic mean) =  73.68 %
+    score_all_ext('../kaggle_data/gt.csv', '../kaggle_submission/submission.csv', thresholds='../kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
