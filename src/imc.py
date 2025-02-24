@@ -372,7 +372,7 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                     break
                 
                 tmp_dataset['scenes'].append('cluster' + str(cluster))
-                tmp_dataset['images'].append(img_path)
+                tmp_dataset['images'].append(os.path.join(rec_file, dataset,'cluster' + str(cluster)))
                 tmp_dataset['model'].append(best_model)
                 tmp_dataset['csv_other'].append(None)
                 tmp_dataset['csv'].append(None)
@@ -388,11 +388,11 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                 cluster = cluster + 1
                 
             outlier_path = os.path.join(rec_file, dataset, 'outliers')
-            os.makedirs(outlier_path, exist_ok=True)
+            os.makedirs(os.path.join(outlier_path, 'images'), exist_ok=True)
 
             for img in os.listdir(abs_dataset):
                 if not img in processed_images:
-                    shutil.copy(os.path.join(abs_dataset, img), os.path.join(outlier_path, img))
+                    shutil.copy(os.path.join(abs_dataset, img), os.path.join(outlier_path, 'images', img))
                     
             if len(os.listdir(outlier_path)) > 0:
                 tmp_dataset['outliers'] = outlier_path
@@ -1093,14 +1093,14 @@ def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):
 
 
 if __name__ == '__main__':   
-    tth_to_csv(tth)    
-    gt_data = make_gt()
-    to_csv(gt_data)   
+    # tth_to_csv(tth)    
+    # gt_data = make_gt()
+    # to_csv(gt_data)   
     
-    make_input_data(obfuscate_data=True)
+    # make_input_data(obfuscate_data=True)
 
-    # submission = make_todo()
-    # to_csv(submission, csv_file='../kaggle_submission/submission.csv')    
+    submission = make_todo()
+    to_csv(submission, csv_file='../kaggle_submission/submission.csv')    
 
     print('GT vs GT')
     score_all_ext('../kaggle_data/gt.csv', '../kaggle_data/gt.csv', thresholds='../kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
