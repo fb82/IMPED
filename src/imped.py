@@ -4982,7 +4982,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     db_merged = coldb_ext(db_merged_name)
     db_merged.create_tables()
     
-    for i, db_name in enumerate(go_iter(db_names, msg='Merging progress')):
+    for i, db_name in enumerate(go_iter(db_names, msg='         merging progress')):
         db = coldb_ext(db_name)
         imgs = db.get_images()
     
@@ -5008,8 +5008,11 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                     if not (v[0] in pair_dict): pair_dict[v[0]] = {}                    
                     pair_dict[v[0]][v[1]] = 1
             
+            
+        pbar = tqdm(total=len(imgs) * (len(imgs) - 1) / 2, desc='current database progress', leave=False)
         for in0a, in0b  in enumerate(imgs):
             for in1a, in1b in enumerate(imgs):
+                
                 im0_id, im0_ = in0b
                 im1_id, im1_ = in1b
                                 
@@ -5271,13 +5274,16 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         db_merged.update_two_view_geometry(im0_id_prev, im1_id_prev, m_idx, model=models)
 
                 db_merged.commit()
+                pbar.update()
+
         db.close()
+        pbar.close()
 
     db_merged.close()
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):
         aux_hdf5.close()
         if os.path.isfile('tmp.hdf5'): os.remove('tmp.hdf5')
-
+        
 
 def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_path=None, db_path=None, output_model_path='../aux/colmap/output_model', to_filter=None, how_filter='exclude', only_cameras=True, add_3D_points=False, add_as_possible=True):
     model = pycolmap.Reconstruction(input_model_path)
@@ -5956,8 +5962,8 @@ if __name__ == '__main__':
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
 
+        device = torch.device('cpu')
         merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
-
 
 #       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model', to_filter=['archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=True)
 
