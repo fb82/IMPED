@@ -1,5 +1,6 @@
 bench_data/
 weights/
+aux/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -22,6 +22,8 @@ import argparse
 import math
 import copy
 import wget
+import pycolmap
+import scipy
 
 import matplotlib.pyplot as plt
 import plot.viz2d as viz
@@ -2713,6 +2715,7 @@ class coldb_ext(coldb.COLMAPDatabase):
                     (pair_id, ),
                     )
 
+
     def get_images(self):
         cursor = self.execute("SELECT image_id, name FROM images")
         m = cursor.fetchall()        
@@ -5277,7 +5280,456 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
         aux_hdf5.close()
         if os.path.isfile('tmp.hdf5'): os.remove('tmp.hdf5')
 
-                    
+
+def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_path=None, db_path=None, output_model_path='../aux/colmap/output_model', to_filter=None, how_filter='exclude', only_cameras=True, add_3D_points=False, add_as_possible=True):
+    model = pycolmap.Reconstruction(input_model_path)
+
+    os.makedirs(output_model_path, exist_ok=True)
+    if to_filter is None: to_filter=[]
+    
+    to_filter_dict = {}
+    for image in to_filter: to_filter_dict[image] = 1
+    
+    model_imgs = [(image_id, model.image(image_id).name) for image_id in model.images]
+
+    for image_id, image in model_imgs:
+        if ((image in to_filter_dict) and (how_filter == 'exclude')) or ((not (image in to_filter_dict)) and (how_filter == 'include')):
+            model.deregister_image(image_id)
+        
+    if only_cameras:
+        for pts3D in model.point3D_ids(): model.delete_point3D(pts3D)
+
+    if (not only_cameras) and add_3D_points and (not (img_path is None)) and (not (db_path is None)):
+        incr_map_opt = pycolmap.IncrementalPipelineOptions()
+        if add_as_possible:
+            tri_opt = incr_map_opt.triangulation
+            tri_opt.ignore_two_view_tracks = False    
+        model = pycolmap.triangulate_points(model, db_path, img_path, output_model_path, True, incr_map_opt, False)
+        return
+
+    if not (img_path is None):
+        model.extract_colors_for_all_images(img_path)
+
+    model.write_binary(output_model_path)
+
+
+_EPS = np.finfo(float).eps * 4.0
+
+def qvec2rotmat(qvec):
+    return np.array([
+        [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
+         2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
+         2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2]],
+        [2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
+         1 - 2 * qvec[1]**2 - 2 * qvec[3]**2,
+         2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1]],
+        [2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
+         2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
+         1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
+
+
+def vector_norm(data, axis=None, out=None):
+    """Return length, i.e. Euclidean norm, of ndarray along axis."""
+    data = np.array(data, dtype=np.float64, copy=True)
+    if out is None:
+        if data.ndim == 1:
+            return math.sqrt(np.dot(data, data))
+        data *= data
+        out = np.atleast_1d(np.sum(data, axis=axis))
+        np.sqrt(out, out)
+        return out
+    data *= data
+    np.sum(data, axis=axis, out=out)
+    np.sqrt(out, out)
+    return None
+
+
+def quaternion_matrix(quaternion):
+    """Return homogeneous rotation matrix from quaternion."""
+    q = np.array(quaternion, dtype=np.float64, copy=True)
+    n = np.dot(q, q)
+    if n < _EPS:
+        # print("special case")
+        return np.identity(4)
+    q *= math.sqrt(2.0 / n)
+    q = np.outer(q, q)
+    return np.array(
+        [
+            [
+                1.0 - q[2, 2] - q[3, 3],
+                q[1, 2] - q[3, 0],
+                q[1, 3] + q[2, 0],
+                0.0,
+            ],
+            [
+                q[1, 2] + q[3, 0],
+                1.0 - q[1, 1] - q[3, 3],
+                q[2, 3] - q[1, 0],
+                0.0,
+            ],
+            [
+                q[1, 3] - q[2, 0],
+                q[2, 3] + q[1, 0],
+                1.0 - q[1, 1] - q[2, 2],
+                0.0,
+            ],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
+
+
+# based on the 3D registration from https://github.com/cgohlke/transformations
+def affine_matrix_from_points(v0, v1, shear=False, scale=True, usesvd=True):
+    """Return affine transform matrix to register two point sets.
+    v0 and v1 are shape (ndims, -1) arrays of at least ndims non-homogeneous
+    coordinates, where ndims is the dimensionality of the coordinate space.
+    If shear is False, a similarity transformation matrix is returned.
+    If also scale is False, a rigid/Euclidean traffansformation matrix
+    is returned.
+    By default the algorithm by Hartley and Zissermann [15] is used.
+    If usesvd is True, similarity and Euclidean transformation matrices
+    are calculated by minimizing the weighted sum of squared deviations
+    (RMSD) according to the algorithm by Kabsch [8].
+    Otherwise, and if ndims is 3, the quaternion based algorithm by Horn [9]
+    is used, which is slower when using this Python implementation.
+    The returned matrix performs rotation, translation and uniform scaling
+    (if specified)."""
+    
+    v0 = np.array(v0, dtype=np.float64, copy=True)
+    v1 = np.array(v1, dtype=np.float64, copy=True)
+
+    ndims = v0.shape[0]
+    if ndims < 2 or v0.shape[1] < ndims or v0.shape != v1.shape:
+        raise ValueError("input arrays are of wrong shape or type")
+
+    # move centroids to origin
+    t0 = -np.mean(v0, axis=1)
+    M0 = np.identity(ndims + 1)
+    M0[:ndims, ndims] = t0
+    v0 += t0.reshape(ndims, 1)
+    t1 = -np.mean(v1, axis=1)
+    M1 = np.identity(ndims + 1)
+    M1[:ndims, ndims] = t1
+    v1 += t1.reshape(ndims, 1)
+
+    if shear:
+        # Affine transformation
+        A = np.concatenate((v0, v1), axis=0)
+        u, s, vh = np.linalg.svd(A.T)
+        vh = vh[:ndims].T
+        B = vh[:ndims]
+        C = vh[ndims: 2 * ndims]
+        t = np.dot(C, np.linalg.pinv(B))
+        t = np.concatenate((t, np.zeros((ndims, 1))), axis=1)
+        M = np.vstack((t, ((0.0,) * ndims) + (1.0,)))
+    elif usesvd or ndims != 3:
+        # Rigid transformation via SVD of covariance matrix
+        u, s, vh = np.linalg.svd(np.dot(v1, v0.T))
+        # rotation matrix from SVD orthonormal bases
+        R = np.dot(u, vh)
+        if np.linalg.det(R) < 0.0:
+            # R does not constitute right handed system
+            R -= np.outer(u[:, ndims - 1], vh[ndims - 1, :] * 2.0)
+            s[-1] *= -1.0
+        # homogeneous transformation matrix
+        M = np.identity(ndims + 1)
+        M[:ndims, :ndims] = R
+    else:
+        # Rigid transformation matrix via quaternion
+        # compute symmetric matrix N
+        xx, yy, zz = np.sum(v0 * v1, axis=1)
+        xy, yz, zx = np.sum(v0 * np.roll(v1, -1, axis=0), axis=1)
+        xz, yx, zy = np.sum(v0 * np.roll(v1, -2, axis=0), axis=1)
+        N = [
+            [xx + yy + zz, 0.0, 0.0, 0.0],
+            [yz - zy, xx - yy - zz, 0.0, 0.0],
+            [zx - xz, xy + yx, yy - xx - zz, 0.0],
+            [xy - yx, zx + xz, yz + zy, zz - xx - yy],
+        ]
+        # quaternion: eigenvector corresponding to most positive eigenvalue
+        w, V = np.linalg.eigh(N)
+        q = V[:, np.argmax(w)]
+        # print (vector_norm(q), np.linalg.norm(q))
+        q /= vector_norm(q)  # unit quaternion
+        # homogeneous transformation matrix
+        M = quaternion_matrix(q)
+
+    if scale and not shear:
+        # Affine transformation; scale is ratio of RMS deviations from centroid
+        v0 *= v0
+        v1 *= v1
+        M[:ndims, :ndims] *= math.sqrt(np.sum(v1) / np.sum(v0))
+
+    # move centroids back
+    M = np.dot(np.linalg.inv(M1), np.dot(M, M0))
+    M /= M[ndims, ndims]
+
+    # print("transformation matrix Python Script: ", M)
+
+    return M
+
+
+# This is the IMC 3D error metric code
+def register_by_Horn(ev_coord, gt_coord, ransac_threshold, inl_cf, strict_cf):
+    '''Return the best similarity transforms T that registers 3D points pt_ev in <ev_coord> to
+    the corresponding ones pt_gt in <gt_coord> according to a RANSAC-like approach for each
+    threshold value th in <ransac_threshold>.
+    
+    Given th, each triplet of 3D correspondences is examined if not already present as strict inlier,
+    a correspondence is a strict inlier if <strict_cf> * err_best < th, where err_best is the registration
+    error for the best model so far.
+    The minimal model given by the triplet is then refined using also its inliers if their total is greater
+    than <inl_cf> * ninl_best, where ninl_best is th number of inliers for the best model so far. Inliers
+    are 3D correspondences (pt_ev, pt_gt) for which the Euclidean distance |pt_gt-T*pt_ev| is less than th.'''
+    
+    # remove invalid cameras, the index is returned
+    idx_cams = np.all(np.isfinite(ev_coord), axis=0)
+    ev_coord = ev_coord[:, idx_cams]
+    gt_coord = gt_coord[:, idx_cams]
+
+    # initialization
+    n = ev_coord.shape[1]
+    r = ransac_threshold.shape[0]
+    ransac_threshold = np.expand_dims(ransac_threshold, axis=0)
+    ransac_threshold2 = ransac_threshold**2
+    ev_coord_1 = np.vstack((ev_coord, np.ones(n)))
+
+    max_no_inl = np.zeros((1, r))
+    best_inl_err = np.full(r, np.Inf)
+    best_transf_matrix = np.zeros((r, 4, 4))
+    best_err = np.full((n, r), np.Inf)
+    strict_inl = np.full((n, r), False)
+    triplets_used = np.zeros((3, r))
+
+    # run on camera triplets
+    for ii in range(n-2):
+        for jj in range(ii+1, n-1):
+            for kk in range(jj+1, n):
+                i = [ii, jj, kk]
+                triplets_used_now = np.full((n), False)
+                triplets_used_now[i] = True
+                # if both ii, jj, kk are strict inliers for the best current model just skip
+                if np.all(strict_inl[i]):
+                    continue
+                # get transformation T by Horn on the triplet camera center correspondences
+                transf_matrix = affine_matrix_from_points(ev_coord[:, i], gt_coord[:, i], usesvd=False)
+                # apply transformation T to test camera centres
+                rotranslated = np.matmul(transf_matrix[:3], ev_coord_1)
+                # compute error and inliers
+                err = np.sum((rotranslated - gt_coord)**2, axis=0)
+                inl = np.expand_dims(err, axis=1) < ransac_threshold2
+                no_inl = np.sum(inl, axis=0)
+                # if the number of inliers is close to that of the best model so far, go for refinement
+                to_ref = np.squeeze(((no_inl > 2) & (no_inl > max_no_inl * inl_cf)), axis=0)
+                for q in np.argwhere(to_ref):                        
+                    qq = q[0]
+                    if np.any(np.all((np.expand_dims(inl[:, qq], axis=1) == inl[:, :qq]), axis=0)):
+                        # already done for this set of inliers
+                        continue
+                    # get transformation T by Horn on the inlier camera center correspondences
+                    transf_matrix = affine_matrix_from_points(ev_coord[:, inl[:, qq]], gt_coord[:, inl[:, qq]])
+                    # apply transformation T to test camera centres
+                    rotranslated = np.matmul(transf_matrix[:3], ev_coord_1)
+                    # compute error and inliers
+                    err_ref = np.sum((rotranslated - gt_coord)**2, axis=0)
+                    err_ref_sum = np.sum(err_ref, axis=0)
+                    err_ref = np.expand_dims(err_ref, axis=1)
+                    inl_ref = err_ref < ransac_threshold2
+                    no_inl_ref = np.sum(inl_ref, axis=0)
+                    # update the model if better for each threshold
+                    to_update = np.squeeze((no_inl_ref > max_no_inl) | ((no_inl_ref == max_no_inl) & (err_ref_sum < best_inl_err)), axis=0)
+                    if np.any(to_update):
+                        triplets_used[0, to_update] = ii
+                        triplets_used[1, to_update] = jj
+                        triplets_used[2, to_update] = kk
+                        max_no_inl[:, to_update] = no_inl_ref[to_update]
+                        best_err[:, to_update] = np.sqrt(err_ref)
+                        best_inl_err[to_update] = err_ref_sum
+                        strict_inl[:, to_update] = (best_err[:, to_update] < strict_cf * ransac_threshold[:, to_update])
+                        best_transf_matrix[to_update] = transf_matrix
+
+    # print("\n")
+    # for i in range(r):
+    #    print(f'Registered cameras {max_no_inl[0, i]} of {n} for threshold {ransac_threshold[0, i]}')
+
+    best_model = {
+        "valid_cams": idx_cams,        
+        "no_inl": max_no_inl,
+        "err": best_err,
+        "triplets_used": triplets_used,
+        "transf_matrix": best_transf_matrix}
+    return best_model
+
+
+def evaluate_rec(gt_df, user_df, inl_cf = 0.8, strict_cf=0.5, thresholds=[0.05]):
+    ''' Register the <user_df> camera centers to the ground-truth <gt_df> camera centers and
+    return the corresponding mAA as the average percentage of registered camera threshold.
+    
+    For each threshold value in <thresholds>, the best similarity transformation found which
+    maximizes the number of registered cameras is employed. A camera is marked as registered
+    if after the transformation its Euclidean distance to the corresponding ground-truth camera
+    center is less than the mentioned threshold. Current measurements are in meter.
+    
+    Registration parameters:
+    <inl_cf> coefficient to activate registration refinement, set to 1 to refine a new model
+    only when it gives more inliers, to 0 to refine a new model always; high values increase
+    speed but decrease precision.
+    <strict_cf> threshold coefficient to define strict inliers for the best registration so far,
+    new minimal models made up of strict inliers are skipped. It can vary from 0 (slower) to
+    1 (faster); set to -1 to check exhaustively all the minimal model triplets.'''
+    
+    # get camera centers
+    ucameras = user_df
+    gcameras = gt_df    
+        
+    # get the image list to use
+    good_cams = []
+    for image_path in gcameras.keys():
+        if image_path in ucameras.keys():
+            good_cams.append(image_path)
+        
+    # put corresponding camera centers into matrices
+    n = len(good_cams)
+    u_cameras = np.zeros((3, n))
+    g_cameras = np.zeros((3, n))
+    
+    ii = 0
+    for i in good_cams:
+        u_cameras[:, ii] = ucameras[i]
+        g_cameras[:, ii] = gcameras[i]
+        ii += 1
+        
+    # Horn camera centers registration, a different best model for each camera threshold
+    model = register_by_Horn(u_cameras, g_cameras, np.asarray(thresholds), inl_cf, strict_cf)
+    
+    # transformation matrix
+    # print("Transformation matrix for maximum threshold")
+    # T = np.squeeze(model['transf_matrix'][-1])
+    # print(T)
+    
+    return model
+    
+                
+def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/colmap/model1', imgs_path=None, db_path0=None, db_path1=None,
+                        output_db='../aux/colmap/merged_database.db', output_model='../aux/colmap/merged_model', th=None,
+                        only_cameras=False, add_as_possible=True, no_force_db_fusion=True):
+
+    model1 = pycolmap.Reconstruction(model_path1)
+    model2 = pycolmap.Reconstruction(model_path2)
+
+    if (not only_cameras) and (not (db_path0 is None)) and (not (db_path1 is None)) and (not (imgs_path is None)):
+        if (not (os.path.isfile(output_db))) or (not no_force_db_fusion):
+            os.makedirs(os.path.split(output_db)[0], exist_ok=True)   
+            
+            f1 = [model1.image(image_id).name for image_id in model1.images]            
+            l1 = []
+            for i, name1 in enumerate(f1):
+                for name2 in f1[i + 1:]:
+                    l1.append([name1, name2])
+
+            f2 = [model2.image(image_id).name for image_id in model2.images]            
+            l2 = []
+            for i, name1 in enumerate(f2):
+                for name2 in f2[i + 1:]:
+                    l2.append([name1, name2])
+            
+            to_filter=[l1, l2]
+            how_filter=['include', 'include']
+            
+            merge_colmap_db([db_path0, db_path1], output_db, to_filter=to_filter, how_filter=how_filter)
+    else:
+        only_cameras = True
+
+    model1_imgs = {model1.image(image_id).name: model1.image(image_id).projection_center() for image_id in model1.images}
+    model2_imgs = {model2.image(image_id).name: model2.image(image_id).projection_center() for image_id in model2.images}
+
+    if th is None:
+        c = np.vstack([model1_imgs[im] for im in model1_imgs])        
+        th = np.mean(scipy.spatial.distance.pdist(c)) / 100
+        warnings.warn(f'setting alignement threshold to {th}')
+
+    align = evaluate_rec(model1_imgs, model2_imgs, thresholds=[th])
+    model2.transform(pycolmap.Sim3d(align['transf_matrix'][0, :3, :].astype(np.float64)))
+        
+    fused_model = pycolmap.Reconstruction()
+    
+    if not only_cameras:
+        fused_db = coldb_ext(output_db)
+    
+    count = 1
+    for image_id in model1.images:
+        image = model1.image(image_id)
+        camera = model1.camera(image.camera_id)
+        
+        if only_cameras:
+            img_id = count
+            cam_id = count
+        else:
+            img_id = fused_db.get_image_id(image.name)
+            cam_id = fused_db.get_image(img_id)[1]
+        
+        new_camera = pycolmap.Camera()
+        new_camera.camera_id = cam_id
+        new_camera.model = camera.model
+        new_camera.width = camera.width
+        new_camera.height = camera.height
+        new_camera.params = camera.params
+        fused_model.add_camera(new_camera)
+
+        new_image = pycolmap.Image()
+        new_image.name = image.name        
+        new_image.image_id = img_id
+        new_image.camera_id = cam_id
+        new_image.cam_from_world = image.cam_from_world        
+        fused_model.add_image(new_image)
+
+        count = count + 1        
+
+    for image_id in model2.images:
+        if not (model1.find_image_with_name(model2.image(image_id).name) is None): continue
+
+        image = model2.image(image_id)
+        camera = model2.camera(image.camera_id)
+
+        if only_cameras:
+            img_id = count
+            cam_id = count
+        else:
+            img_id = fused_db.get_image_id(image.name)
+            cam_id = fused_db.get_image(img_id)[1]
+
+        new_camera = pycolmap.Camera()
+        new_camera.camera_id = cam_id
+        new_camera.model = camera.model
+        new_camera.width = camera.width
+        new_camera.height = camera.height
+        new_camera.params = camera.params
+        fused_model.add_camera(new_camera)
+
+        new_image = pycolmap.Image()
+        new_image.name = image.name
+        new_image.image_id = img_id
+        new_image.camera_id = cam_id
+        new_image.cam_from_world = image.cam_from_world        
+        fused_model.add_image(new_image)
+
+        count = count + 1 
+        
+    if not only_cameras:
+        fused_db.close()
+        
+    if (not only_cameras):
+        incr_map_opt = pycolmap.IncrementalPipelineOptions()
+        if add_as_possible:
+            tri_opt = incr_map_opt.triangulation
+            tri_opt.ignore_two_view_tracks = False    
+        fused_model = pycolmap.triangulate_points(fused_model, output_db, imgs_path, output_model, True, incr_map_opt, False)
+        return
+
+    os.makedirs(output_model, exist_ok=True)
+    fused_model.write_binary(output_model)
+
+  
 if __name__ == '__main__':    
     with torch.inference_mode():         
 #       pipeline = [
@@ -5292,7 +5744,7 @@ if __name__ == '__main__':
 #         # show_matches_module(id_more='forth', img_prefix='matches_', mask_idx=[1, 0]),
 #         # show_matches_module(id_more='fifth', img_prefix='matches_inliers_', mask_idx=[1]),
 #         # show_matches_module(id_more='sixth', img_prefix='matches_all_', mask_idx=-1),
-#           show_matches_module(id_more='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           show_matches_module(id_moreFalse='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]
 
 #       pipeline = [
@@ -5450,29 +5902,29 @@ if __name__ == '__main__':
 #           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]   
 
-        pipeline = [
-            deep_joined_module(what='aliked'),
-            lightglue_module(what='aliked'),
-            magsac_module(),
-            show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-            to_colmap_module(db='aliked.db'),            
-        ]         
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(db='aliked.db'),            
+#       ]         
 
-        imgs = '../data/ET'
-        run_pairs(pipeline, imgs)
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs)
 
-        pipeline = [
-            deep_joined_module(what='superpoint'),
-            lightglue_module(what='superpoint'),
-            magsac_module(),
-            show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-            to_colmap_module(db='superpoint.db'),            
-        ]         
+#       pipeline = [
+#           deep_joined_module(what='superpoint'),
+#           lightglue_module(what='superpoint'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
+#           to_colmap_module(db='superpoint.db'),            
+#       ]         
 
-        imgs = '../data/ET'
-        run_pairs(pipeline, imgs)
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs)
 
-        merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
+#       merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
 
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)
@@ -5507,4 +5959,11 @@ if __name__ == '__main__':
 #       imgs = [imgs_imc[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
-#       print('doh!')
+#       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model', to_filter=['archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=True)
+
+        filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_a', to_filter=['archive_0025.png', '3DOM_FBK_IMG_1517.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png', 'archive_0013.png', 'archive_0055.png'], how_filter='include', only_cameras=False, add_3D_points=False)
+        filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_b', to_filter=['archive_0013.png', 'archive_0055.png', 'archive_0230.png', 'IMG_0075.png', 'IMG_0205.png', 'archive_0362.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=False)
+
+        align_colmap_models(model_path1='../aux/new_model_a', model_path2='../aux/new_model_b', imgs_path='../aux/cluster0/images', db_path0='../aux/cluster0/database.db', db_path1='../aux/cluster0/database.db', output_db='../aux/merged_database.db', output_model='../aux/merged_model', th=None)
+
+        print('doh!')
