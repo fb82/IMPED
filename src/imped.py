@@ -4979,14 +4979,11 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         
         aux_hdf5 = pickled_hdf5.pickled_hdf5('tmp.hdf5', mode='a')
                 
-    dbs = []
-    for db_name in db_names:    
-        dbs.append(coldb_ext(db_name))
-
     db_merged = coldb_ext(db_merged_name)
     db_merged.create_tables()
     
-    for i, db in enumerate(tqdm(dbs, desc='Merging progress')):
+    for i, db_name in enumerate(go_iter(db_names, msg='Merging progress')):
+        db = coldb_ext(db_name)
         imgs = db.get_images()
     
         if (to_filter is None) or (how_filter is None):
@@ -5274,6 +5271,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         db_merged.update_two_view_geometry(im0_id_prev, im1_id_prev, m_idx, model=models)
 
                 db_merged.commit()
+        db.close()
 
     db_merged.close()
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):
@@ -5902,30 +5900,6 @@ if __name__ == '__main__':
 #           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
 #       ]   
 
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(db='aliked.db'),            
-#       ]         
-
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)
-
-#       pipeline = [
-#           deep_joined_module(what='superpoint'),
-#           lightglue_module(what='superpoint'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(db='superpoint.db'),            
-#       ]         
-
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)
-
-#       merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
-
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)
 
@@ -5959,11 +5933,36 @@ if __name__ == '__main__':
 #       imgs = [imgs_imc[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
+
+        pipeline = [
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
+            magsac_module(),
+            show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(db='aliked.db'),            
+        ]         
+
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)
+
+        pipeline = [
+            deep_joined_module(what='superpoint'),
+            lightglue_module(what='superpoint'),
+            magsac_module(),
+            show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(db='superpoint.db'),            
+        ]         
+
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)
+
+        merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
+
+
 #       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model', to_filter=['archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=True)
 
-        filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_a', to_filter=['archive_0025.png', '3DOM_FBK_IMG_1517.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png', 'archive_0013.png', 'archive_0055.png'], how_filter='include', only_cameras=False, add_3D_points=False)
-        filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_b', to_filter=['archive_0013.png', 'archive_0055.png', 'archive_0230.png', 'IMG_0075.png', 'IMG_0205.png', 'archive_0362.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=False)
-
-        align_colmap_models(model_path1='../aux/new_model_a', model_path2='../aux/new_model_b', imgs_path='../aux/cluster0/images', db_path0='../aux/cluster0/database.db', db_path1='../aux/cluster0/database.db', output_db='../aux/merged_database.db', output_model='../aux/merged_model', th=None)
+#       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_a', to_filter=['archive_0025.png', '3DOM_FBK_IMG_1517.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png', 'archive_0013.png', 'archive_0055.png'], how_filter='include', only_cameras=False, add_3D_points=False)
+#       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model_b', to_filter=['archive_0013.png', 'archive_0055.png', 'archive_0230.png', 'IMG_0075.png', 'IMG_0205.png', 'archive_0362.png', 'archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=False)
+#       align_colmap_models(model_path1='../aux/new_model_a', model_path2='../aux/new_model_b', imgs_path='../aux/cluster0/images', db_path0='../aux/cluster0/database.db', db_path1='../aux/cluster0/database.db', output_db='../aux/merged_database.db', output_model='../aux/merged_model', th=None)
 
         print('doh!')
