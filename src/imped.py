@@ -4975,6 +4975,9 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
     sampling_scale=1, sampling_offset=0, focal_cf=1.2):                    
 
+    if device.type != 'cpu':
+        warnings.warn('device is not set to cpu, computation will be *very slow*')
+    
     aux_hdf5 = None
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         
         aux_hdf5 = pickled_hdf5.pickled_hdf5('tmp.hdf5', mode='a')
@@ -5018,7 +5021,9 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                                 
                 if im0_id == im1_id: continue
                 if in1a <= in0a: continue
-
+            
+                pbar.update()
+            
                 im0 = os.path.split(im0_)[-1]
                 im1 = os.path.split(im1_)[-1]
                 
@@ -5274,7 +5279,6 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         db_merged.update_two_view_geometry(im0_id_prev, im1_id_prev, m_idx, model=models)
 
                 db_merged.commit()
-                pbar.update()
 
         db.close()
         pbar.close()
