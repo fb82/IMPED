@@ -303,6 +303,7 @@ def get_3d_model(db, abs_scene, abs_3d, models, shared_hdf5=False):
                     else:
                         image_location = abs_scene
                                 
+                    imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
                     with torch.inference_mode():    
                         pipeline = [
                             imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
