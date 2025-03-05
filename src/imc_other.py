@@ -244,16 +244,23 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
     return valid, data
 
 
-def get_3d_model(db, abs_scene, abs_3d, models):
+def get_3d_model(db, abs_scene, abs_3d, models, shared_hdf5=False):
     '''compute a 3D model, if the colmap matching database <db> is missing, this is computed by ALIKED using imped if available,
     <abs_scene> is the image folder, <models> is the folder were colmap 3D models are saved'''
+
+    if shared_hdf5:
+        colmap_id = os.path.split(os.path.split(db)[0])[1]
+        aux_path = os.path.split(os.path.split(db)[0])[0]
+    else:
+        colmap_id = ''
+        aux_path = os.path.split(db)[0]
 
     if not os.path.isdir(models):
         if not os.path.isfile(db):
             if imped_lib:
                 os.makedirs(abs_3d, exist_ok=True)  
 
-                cache_path = os.path.join(os.path.split(db)[0], 'image_cache')    
+                cache_path = os.path.join(aux_path, 'image_cache')    
                 os.makedirs(cache_path, exist_ok=True)
                 
                 with torch.inference_mode():    
@@ -263,10 +270,10 @@ def get_3d_model(db, abs_scene, abs_3d, models):
                             imped.lightglue_module(what='aliked'),
                             imped.poselib_module(),
                         ]),
-                        imped.to_colmap_module(db=db),
+                        imped.to_colmap_module(db=db, id_more=colmap_id),
                     ]       
                             
-                    imped.run_pairs(pipeline, abs_scene, db_name=os.path.splitext(db)[0] + '.hdf5')
+                    imped.run_pairs(pipeline, abs_scene, db_name=os.path.join(aux_path, 'imped_database.hdf5'))
 
         if os.path.isfile(db):
             os.makedirs(models, exist_ok=True)          
@@ -409,7 +416,7 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                     warnings.warn('imped not found, cannot match images and generate 3d model')
                     break
 
-                get_3d_model(db, img_path, abs_3d, models)
+                get_3d_model(db, img_path, abs_3d, models, shared_hdf5=True)
 
                 best_n = 0
                 best_model = None
@@ -456,6 +463,8 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                 tmp_dataset['outliers'] = outlier_path
 
             data.append(tmp_dataset)
+            os.remove(os.path.join(rec_file, dataset, 'imped_database.hdf5'))
+            shutil.rmtree(os.path.join(rec_file, dataset, 'image_cache'))
     
     return data
 
@@ -1212,7 +1221,7 @@ if __name__ == '__main__':
     # kaggle_data/thresholds.csv - contains the thresholds
     
     # if obfuscate_data is True, each run will generate new kaggle data, so run only once
-    already_run = False # I've laready run it!
+    already_run = False # I've already run it!
     if not already_run:
         make_input_data(csv_gt='../../fb_IMC/kaggle_raw_data/gt.csv', input_folder='../../fb_IMC/kaggle_raw_data',
                         input_tth='../../fb_IMC/kaggle_raw_data/thresholds.csv', out_folder='../../fb_IMC/kaggle_data',
