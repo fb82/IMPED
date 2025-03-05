@@ -4982,8 +4982,8 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
     sampling_scale=1, sampling_offset=0, focal_cf=1.2):                    
 
-#   if device.type != 'cpu':
-#       warnings.warn('device is not set to cpu, computation will be *very slow*')
+    if device.type != 'cpu':
+        warnings.warn('device is not set to cpu, computation will be *very slow*')
     
     aux_hdf5 = None
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         
@@ -5973,7 +5973,7 @@ if __name__ == '__main__':
         imgs = '../data/ET'
         run_pairs(pipeline, imgs)
 
-        # device = torch.device('cpu')
+        device = torch.device('cpu')
         merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
 
 #       filter_colmap_reconstruction(input_model_path='../aux/cluster0/model/0', db_path='../aux/cluster0/database.db', img_path='../aux/cluster0/images', output_model_path='../aux/new_model', to_filter=['archive_0004.png', 'archive_0005.png', 'IMG_0281.png', 'IMG_0272.png'], how_filter='include', only_cameras=False, add_3D_points=True)
