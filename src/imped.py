@@ -1763,7 +1763,10 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False, device=None, io_device=None):
+    if device is None: device = torch.device('cpu')
+    if io_device is None: io_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     if not isinstance(pipe_block, list): pipe_block = [pipe_block]
 
     kp0 = []
@@ -1810,18 +1813,18 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     for i, pipe_data in enumerate(pipe_block):
         if 'kp' in pipe_data:
         
-            kp0.append(pipe_data['kp'][0])
-            kp1.append(pipe_data['kp'][1])
+            kp0.append(pipe_data['kp'][0].to(device))
+            kp1.append(pipe_data['kp'][1].to(device))
     
-            kH0.append(pipe_data['kH'][0])
-            kH1.append(pipe_data['kH'][1])
+            kH0.append(pipe_data['kH'][0].to(device))
+            kH1.append(pipe_data['kH'][1].to(device))
 
-            kr0.append(pipe_data['kr'][0])
-            kr1.append(pipe_data['kr'][1])
+            kr0.append(pipe_data['kr'][0].to(device))
+            kr1.append(pipe_data['kr'][1].to(device))
             
             if use_w:
-                w0.append(pipe_data['w'][0])
-                w1.append(pipe_data['w'][1])
+                w0.append(pipe_data['w'][0].to(device))
+                w1.append(pipe_data['w'][1].to(device))
 
             if preserve_order:
                 rank0.append(torch.arange(c_rank0, c_rank0 + pipe_data['kp'][0].shape[0], device=device))
@@ -1834,19 +1837,19 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                     q_rank1 = pipe_data['kp'][1].shape[0]
 
             if counter:
-                counter0.append(pipe_data['k_counter'][0])
-                counter1.append(pipe_data['k_counter'][1])
+                counter0.append(pipe_data['k_counter'][0].to(device))
+                counter1.append(pipe_data['k_counter'][1].to(device))
             
             if 'm_idx' in pipe_data:
 
                 if only_matched:
-                    to_retain = pipe_data['m_mask'].clone()
+                    to_retain = pipe_data['m_mask'].clone().to(device)
                 else:
                     to_retain = torch.full((pipe_data['m_mask'].shape[0], ), 1, device=device, dtype=torch.bool)
                           
-                m_idx.append(pipe_data['m_idx'][to_retain] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
-                m_val.append(pipe_data['m_val'][to_retain])
-                m_mask.append(pipe_data['m_mask'][to_retain])
+                m_idx.append(pipe_data['m_idx'].to(device)[to_retain] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
+                m_val.append(pipe_data['m_val'].to(device)[to_retain])
+                m_mask.append(pipe_data['m_mask'].to(device)[to_retain])
                     
                 m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
                 m1_offset = m1_offset + pipe_data['kp'][1].shape[0]
@@ -2044,27 +2047,29 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     pipe_data_out = {}
                 
     if 'kp' in pipe_data:
-        pipe_data_out['kp'] = [kp0, kp1]
-        pipe_data_out['kH'] = [kH0, kH1]
-        pipe_data_out['kr'] = [kr0, kr1]
+        pipe_data_out['kp'] = [kp0.to(io_device), kp1.to(io_device)]
+        pipe_data_out['kH'] = [kH0.to(io_device), kH1.to(io_device)]
+        pipe_data_out['kr'] = [kr0.to(io_device), kr1.to(io_device)]
         
         if use_w:
             w0[:, :2] = kp0
             w1[:, :2] = kp1
-            pipe_data_out['w'] = [w0, w1]
+            pipe_data_out['w'] = [w0.to(io_device), w1.to(io_device)]
             
         if counter:
-            pipe_data_out['k_counter'] = [counter0, counter1]
+            pipe_data_out['k_counter'] = [counter0.to(io_device), counter1.to(io_device)]
             
         if 'm_idx' in pipe_data:
-            pipe_data_out['m_idx'] = m_idx
-            pipe_data_out['m_val'] = m_val
-            pipe_data_out['m_mask'] = m_mask
+            pipe_data_out['m_idx'] = m_idx.to(io_device)
+            pipe_data_out['m_val'] = m_val.to(io_device)
+            pipe_data_out['m_mask'] = m_mask.to(io_device)
                 
     return pipe_data_out
 
 
-def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, counter=None):
+def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, counter=None, device=None):
+    if device is None: device = torch.device('cpu')
+
     if (sampling_mode == 'raw') or (kp.shape[0] == 0): return kp
             
     if (sampling_mode == 'avg_all_matches'):                    
@@ -2167,7 +2172,9 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, count
     return kp
 
 
-def sortrows(kp, idx_prev=None, rank=None):    
+def sortrows(kp, idx_prev=None, rank=None, device=None):    
+    if device is None: device = torch.device('cpu')
+
     idx = torch.arange(kp.shape[0], device=device)
 
     if not (idx_prev is None):
