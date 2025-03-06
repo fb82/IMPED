@@ -22,14 +22,14 @@ def arr_to_str(a):
     return ';'.join([str(x) for x in a.reshape(-1)])
 
 
-def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=True, recopy_csv='imc2025_gt.csv'):
+def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=True, recopy_csv='imc2025_gt.csv', check_image_only=False):
     '''take raw data contained in <datasets> and put it into the csv <csv_file>,
     csv format is dataset,scene,image,rotation_matrix,translation_vector
     if there is a file imc2025_gt.csv associated to the scene dataset, R,T are taken from this,
     otherwise if there is a file imc2024_gt.csv (old format) associated to the scene dataset, R,T are taken from this,
     otherwise if there is a colmap folder associated to the scene dataset, R,T are taken from this (scale can be included as csv file too);
     if <recopy_in_original> is True the file <recopy_csv> associated to the scene dataset is generated too
-    '''
+    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file'''
 
     os.makedirs(os.path.split(csv_file)[0], exist_ok=True)  
     
@@ -55,7 +55,7 @@ def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=Tr
                 imgs = os.listdir(os.path.join(dataset['images'][i], 'images'))            
 
                 if not(dataset['csv'][i] is None):                
-                    _, model = check_gt_imc2025(dataset['csv'][i], tolerance=float('inf'), scene_name=dataset['scenes'][i])
+                    _, model = check_gt_imc2025(dataset['csv'][i], tolerance=float('inf'), scene_name=dataset['scenes'][i], check_image_only=check_image_only)
                     if (not dataset_name in model) and (not scene in model[dataset_name]):
                         warnings.warn(f"scene {scene} not found in file {dataset['csv'][i]}")
                     else:
@@ -135,17 +135,23 @@ def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=Tr
                 if recopy_in_original: ff.close()
 
 
-def check_gt_imc2025(csv_gt, tolerance=5, warning=False, scene_name=None):
+def check_gt_imc2025(csv_gt, tolerance=5, warning=False, check_image_only=False, scene_name=None):
     '''check the imc2025 <csv_gt> csv file, if the csv entry is missing for more than <tolerance> images the check fails,
-    if <warning> is True, missing images are shown'''
+    if <warning> is True, missing images are shown, if <check_image_only> is True only image is considered and database
+    and scene name are inferred from the folder structure, when present <scene_name> is not inferred from folder structure provided'''
     
     if not os.path.isfile(csv_gt): return False, None
     
-    aux = os.path.split(csv_gt)[0]
-    aux_ = os.path.split(aux)[0]
+    aux = os.path.split(csv_gt)
+    
+    if check_image_only and (scene_name is None):
+        scene_name = aux[1]
+        
+    aux_ = os.path.split(aux[0])[0]
     dataset_name = os.path.split(aux_)[1]
     
-    img_folder = os.path.join(aux, 'images')
+    img_folder = os.path.join(aux[0], 'images')
+
     img_list = os.listdir(img_folder)
     img_dict = {}
     for img in img_list: img_dict[img] = 1
@@ -166,6 +172,10 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, scene_name=None):
             image = row[2]
             R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
             t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+
+            if check_image_only:
+                dataset = dataset_name
+                scene = scene_name
 
             if dataset != dataset_name:
                 continue
@@ -188,7 +198,8 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, scene_name=None):
     if scene_name is None:
         valid = True
     else:
-        if len(img_dict) > 0: warnings.warn(f'scene {scene_name} - missing images {list(img_dict.keys())}')
+        if len(img_dict) > 0:
+            warnings.warn(f'scene {scene_name} - missing images {list(img_dict.keys())}')
         valid = len(img_dict) < tolerance
 
     return valid, data
@@ -244,31 +255,72 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
     return valid, data
 
 
-def get_3d_model(db, abs_scene, abs_3d, models):
+def get_3d_model(db, abs_scene, abs_3d, models, shared_hdf5=False):
     '''compute a 3D model, if the colmap matching database <db> is missing, this is computed by ALIKED using imped if available,
-    <abs_scene> is the image folder, <models> is the folder were colmap 3D models are saved'''
-    
+    <abs_scene> is the image folder, <models> is the folder were colmap 3D models are saved,
+    when <shared_hdf5> is True the database recomputation is avoided (only for generating the submission file, the specific folder structure is needed)'''
+
+    if shared_hdf5:
+        colmap_id = os.path.split(os.path.split(db)[0])[1]
+        aux_path = os.path.split(os.path.split(db)[0])[0]
+    else:
+        colmap_id = ''
+        aux_path = os.path.split(db)[0]
+        
+    hdf5_db = os.path.join(aux_path, 'imped_database.hdf5')
+
     if not os.path.isdir(models):
         if not os.path.isfile(db):
             if imped_lib:
-                os.makedirs(abs_3d, exist_ok=True)  
+                os.makedirs(abs_3d, exist_ok=True)
+                
+                cache_path = os.path.join(aux_path, 'image_cache')    
+                os.makedirs(cache_path, exist_ok=True)
 
-                with torch.inference_mode():    
-                    pipeline = [
-                        imped.deep_joined_module(what='aliked'),
-                        imped.lightglue_module(what='aliked'),
-                        imped.poselib_module(),
-                        imped.to_colmap_module(db=db),
-                    ]       
-                            
-                    imped.run_pairs(pipeline, abs_scene, db_name=os.path.splitext(db)[0] + '.hdf5')
+                if shared_hdf5:
+                    if os.path.isfile(hdf5_db):
+                        join_path = ''
+                    else:
+                        join_path = cache_path
+                                        
+                    image_pair_list = []
+                    img_list = os.listdir(abs_scene)
+                    for i, image0 in enumerate(img_list):
+                        for j, image1 in enumerate(img_list[i+1:]):
+                            image_pair_list.append([os.path.join(join_path, image0), os.path.join(join_path, image1)])
+
+                if shared_hdf5 and os.path.isfile(hdf5_db):
+                    imped.device = torch.device('cpu')                    
+                    imped.merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
+                else:    
+                    if shared_hdf5:
+                        for image in os.listdir(abs_scene):
+                            if not os.path.isfile(os.path.join(cache_path, image)):
+                                shutil.copy(os.path.join(abs_scene, image), os.path.join(cache_path, image))
+                                
+                        image_location = cache_path
+                    else:
+                        image_location = abs_scene
+                                
+                    imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
+                    with torch.inference_mode():    
+                        pipeline = [
+                            imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
+                                imped.deep_joined_module(what='aliked'),
+                                imped.lightglue_module(what='aliked'),
+                                imped.poselib_module(),
+                            ]),
+                            imped.to_colmap_module(db=db, id_more=colmap_id),
+                        ]       
+                                
+                        imped.run_pairs(pipeline, image_location, db_name=hdf5_db)
 
         if os.path.isfile(db):
             os.makedirs(models, exist_ok=True)          
             pycolmap.incremental_mapping(database_path=db, image_path=abs_3d, output_path=models)            
 
 
-def make_gt(folder='../kaggle_raw_data', csv_name='imc2025_gt.csv', csv_other_name='imc2024_gt.csv', min_model_size=3):
+def make_gt(folder='../kaggle_raw_data', csv_name='imc2025_gt.csv', csv_other_name='imc2024_gt.csv', min_model_size=3, check_image_only=False):
     '''generate raw gt data, the <folder> structure is on the form:
     <folder>/dataset/scene - scene for each dataset
     <folder>/dataset/scene/images - images for the specific dataset, scene
@@ -281,7 +333,7 @@ def make_gt(folder='../kaggle_raw_data', csv_name='imc2025_gt.csv', csv_other_na
     if no gt is available it will try to buld a 3D model in colmap format by imped if available,
     the 3D model with the highest number of 3D scene is select
     if the images for the gt are less than <min_model_size> the scene is excluded from the kaggle data
-    '''
+    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file'''
     
     data = []
 
@@ -318,7 +370,7 @@ def make_gt(folder='../kaggle_raw_data', csv_name='imc2025_gt.csv', csv_other_na
                         cur_csv_gt = None                        
                         cur_model = None
                         
-                        csv_check, _ = check_gt_imc2025(csv_gt, warning=True, scene_name=scene)
+                        csv_check, _ = check_gt_imc2025(csv_gt, warning=True, scene_name=scene, check_image_only=check_image_only)
                         if csv_check:
                             cur_csv_gt = csv_gt
                         else:
@@ -404,7 +456,7 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                     warnings.warn('imped not found, cannot match images and generate 3d model')
                     break
 
-                get_3d_model(db, img_path, abs_3d, models)
+                get_3d_model(db, img_path, abs_3d, models, shared_hdf5=True)
 
                 best_n = 0
                 best_model = None
@@ -451,6 +503,8 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                 tmp_dataset['outliers'] = outlier_path
 
             data.append(tmp_dataset)
+            os.remove(os.path.join(rec_file, dataset, 'imped_database.hdf5'))
+            shutil.rmtree(os.path.join(rec_file, dataset, 'image_cache'))
     
     return data
 
@@ -526,17 +580,19 @@ def make_input_data(csv_gt='../kaggle_raw_data/gt.csv', input_folder='../kaggle_
             for image_src in data[dataset][scene]:
 
                 if obfuscate_data:
-                    image_dst = uuid.uuid4().hex[:16]
+                    image_src_ext = os.path.splitext(image_src)[1]
+                    image_dst = uuid.uuid4().hex[:16] + image_src_ext
                     while image_dst in img_dict:
-                        image_dst = uuid.uuid4().hex[:16]
+                        image_dst = uuid.uuid4().hex[:16] + image_src_ext
                 else: 
                     suffix = ''
-                    while (image_src + suffix) in img_dict: 
+                    image_src_name, image_src_ext = os.path.splitext(image_src)
+                    while (image_src_name + suffix + image_src_ext) in img_dict: 
                         if suffix == '':
                             suffix = '0'
                         else:
                             suffix = str(int(suffix) + 1)
-                    image_dst = image_src + suffix
+                    image_dst = image_src_name + suffix + image_src_ext
                 
                 img_dict[image_dst] = 1
                 
@@ -842,8 +898,7 @@ def check_data(gt_data, user_data, print_error=False):
     '''check if the gt/submission data are correct -
     <gt_data> - images in different scenes in the same dataset cannot have the same name
     <user_data> - there must be exactly an entry for each dataset, scene, image entry in the gt
-    <print_error> - print the error *ATTENTION: must be disable when called from score_all_ext to avoid possible data leaks!*
-    '''
+    <print_error> - print the error *ATTENTION: must be disable when called from score_all_ext to avoid possible data leaks!*'''
     
     for dataset in gt_data.keys():
         aux = {}
@@ -907,7 +962,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
     stat_mAA = []
     stat_clusterness = []
         
-    for dataset in gt_data.keys():
+    for dataset in gt_data.keys():        
         gt_dataset = gt_data[dataset]
         user_dataset = user_data[dataset]
 
@@ -1052,7 +1107,10 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
             n = np.sum(best_cluster[0])
             m = np.sum(best_user_scene_sum[0])
 
-        cluster_score = n / m
+        if m == 0:
+            cluster_score = 0
+        else:
+            cluster_score = n / m            
 
         # compute the mAA score
         # basically the recall: images in the both gt and user cluster correctly registered / images in the gt cluster only
@@ -1070,11 +1128,13 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                             ths = thresholds[dataset][gt_scene]
                         else:
                             ths = thresholds['default']      
+
+                    if len(best_model[t][i]) < 1: continue
                             
                     tmp = best_model[t][i]['err'][:, skip_top_thresholds + t] < ths[skip_top_thresholds+t]
                     a = a + np.maximum(np.sum(tmp) - to_dec, 0)
     
-                b = b + (n - len(best_gt_scene[t]) * to_dec) 
+                b = b + max(0, (n - len(best_gt_scene[t]) * to_dec)) 
         else:
             n = np.sum(best_gt_scene_sum[0])
             a = 0
@@ -1086,17 +1146,25 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                         ths = thresholds[dataset][gt_scene]
                     else:
                         ths = thresholds['default']
-                        
+                
+                if len(best_model[0][i]) < 1: continue
+                
                 tmp = best_model[0][i]['err'][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
                 a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
     
-            b = lt * (n - len(best_gt_scene[0]) * to_dec) 
+            b = max(0, lt * (n - len(best_gt_scene[0]) * to_dec))
 
-        mAA_score = a / b
-        
+        if b == 0:
+            mAA_score = 0
+        else:
+            mAA_score = a / b            
+
         if combo_mode =='harmonic':
             # it is basically the F1 score
-            score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+            if (mAA_score + cluster_score) == 0:
+                score = 0
+            else:
+                score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
         elif combo_mode == 'geometric':
             score = (mAA_score * cluster_score) ** 0.5
         elif combo_mode == 'arithmetic':
@@ -1109,7 +1177,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                     
         print(f'{dataset}: mAA = {mAA_score * 100:.2f} %, clusterness = {cluster_score * 100:.2f} %, combined = {score* 100:.2f} %')
 
-        stat_mAA.append(mAA)
+        stat_mAA.append(mAA_score)
         stat_clusterness.append(cluster_score)
         stat_score.append(score)
 
@@ -1204,11 +1272,10 @@ if __name__ == '__main__':
     # else if colmap 3D is present, this is used for the gt
     # else if colmap database is present, this is used to generate the 3D model
     # else if imped is available the 3D model is generated
-    tth_to_csv(tth)
-    gt_data = make_gt()
-    to_csv(gt_data)   
-
-
+    tth_to_csv(tth, csv_file='../data/imc2025/kaggle_raw_data/thresholds.csv')
+    gt_data = make_gt(folder='../data/imc2025/kaggle_raw_data')
+    to_csv(gt_data, csv_file='../data/imc2025/kaggle_raw_data/gt.csv') 
+    
     # generate gt data for kaggle    
 
     # output structure
@@ -1218,8 +1285,12 @@ if __name__ == '__main__':
     # kaggle_data/thresholds.csv - contains the thresholds
     
     # if obfuscate_data is True, each run will generate new kaggle data, so run only once
-    already_run = True # I've laready run it!
-    if not already_run: make_input_data(obfuscate_data=True)
+    already_run = False # I've already run it!
+    if not already_run:
+        make_input_data(csv_gt='../data/imc2025/kaggle_raw_data/gt.csv', input_folder='../data/imc2025/kaggle_raw_data',
+                        input_tth='../data/imc2025/kaggle_raw_data/thresholds.csv', out_folder='../data/imc2025/kaggle_data',
+                        mapping_csv='../data/imc2025/kaggle_data/mapping.csv', final_gt_csv='../data/imc2025/kaggle_data/gt.csv',
+                        final_tth='../data/imc2025/kaggle_data/thresholds.csv', obfuscate_data=False)
 
 
     # generate a simple greedy submission by exahustive brute force
@@ -1229,14 +1300,14 @@ if __name__ == '__main__':
     # the process is repeated removing these images to generate the next cluster
     # until the number of registered images is greater than the min model size,
     # remaining images are put in the outlier cluster
-    submission = make_todo()
-    to_csv(submission, csv_file='../kaggle_submission/submission.csv')    
+    submission = make_todo(img_file='../data/imc2025/kaggle_data', rec_file='../data/imc2025/kaggle_submission')
+    to_csv(submission, csv_file='../data/imc2025/kaggle_submission/submission.csv')    
 
 
     # check gt 
     print('GT vs GT')
-    score_all_ext('../kaggle_data/gt.csv', '../kaggle_data/gt.csv', thresholds='../kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+    score_all_ext('../data/imc2025/kaggle_data/gt.csv', '../data/imc2025/kaggle_data/gt.csv', thresholds='../data/imc2025/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
 
     # submission score
     print('GT vs submission')
-    score_all_ext('../kaggle_data/gt.csv', '../kaggle_submission/submission.csv', thresholds='../kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+    score_all_ext('../data/imc2025/kaggle_data/gt.csv', '../data/imc2025/kaggle_submission/submission.csv', thresholds='../data/imc2025/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)

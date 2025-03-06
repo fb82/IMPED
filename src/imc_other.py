@@ -29,8 +29,7 @@ def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=Tr
     otherwise if there is a file imc2024_gt.csv (old format) associated to the scene dataset, R,T are taken from this,
     otherwise if there is a colmap folder associated to the scene dataset, R,T are taken from this (scale can be included as csv file too);
     if <recopy_in_original> is True the file <recopy_csv> associated to the scene dataset is generated too
-    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file
-    '''
+    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file'''
 
     os.makedirs(os.path.split(csv_file)[0], exist_ok=True)  
     
@@ -334,8 +333,7 @@ def make_gt(folder='../kaggle_raw_data', csv_name='imc2025_gt.csv', csv_other_na
     if no gt is available it will try to buld a 3D model in colmap format by imped if available,
     the 3D model with the highest number of 3D scene is select
     if the images for the gt are less than <min_model_size> the scene is excluded from the kaggle data
-    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file
-    '''
+    if <check_image_only> is True for the IMC 2025 format csv if present dataset and scene are inferred from the folder, not from the csv file'''
     
     data = []
 
@@ -900,8 +898,7 @@ def check_data(gt_data, user_data, print_error=False):
     '''check if the gt/submission data are correct -
     <gt_data> - images in different scenes in the same dataset cannot have the same name
     <user_data> - there must be exactly an entry for each dataset, scene, image entry in the gt
-    <print_error> - print the error *ATTENTION: must be disable when called from score_all_ext to avoid possible data leaks!*
-    '''
+    <print_error> - print the error *ATTENTION: must be disable when called from score_all_ext to avoid possible data leaks!*'''
     
     for dataset in gt_data.keys():
         aux = {}
@@ -965,7 +962,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
     stat_mAA = []
     stat_clusterness = []
         
-    for dataset in gt_data.keys():
+    for dataset in gt_data.keys():        
         gt_dataset = gt_data[dataset]
         user_dataset = user_data[dataset]
 
@@ -1110,7 +1107,10 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
             n = np.sum(best_cluster[0])
             m = np.sum(best_user_scene_sum[0])
 
-        cluster_score = n / m
+        if m == 0:
+            cluster_score = 0
+        else:
+            cluster_score = n / m            
 
         # compute the mAA score
         # basically the recall: images in the both gt and user cluster correctly registered / images in the gt cluster only
@@ -1128,11 +1128,13 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                             ths = thresholds[dataset][gt_scene]
                         else:
                             ths = thresholds['default']      
+
+                    if len(best_model[t][i]) < 1: continue
                             
                     tmp = best_model[t][i]['err'][:, skip_top_thresholds + t] < ths[skip_top_thresholds+t]
                     a = a + np.maximum(np.sum(tmp) - to_dec, 0)
     
-                b = b + (n - len(best_gt_scene[t]) * to_dec) 
+                b = b + max(0, (n - len(best_gt_scene[t]) * to_dec)) 
         else:
             n = np.sum(best_gt_scene_sum[0])
             a = 0
@@ -1144,17 +1146,25 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                         ths = thresholds[dataset][gt_scene]
                     else:
                         ths = thresholds['default']
-                        
+                
+                if len(best_model[0][i]) < 1: continue
+                
                 tmp = best_model[0][i]['err'][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
                 a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
     
-            b = lt * (n - len(best_gt_scene[0]) * to_dec) 
+            b = max(0, lt * (n - len(best_gt_scene[0]) * to_dec))
 
-        mAA_score = a / b
-        
+        if b == 0:
+            mAA_score = 0
+        else:
+            mAA_score = a / b            
+
         if combo_mode =='harmonic':
             # it is basically the F1 score
-            score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+            if (mAA_score + cluster_score) == 0:
+                score = 0
+            else:
+                score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
         elif combo_mode == 'geometric':
             score = (mAA_score * cluster_score) ** 0.5
         elif combo_mode == 'arithmetic':
@@ -1167,7 +1177,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                     
         print(f'{dataset}: mAA = {mAA_score * 100:.2f} %, clusterness = {cluster_score * 100:.2f} %, combined = {score* 100:.2f} %')
 
-        stat_mAA.append(mAA)
+        stat_mAA.append(mAA_score)
         stat_clusterness.append(cluster_score)
         stat_score.append(score)
 
@@ -1183,11 +1193,8 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
 # mAA evaluation thresholds per dataset and scene
 # if not included, default is used
 # all threshold vectors must have the same length
-# mAA evaluation thresholds per dataset and scene
-# if not included, default is used
-# all threshold vectors must have the same length
 tth = {
-      'dioscuri0': {'dioscuri': np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0])},
+      'example_dataset': {'example_scene': np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0])},
       'default': np.array([0.01, 0.02, 0.05, 0.1, 0.15, 0.2]),
 }
 
