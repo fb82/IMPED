@@ -1266,6 +1266,7 @@ if __name__ == '__main__':
     gt_data = make_gt(folder='../../fb_IMC/kaggle_raw_data')
     to_csv(gt_data, csv_file='../../fb_IMC/kaggle_raw_data/gt.csv') 
     
+    
     # generate gt data for kaggle    
 
     # output structure
@@ -1297,6 +1298,7 @@ if __name__ == '__main__':
     # check gt 
     print('GT vs GT')
     score_all_ext('../../fb_IMC/kaggle_data/gt.csv', '../../fb_IMC/kaggle_data/gt.csv', thresholds='../../fb_IMC/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+
 
     # submission score
     print('GT vs submission')

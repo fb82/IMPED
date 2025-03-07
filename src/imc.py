@@ -1276,6 +1276,7 @@ if __name__ == '__main__':
     gt_data = make_gt(folder='../data/imc2025/kaggle_raw_data')
     to_csv(gt_data, csv_file='../data/imc2025/kaggle_raw_data/gt.csv') 
     
+    
     # generate gt data for kaggle    
 
     # output structure
@@ -1307,6 +1308,7 @@ if __name__ == '__main__':
     # check gt 
     print('GT vs GT')
     score_all_ext('../data/imc2025/kaggle_data/gt.csv', '../data/imc2025/kaggle_data/gt.csv', thresholds='../data/imc2025/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+
 
     # submission score
     print('GT vs submission')
