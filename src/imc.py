@@ -516,9 +516,10 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                 tmp_dataset['outliers'] = outlier_path
 
             data.append(tmp_dataset)
-            if imped_lib:            
-                os.remove(os.path.join(rec_file, dataset, 'imped_database.hdf5'))
-                shutil.rmtree(os.path.join(rec_file, dataset, 'image_cache'))
+            hdf5_db = os.path.join(rec_file, dataset, 'imped_database.hdf5')
+            if os.path.isfile(hdf5_db): os.remove(hdf5_db)
+            cache_path = os.path.join(rec_file, dataset, 'image_cache')
+            if os.path.isdir(cache_path): shutil.rmtree(cache_path)
     
     return data
 
