@@ -9,11 +9,12 @@ import math
 import uuid
 
 imped_lib = True
-try:
-    import imped
-except:
-    warnings.warn("imped unavailable")
-    imped_lib = False
+if imped_lib:
+    try:
+        import imped
+    except:
+        warnings.warn("imped unavailable, using base colmap")
+        imped_lib = False
 
 _EPS = np.finfo(float).eps * 4.0
 
@@ -255,66 +256,79 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
     return valid, data
 
 
+if imped_lib:
+    def compute_matches_db(db, abs_3d, abs_scene, shared_hdf5=False):
+        if shared_hdf5:
+            colmap_id = os.path.split(os.path.split(db)[0])[1]
+            aux_path = os.path.split(os.path.split(db)[0])[0]
+        else:
+            colmap_id = ''
+            aux_path = os.path.split(db)[0]
+
+        hdf5_db = os.path.join(aux_path, 'imped_database.hdf5')
+
+        os.makedirs(abs_3d, exist_ok=True)
+        
+        cache_path = os.path.join(aux_path, 'image_cache')    
+        os.makedirs(cache_path, exist_ok=True)
+    
+        if shared_hdf5:
+            if os.path.isfile(hdf5_db):
+                join_path = ''
+            else:
+                join_path = cache_path
+                                
+            image_pair_list = []
+            img_list = os.listdir(abs_scene)
+            for i, image0 in enumerate(img_list):
+                for j, image1 in enumerate(img_list[i+1:]):
+                    image_pair_list.append([os.path.join(join_path, image0), os.path.join(join_path, image1)])
+    
+        if shared_hdf5 and os.path.isfile(hdf5_db):
+            # remove processed images from the colmap db
+            imped.device = torch.device('cpu')                    
+            imped.merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
+        else:    
+            if shared_hdf5:
+                for image in os.listdir(abs_scene):
+                    if not os.path.isfile(os.path.join(cache_path, image)):
+                        shutil.copy(os.path.join(abs_scene, image), os.path.join(cache_path, image))
+                        
+                image_location = cache_path
+            else:
+                image_location = abs_scene
+                        
+            # imped pipeline
+            imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
+            with torch.inference_mode():    
+                pipeline = [
+                    imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
+                        imped.deep_joined_module(what='aliked'),
+                        imped.lightglue_module(what='aliked'),
+                        imped.poselib_module(),
+                    ]),
+                    imped.to_colmap_module(db=db, id_more=colmap_id),
+                ]       
+                        
+                imped.run_pairs(pipeline, image_location, db_name=hdf5_db)
+                
+else:
+    def compute_matches_db(db, abs_3d, abs_scene, shared_hdf5=False):
+        os.makedirs(os.path.split(db)[0], exist_ok=True)
+        
+        pycolmap.extract_features(db, abs_scene)
+        pycolmap.match_exhaustive(db)
+
+
 def get_3d_model(db, abs_scene, abs_3d, models, shared_hdf5=False):
     '''compute a 3D model, if the colmap matching database <db> is missing, this is computed by ALIKED using imped if available,
     <abs_scene> is the image folder, <models> is the folder were colmap 3D models are saved,
     when <shared_hdf5> is True the database recomputation is avoided (only for generating the submission file, the specific folder structure is needed)'''
-
-    if shared_hdf5:
-        colmap_id = os.path.split(os.path.split(db)[0])[1]
-        aux_path = os.path.split(os.path.split(db)[0])[0]
-    else:
-        colmap_id = ''
-        aux_path = os.path.split(db)[0]
         
-    hdf5_db = os.path.join(aux_path, 'imped_database.hdf5')
-
     if not os.path.isdir(models):
         if not os.path.isfile(db):
-            if imped_lib:
-                os.makedirs(abs_3d, exist_ok=True)
-                
-                cache_path = os.path.join(aux_path, 'image_cache')    
-                os.makedirs(cache_path, exist_ok=True)
-
-                if shared_hdf5:
-                    if os.path.isfile(hdf5_db):
-                        join_path = ''
-                    else:
-                        join_path = cache_path
-                                        
-                    image_pair_list = []
-                    img_list = os.listdir(abs_scene)
-                    for i, image0 in enumerate(img_list):
-                        for j, image1 in enumerate(img_list[i+1:]):
-                            image_pair_list.append([os.path.join(join_path, image0), os.path.join(join_path, image1)])
-
-                if shared_hdf5 and os.path.isfile(hdf5_db):
-                    imped.device = torch.device('cpu')                    
-                    imped.merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
-                else:    
-                    if shared_hdf5:
-                        for image in os.listdir(abs_scene):
-                            if not os.path.isfile(os.path.join(cache_path, image)):
-                                shutil.copy(os.path.join(abs_scene, image), os.path.join(cache_path, image))
-                                
-                        image_location = cache_path
-                    else:
-                        image_location = abs_scene
-                                
-                    imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
-                    with torch.inference_mode():    
-                        pipeline = [
-                            imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
-                                imped.deep_joined_module(what='aliked'),
-                                imped.lightglue_module(what='aliked'),
-                                imped.poselib_module(),
-                            ]),
-                            imped.to_colmap_module(db=db, id_more=colmap_id),
-                        ]       
-                                
-                        imped.run_pairs(pipeline, image_location, db_name=hdf5_db)
-
+            compute_matches_db(db, abs_3d, abs_scene, shared_hdf5)
+            
         if os.path.isfile(db):
             os.makedirs(models, exist_ok=True)          
             pycolmap.incremental_mapping(database_path=db, image_path=abs_3d, output_path=models)            
@@ -453,8 +467,7 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                     break
                         
                 if not imped_lib:                    
-                    warnings.warn('imped not found, cannot match images and generate 3d model')
-                    break
+                    warnings.warn('imped not found, using base colmap SIFT')
 
                 get_3d_model(db, img_path, abs_3d, models, shared_hdf5=True)
 
@@ -503,8 +516,9 @@ def make_todo(img_file='../kaggle_data', rec_file='../kaggle_submission', min_mo
                 tmp_dataset['outliers'] = outlier_path
 
             data.append(tmp_dataset)
-            os.remove(os.path.join(rec_file, dataset, 'imped_database.hdf5'))
-            shutil.rmtree(os.path.join(rec_file, dataset, 'image_cache'))
+            if imped_lib:            
+                os.remove(os.path.join(rec_file, dataset, 'imped_database.hdf5'))
+                shutil.rmtree(os.path.join(rec_file, dataset, 'image_cache'))
     
     return data
 
@@ -1297,9 +1311,9 @@ if __name__ == '__main__':
 
     # check gt 
     print('GT vs GT')
-    score_all_ext('../../fb_IMC/kaggle_data/gt.csv', '../../fb_IMC/kaggle_data/gt.csv', thresholds='../../fb_IMC/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+    score_all_ext('../../fb_IMC/kaggle_data/gt.csv', '../../fb_IMC/kaggle_data/gt.csv', thresholds='../../fb_IMC/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
 
 
     # submission score
     print('GT vs submission')
-    score_all_ext('../../fb_IMC/kaggle_data/gt.csv', '../../fb_IMC/kaggle_submission/submission.csv', thresholds='../../fb_IMC/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False)
+    score_all_ext('../../fb_IMC/kaggle_data/gt.csv', '../../fb_IMC/kaggle_submission/submission.csv', thresholds='../../fb_IMC/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
