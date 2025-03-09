@@ -1557,18 +1557,24 @@ class image_muxer_module:
             pipe_data_in['img'] = [pair_[0], pair_[1]]
             pipe_data_in['warp'] = [warp_[0], warp_[1]]
             
-            if 'kp' in pipe_data:
+            if 'kp' in pipe_data_in:
                 pipe_data_in['kp'] = [    
-                    apply_homo(pipe_data['kp'][0], warp_[0].inverse()),
-                    apply_homo(pipe_data['kp'][1], warp_[1].inverse())
+                    apply_homo(pipe_data_in['kp'][0], warp_[0].inverse()),
+                    apply_homo(pipe_data_in['kp'][1], warp_[1].inverse())
                     ]
 
-            if 'kH' in pipe_data:
+            if 'kH' in pipe_data_in:
                 pipe_data_in['kH'] = [    
-                    change_patch_homo(pipe_data['kH'][0], warp_[0]),
-                    change_patch_homo(pipe_data['kH'][1], warp_[1]),
+                    change_patch_homo(pipe_data_in['kH'][0], warp_[0]),
+                    change_patch_homo(pipe_data_in['kH'][1], warp_[1]),
                     ]
-                                       
+                
+            if ('H' in pipe_data_in) and (not pipe_data_in['H'] is None):
+                pipe_data_in['H'] = warp_[1].to(torch.double) @ pipe_data_in['H'] @ warp_[0].to(torch.double)
+
+            if ('F' in pipe_data_in) and (not pipe_data_in['F'] is None):
+                pipe_data_in['F'] = warp_[1].permute((1, 0)).to(torch.double) @ pipe_data_in['F'] @ warp_[0].to(torch.double)
+
             pipe_data_out, pipe_name_out = run_pipeline(pair_, self.pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
 
             pipe_data_out['img'] = pair
@@ -1581,11 +1587,17 @@ class image_muxer_module:
                     ]
 
             if 'kH' in pipe_data_out:
-                pipe_data_in['kH'] = [    
+                pipe_data_out['kH'] = [    
                     change_patch_homo(pipe_data_out['kH'][0], warp_[0].inverse()),
                     change_patch_homo(pipe_data_out['kH'][1], warp_[1].inverse()),
                     ]
-        
+                
+            if ('H' in pipe_data_out) and (not pipe_data_out['H'] is None):
+                pipe_data_out['H'] = warp_[1].to(torch.double).inverse() @ pipe_data_out['H'] @ warp_[0].to(torch.double).inverse()
+
+            if ('F' in pipe_data_out) and (not pipe_data_out['F'] is None):
+                pipe_data_out['F'] = warp_[1].to(torch.double).inverse().permute((1, 0)) @ pipe_data_out['F'] @ warp_[0].to(torch.double).inverse()
+                        
             pipe_data_block.append(pipe_data_out)
         
         return self.pipe_gather(pipe_data_block)
