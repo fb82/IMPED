@@ -1139,8 +1139,8 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                     if not isinstance(thresholds, dict):
                         ths = thresholds
                     else:
-                        if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
-                            ths = thresholds[dataset][gt_scene]
+                        if (dataset in thresholds) and (scene in thresholds[dataset]):                  
+                            ths = thresholds[dataset][scene]
                         else:
                             ths = thresholds['default']      
 
@@ -1157,8 +1157,8 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
                 if not isinstance(thresholds, dict):
                     ths = thresholds
                 else:
-                    if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
-                        ths = thresholds[dataset][gt_scene]
+                    if (dataset in thresholds) and (scene in thresholds[dataset]):                  
+                        ths = thresholds[dataset][scene]
                     else:
                         ths = thresholds['default']
                 
