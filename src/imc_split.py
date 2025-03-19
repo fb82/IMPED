@@ -1398,9 +1398,12 @@ def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, 
                 for image in good_cams:
                     good_cams_mask.append(mask[dataset][gt_scene][image])
                 good_cams_mask_a = np.asarray(good_cams_mask)
-                if len(good_cams_mask) > 0: good_cams_mask_b = ~np.asarray(good_cams_mask)
-                else: good_cams_mask_b = np.asarray(good_cams_mask)
-                        
+
+                good_cams_mask = []
+                for image in good_cams:
+                    good_cams_mask.append(not mask[dataset][gt_scene][image])
+                good_cams_mask_b = np.asarray(good_cams_mask)
+
                 # put corresponding camera centers into matrices
                 n = len(good_cams)
                 n_mask_a = np.sum(good_cams_mask_a)
@@ -1654,7 +1657,6 @@ def make_mask_csv(gt_filename, pct=0.5, mask_filename='split_mask.csv'):
     '''IMC2025 generate/write split labels'''
 
     data_list = []
-    exclude_list = []
 
     with open(gt_filename, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -1669,8 +1671,7 @@ def make_mask_csv(gt_filename, pct=0.5, mask_filename='split_mask.csv'):
             scene = row[1]
             image = row[2]
 
-            if scene != 'outliers': data_list.append([dataset, scene, image])
-            else: exclude_list.append([dataset, scene, image])
+            data_list.append([dataset, scene, image])
     
     idx = np.random.permutation(len(data_list))[:round(pct*len(data_list))]
     mask = np.zeros(len(data_list), dtype=bool)
@@ -1692,12 +1693,6 @@ def make_mask_csv(gt_filename, pct=0.5, mask_filename='split_mask.csv'):
             data[dataset][scene][image] = bool(mask[i])
 
             f.write(f'{dataset},{scene},{image},{str(bool(mask[i]))}\n')
-
-        # nan for outliers (just for make the csv files consistent with gt, not even load actually)
-        for i, el in enumerate(exclude_list):   
-            dataset, scene, image = el
-
-            f.write(f'{dataset},{scene},{image},nan\n')
     
     return data
 
@@ -1721,8 +1716,6 @@ def read_mask_csv(mask_filename='split_mask.csv'):
             image = row[2]
             label = row[3] == 'True'
 
-            if scene == 'outliers': continue
-
             if not (dataset in data):
                 data[dataset] = {}
             
@@ -1736,7 +1729,7 @@ def read_mask_csv(mask_filename='split_mask.csv'):
 
 if __name__ == '__main__':     
     # generate public/private split labels should be run only once and kept fixed
-    # make_mask_csv(gt_filename='gt.csv', pct=0.5, mask_filename='split_mask.csv')
+    make_mask_csv(gt_filename='gt.csv', pct=0.5, mask_filename='split_mask.csv')
 
     # check gt 
     print('GT vs GT')
