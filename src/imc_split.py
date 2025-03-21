@@ -1257,7 +1257,7 @@ def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):
     return tth
 
 
-def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=None, mask_csv=None):
+def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=None, mask_csv=None, pct=0.5):
     '''compute the score: <gt_csv>/<user_csv> - gt/submission csv file;
     <combo_mode> - how to mix mAA_score and clusterness score ["harmonic", "geometric", "arithmetic"];
     <inl_cf>, <strict_cf>, <skip_threshold>, <to_dec> - parameters to be passed to mAA computation, see previous IMC challenge;
@@ -1425,10 +1425,10 @@ def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, 
                 mAA = mAA_on_cameras(model["err"], ths, m, skip_top_thresholds, to_dec)
                 
                 if (len(model['valid_cams']) == 0) or (len(good_cams_mask_a) == 0): mAA_mask_a = np.float64(0.0)
-                else: mAA_mask_a = mAA_on_cameras(model["err"][good_cams_mask_a[model['valid_cams']]], ths, m_mask_a, skip_top_thresholds, to_dec)
+                else: mAA_mask_a = mAA_on_cameras(model["err"][good_cams_mask_a[model['valid_cams']]], ths, m_mask_a, skip_top_thresholds, to_dec*pct)
 
                 if (len(model['valid_cams']) == 0) or (len(good_cams_mask_b) == 0): mAA_mask_b = np.float64(0.0)
-                else: mAA_mask_b = mAA_on_cameras(model["err"][good_cams_mask_b[model['valid_cams']]], ths, m_mask_b, skip_top_thresholds, to_dec)
+                else: mAA_mask_b = mAA_on_cameras(model["err"][good_cams_mask_b[model['valid_cams']]], ths, m_mask_b, skip_top_thresholds, to_dec*(1-pct))
                 
                 len_user_scene = len(user_data[dataset][user_scene])
                 
@@ -1547,8 +1547,8 @@ def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, 
         # compute the mAA score
         # basically the recall: images in the both gt and user cluster correctly registered / images in the gt cluster only
         mAA_score = get_mAA_score(best_gt_scene_sum, best_gt_scene, thresholds, dataset, best_model, best_err, skip_top_thresholds, to_dec, lt)            
-        mAA_score_mask_a = get_mAA_score(best_gt_scene_sum_mask_a, best_gt_scene, thresholds, dataset, best_model, best_err_mask_a, skip_top_thresholds, to_dec, lt)            
-        mAA_score_mask_b = get_mAA_score(best_gt_scene_sum_mask_b, best_gt_scene, thresholds, dataset, best_model, best_err_mask_b, skip_top_thresholds, to_dec, lt)            
+        mAA_score_mask_a = get_mAA_score(best_gt_scene_sum_mask_a, best_gt_scene, thresholds, dataset, best_model, best_err_mask_a, skip_top_thresholds, to_dec*pct, lt)            
+        mAA_score_mask_b = get_mAA_score(best_gt_scene_sum_mask_b, best_gt_scene, thresholds, dataset, best_model, best_err_mask_b, skip_top_thresholds, to_dec*(1-pct), lt)            
             
         # merge mAA and clusterness score
         score = fuse_score(mAA_score, cluster_score, combo_mode)        
@@ -1727,19 +1727,22 @@ def read_mask_csv(mask_filename='split_mask.csv'):
     return data
 
 
-if __name__ == '__main__':     
+if __name__ == '__main__':  
+    # public/private split percentage
+    pct = 0.5
+    
     # generate public/private split labels should be run only once and kept fixed
-    make_mask_csv(gt_filename='gt.csv', pct=0.5, mask_filename='split_mask.csv')
+    make_mask_csv(gt_filename='gt.csv', pct=pct, mask_filename='split_mask.csv')
 
     # check gt 
     print('GT vs GT')
-    score_all_with_split('gt.csv', 'gt.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv')
+    score_all_with_split('gt.csv', 'gt.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv', pct=pct)
     # old code
     score_all_ext('gt.csv', 'gt.csv', thresholds='thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
 
     # submission score
     print('GT vs submission')
-    score_all_with_split('gt.csv', 'submission.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv')
+    score_all_with_split('gt.csv', 'submission.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv', pct=pct)
     # old code
     score_all_ext('gt.csv', 'submission.csv', thresholds='thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
 
