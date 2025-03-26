@@ -6080,4 +6080,15 @@ if __name__ == '__main__':
 #       device = torch.device('cpu')
 #       align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
+#       pipeline = [
+#           deep_joined_module(),
+#           lightglue_module(),
+#           magsac_module(),
+#           to_colmap_module(),            
+#           show_matches_module(mask_idx=[1], prepend_pair=False),
+#       ]
+#       imgs = '../data/ET'
+#       # no hdf5 cache with db_name=None
+#       run_pairs(pipeline, imgs, db_name=None)
+
         print('doh!')
