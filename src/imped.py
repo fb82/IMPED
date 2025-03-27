@@ -634,130 +634,6 @@ def visualize_LAF(img, LAF, img_idx = 0, color='r', linewidth=1, draw_ori = True
 
     return
 
-
-class image_pairs:
-    def __init__(self, to_list, add_path='', check_img=True):
-        imgs = []        
-
-        if isinstance(to_list, str):
-            warnings.warn("retrieving image list from the image folder")
-    
-            add_path = os.path.join(add_path, to_list)
-    
-            if os.path.isdir(add_path):
-                file_list = os.listdir(add_path)
-            else:
-                warnings.warn("image folder does not exist!")
-                file_list = []
-                
-            is_match_list = False
-            
-            if not is_match_list:                
-                for i in file_list:
-                    ii = os.path.join(add_path, i)
-                    
-                    if check_img:
-                        try:
-                            Image.open(ii).verify()
-                        except:
-                            continue
-    
-                    imgs.append(ii)
-            
-                imgs.sort()
-                iter_base = True
-            
-        if isinstance(to_list, list):
-            is_match_list = True
-            
-            for i in to_list:
-                if ((not isinstance(i, tuple)) and (not isinstance(i, list))) or not (len(i) == 2):
-                    is_match_list = False
-                    break
-            
-            file_list = to_list
-    
-            # to_list is a list of images
-            if not is_match_list:    
-                warnings.warn("reading image list")
-                
-                for i in file_list:
-                    ii = os.path.join(add_path, i)
-                    
-                    if check_img:                
-                        try:
-                            Image.open(ii).verify()
-                        except:
-                            continue
-    
-                    imgs.append(ii)
-            
-                imgs.sort()
-                iter_base = True
-
-            # dir_name is a list of image pairs
-            else:
-                warnings.warn("reading image pairs")
-                iter_base = False
-
-        self.iter_base = iter_base  
-        
-        if iter_base:
-            self.imgs = imgs    
-            self.i = 0
-            self.j = 1
-        else:
-            self.imgs = file_list
-            self.add_path = add_path
-            self.k = 0
-            self.check_img = check_img            
-    
-
-    def __iter__(self):
-        return self
-    
-
-    def __len__(self):
-        if self.iter_base:
-            return (len(self.imgs) * (len(self.imgs) - 1)) // 2
-        else:
-            return len(self.imgs)
-
-    
-    def __next__(self):
-        if self.iter_base:            
-            if (self.i < len(self.imgs)) and (self.j < len(self.imgs)):                    
-                    ii, jj = self.imgs[self.i], self.imgs[self.j]
-                
-                    self.j = self.j + 1
-
-                    if self.j >= len(self.imgs):                    
-                        self.i = self.i + 1
-                        self.j = self.i + 1
-
-                    return ii, jj
-            else:
-                raise StopIteration
-
-        else:
-            while self.k < len(self.imgs):            
-                i, j = self.imgs[self.k]
-                self.k = self.k + 1
-
-                ii = os.path.join(self.add_path, i)
-                jj = os.path.join(self.add_path, j)
-        
-                if self.check_img:
-                    try:
-                        Image.open(ii).verify()
-                        Image.open(jj).verify()
-                    except:
-                        continue
-    
-                return ii, jj            
-
-            raise StopIteration
-
             
 # def image_pairs(to_list, add_path='', check_img=True):
 #     imgs = []
@@ -848,10 +724,10 @@ def finalize_pipeline(pipeline):
             pipe_module.finalize()
     
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path=''):    
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db=None, colmap_mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs, add_path=add_path), msg='          processed pairs'):
+    for pair in go_iter(image_pairs(imgs, add_path=add_path, colmap_db=colmap_db, colmap_mode=colmap_mode, colmap_req=colmap_req, colmap_min_matches=colmap_min_matches), msg='          processed pairs'):
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
         
     finalize_pipeline(pipeline)
@@ -2760,11 +2636,11 @@ class coldb_ext(coldb.COLMAPDatabase):
                     how_many_models = how_many_models + 1
                 if 'F' in model:
                     config = UNCALIBRATED
-                    if image_id1 > image_id2: model['F'] = np.tranpose(model['F'])                    
+                    if image_id1 > image_id2: model['F'] = np.transpose(model['F'])                    
                     how_many_models = how_many_models + 1
                 if 'E' in model:
                     config = CALIBRATED
-                    if image_id1 > image_id2: model['E'] = np.tranpose(model['E'])                    
+                    if image_id1 > image_id2: model['E'] = np.transpose(model['E'])                    
                     how_many_models = how_many_models + 1
                 if how_many_models != 1:
                     config = MULTIPLE
@@ -5759,6 +5635,176 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
     fused_model.write_binary(output_model)
 
   
+class image_pairs:
+    def __init__(self, to_list, add_path='', check_img=True, colmap_db=None, colmap_mode='exclude', colmap_req='geometry', colmap_min_matches=0):
+        imgs = []        
+
+        if isinstance(to_list, str):
+            warnings.warn("retrieving image list from the image folder")
+    
+            add_path = os.path.join(add_path, to_list)
+    
+            if os.path.isdir(add_path):
+                file_list = os.listdir(add_path)
+            else:
+                warnings.warn("image folder does not exist!")
+                file_list = []
+                
+            is_match_list = False
+            
+            if not is_match_list:                
+                for i in file_list:
+                    ii = os.path.join(add_path, i)
+                    
+                    if check_img:
+                        try:
+                            Image.open(ii).verify()
+                        except:
+                            continue
+    
+                    imgs.append(ii)
+            
+                imgs.sort()
+                iter_base = True
+            
+        if isinstance(to_list, list):
+            is_match_list = True
+            
+            for i in to_list:
+                if ((not isinstance(i, tuple)) and (not isinstance(i, list))) or not (len(i) == 2):
+                    is_match_list = False
+                    break
+            
+            file_list = to_list
+    
+            # to_list is a list of images
+            if not is_match_list:    
+                warnings.warn("reading image list")
+                
+                for i in file_list:
+                    ii = os.path.join(add_path, i)
+                    
+                    if check_img:                
+                        try:
+                            Image.open(ii).verify()
+                        except:
+                            continue
+    
+                    imgs.append(ii)
+            
+                imgs.sort()
+                iter_base = True
+
+            # dir_name is a list of image pairs
+            else:
+                warnings.warn("reading image pairs")
+                iter_base = False
+
+        self.iter_base = iter_base  
+        
+        if iter_base:
+            self.imgs = imgs    
+            self.i = 0
+            self.j = 1
+        else:
+            self.imgs = file_list
+            self.add_path = add_path
+            self.k = 0
+            self.check_img = check_img            
+ 
+        self.colmap_db = None     
+        if (not (colmap_db is None)) and (os.path.isfile(colmap_db)): 
+            self.colmap_db = coldb_ext(colmap_db)
+        
+        self.colmap_mode = colmap_mode
+        self.colmap_req = colmap_req
+        self.colmap_min_matches = colmap_min_matches        
+
+
+    def __iter__(self):
+        return self
+    
+
+    def __len__(self):
+        if self.iter_base:
+            return (len(self.imgs) * (len(self.imgs) - 1)) // 2
+        else:
+            return len(self.imgs)
+
+    
+    def __next__(self):
+        if self.iter_base:
+            in_loop = True
+            while in_loop:
+                if (self.i < len(self.imgs)) and (self.j < len(self.imgs)):                    
+                        ii, jj = self.imgs[self.i], self.imgs[self.j]
+                    
+                        self.j = self.j + 1
+    
+                        if self.j >= len(self.imgs):                    
+                            self.i = self.i + 1
+                            self.j = self.i + 1
+    
+                        in_colmap_db = True
+                        if not (self.colmap_db is None):
+                            im0_id = self.colmap_db.get_image_id(os.path.split(ii)[-1])
+                            im1_id = self.colmap_db.get_image_id(os.path.split(jj)[-1])
+                            
+                            if (im0_id is None) or (im1_id is None): in_colmap_db = False
+        
+                            if in_colmap_db and (self.colmap_req != 'keypoints'):
+                                if self.colmap_req == 'matches':                            
+                                    m_idx = self.colmap_db.get_matches(im0_id, im1_id)
+                                    if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                                else:
+                                    m_idx, _ = self.colmap_db.get_matches(im0_id, im1_id)
+                                    if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                                                        
+                            if (in_colmap_db and self.colmap_mode == 'exclude') or ((not in_colmap_db) and self.colmap_mode == 'include'): continue
+
+                        return ii, jj
+                else:
+                    if not (self.colmap_db is None): self.colmap_db.close()
+                    raise StopIteration
+
+        else:
+            while self.k < len(self.imgs):            
+                i, j = self.imgs[self.k]
+                self.k = self.k + 1
+
+                ii = os.path.join(self.add_path, i)
+                jj = os.path.join(self.add_path, j)
+        
+                if self.check_img:
+                    try:
+                        Image.open(ii).verify()
+                        Image.open(jj).verify()
+                    except:
+                        continue
+
+                in_colmap_db = True
+                if not (self.colmap_db is None):
+                    im0_id = self.colmap_db.get_image_id(os.path.split(ii)[-1])
+                    im1_id = self.colmap_db.get_image_id(os.path.split(jj)[-1])
+                    
+                    if (im0_id is None) or (im1_id is None): in_colmap_db = False
+
+                    if in_colmap_db and (self.colmap_req != 'keypoints'):
+                        if self.colmap_req == 'matches':                            
+                            m_idx = self.colmap_db.get_matches(im0_id, im1_id)
+                            if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                        else:
+                            m_idx, _ = self.colmap_db.get_matches(im0_id, im1_id)
+                            if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                    
+                    if (in_colmap_db and self.colmap_mode == 'exclude') or ((not in_colmap_db) and self.colmap_mode == 'include'): continue
+    
+                return ii, jj            
+
+            if not (self.colmap_db is None): self.colmap_db.close()
+            raise StopIteration
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():         
 #       pipeline = [
@@ -6080,6 +6126,7 @@ if __name__ == '__main__':
 #       device = torch.device('cpu')
 #       align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
+
 #       pipeline = [
 #           deep_joined_module(),
 #           lightglue_module(),
@@ -6090,5 +6137,26 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       # no hdf5 cache with db_name=None
 #       run_pairs(pipeline, imgs, db_name=None)
+
+
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
+#           to_colmap_module(db='aliked.db'),            
+#       ]         
+#       imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
+#       run_pairs(pipeline, imgs, add_path='../data/ET')
+#       # now the remaining mathing pairs only
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
+#           to_colmap_module(db='aliked.db'),            
+#       ]         
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs, colmap_db='aliked.db', colmap_mode='exclude', colmap_req='matches')
 
         print('doh!')
