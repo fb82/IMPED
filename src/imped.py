@@ -724,10 +724,10 @@ def finalize_pipeline(pipeline):
             pipe_module.finalize()
     
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db=None, colmap_mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs, add_path=add_path, colmap_db=colmap_db, colmap_mode=colmap_mode, colmap_req=colmap_req, colmap_min_matches=colmap_min_matches), msg='          processed pairs'):
+    for pair in go_iter(image_pairs(imgs, add_path=add_path, colmap_db_or_list=colmap_db_or_list, mode=mode, colmap_req=colmap_req, colmap_min_matches=colmap_min_matches), msg='          processed pairs'):
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
         
     finalize_pipeline(pipeline)
@@ -763,7 +763,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                     out_data = pipe_module.run(idx=n, **pipe_data)
                     stop_time = time.time()
                     out_data['running_time'] = stop_time - start_time
-                    db.add(data_key, out_data)
+                    if pipe_module.add_to_cache: db.add(data_key, out_data)
                 del out_data['running_time']
 
                 for k, v in out_data.items():
@@ -791,10 +791,10 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
 
                 stop_time = time.time()
                 out_data['running_time'] = stop_time - start_time
-                db.add(data_key, out_data)
+                if pipe_module.add_to_cache: db.add(data_key, out_data)
             out_data['running_time']
                 
-
+            
             for k, v in out_data.items(): pipe_data[k] = v
                 
     return pipe_data, pipe_name
@@ -834,6 +834,8 @@ def set_args(id_string, args, args_):
         
     if args:
         for k, v in args.items():
+            if k == 'add_to_cache': continue
+            
             args_[k] = v
             if k == 'id_more':
                 id_string = id_string + '_' + str(v)
@@ -848,12 +850,15 @@ class dog_module:
         self.single_image = True
         self.pipeliner = False                
         self.pass_through = False
+        self.add_to_cache = True
 
         self.args = {
             'id_more': '',
             'upright': False,
             'params': {'nfeatures': 8000, 'contrastThreshold': -10000, 'edgeThreshold': 10000},
         }
+
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
 
         self.id_string, self.args = set_args('dog', args, self.args)
         self.detector = cv2.SIFT_create(**self.args['params'])
@@ -894,11 +899,14 @@ class keynet_module:
         self.single_image = True        
         self.pipeliner = False   
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.args = {
             'id_more': '',
             'params': {'num_features': 8000},
         }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         
         self.id_string, self.args = set_args('keynet', args, self.args)
         self.detector = K.feature.KeyNetDetector(**self.args['params']).to(device)
@@ -927,12 +935,15 @@ class hz_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
+        self.add_to_cache = True
 
         self.args = {
             'id_more': '',
             'plus': True,
             'params': {'max_max_pts': 8000, 'block_mem': 16*10**6},
         }
+
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
 
         self.id_string, self.args = set_args('' , args, self.args)
         if self.args['plus']:
@@ -967,7 +978,8 @@ class show_kpts_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = True
-
+        self.add_to_cache = True
+        
         self.args = {
             'id_more': '',
             'img_prefix': '',
@@ -980,6 +992,8 @@ class show_kpts_module:
             'params': [{'color': 'r', 'linewidth': 1, 'draw_ori': True}, {'color': 'g', 'linewidth': 1, 'draw_ori': True}],
         }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('show_kpts' , args, self.args)
         if not (self.args['mask_idx'] is None): self.single_image = False
 
@@ -1053,6 +1067,7 @@ class show_matches_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
+        self.add_to_cache = True
 
         self.args = {
             'id_more': '',
@@ -1068,6 +1083,8 @@ class show_matches_module:
             'params': [{'color': [1, 0, 0]}, {'color': [0, 1, 0]}],
         }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('show_matches' , args, self.args)
 
                 
@@ -1162,7 +1179,8 @@ class patch_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.args = {
             'id_more': '',
             'sift_orientation': False,
@@ -1172,6 +1190,8 @@ class patch_module:
             'affnet': True,
             'affnet_params': {},
             }
+
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
 
         self.id_string, self.args = set_args('', args, self.args)
 
@@ -1221,14 +1241,17 @@ class deep_descriptor_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.args = {
             'id_more': '',
             'descriptor': 'hardnet',
             'desc_params': {},
             'patch_params': {},
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         self.id_string, self.args = set_args('', args, self.args)        
         
         if self.args['descriptor'] == 'hardnet':
@@ -1267,12 +1290,15 @@ class sift_module:
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.args = {
             'id_more': '',
             'rootsift': True,
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('', args, self.args)        
         self.descriptor = cv2.SIFT_create()
 
@@ -1312,12 +1338,15 @@ class smnn_module:
         self.single_image = False    
         self.pipeliner = False      
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'th': 0.95,
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('smnn', args, self.args)        
 
 
@@ -1391,19 +1420,20 @@ def pipe_max_matches(pipe_block):
         
 
 class image_muxer_module:
-    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None):
+    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None, add_to_cache=True):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-                
+                        
         self.id_more = id_more
         self.cache_path = cache_path
         self.pair_generator = pair_generator
         self.pipe_gather = pipe_gather
+        self.add_to_cache = add_to_cache
 
         if pipeline is None: pipeline = []
         self.pipeline = pipeline
-        
+
         self.id_string = 'image_muxer'
         if len(self.id_more): self.id_string = self.id_string + '_' + str(self.id_more)        
 
@@ -1497,7 +1527,8 @@ class magsac_module:
         self.single_image = False    
         self.pipeliner = False  
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'mode': 'fundamental_matrix',
@@ -1506,6 +1537,8 @@ class magsac_module:
             'px_th': 3,
             'max_try': 3
             }
+                
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         
         self.id_string, self.args = set_args('magsac', args, self.args)        
 
@@ -1578,7 +1611,8 @@ class poselib_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             'mode': 'fundamental_matrix',
@@ -1589,6 +1623,8 @@ class poselib_module:
             'max_try': 3
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('poselib', args, self.args)        
 
 
@@ -2106,13 +2142,14 @@ def sortrows(kp, idx_prev=None, rank=None, device=None):
     return idxa, idxb
 
 class pipeline_muxer_module:
-    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None):
+    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None, add_to_cache=True):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
-        
+                
         self.id_more = id_more                
         self.pipe_gather = pipe_gather
+        self.add_to_cache = add_to_cache
         
         if pipeline is None: pipeline = []
         self.pipeline = pipeline        
@@ -2155,7 +2192,8 @@ class deep_joined_module:
         self.single_image = True
         self.pipeliner = False
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.what = 'superpoint'
         self.args = { 
             'id_more': '',
@@ -2165,6 +2203,8 @@ class deep_joined_module:
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         if 'what' in args:
             self.what = args['what']
             del args['what']
@@ -2217,7 +2257,8 @@ class lightglue_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.what = 'superpoint'
         self.args = {
             'id_more': '',
@@ -2226,7 +2267,9 @@ class lightglue_module:
             'desc_cf': 1,                    # 255 to use R2S2 with what='sift'
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         if 'what' in args:
             self.what = args['what']
             del args['what']
@@ -2301,14 +2344,17 @@ class loftr_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'outdoor': True,
             'resize': None,                          # self.resize = [800, 600]
             'patch_radius': 16,
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         self.id_string, self.args = set_args('loftr', args, self.args)        
 
         if self.args['outdoor'] == True:
@@ -2419,7 +2465,8 @@ class sampling_module:
         self.single_image = False
         self.pipeliner = False
         self.pass_through = False
-        
+        self.add_to_cache = True
+                
         self.args = {
             'id_more': '',
             'unique': True,
@@ -2430,7 +2477,9 @@ class sampling_module:
             'sampling_scale': 1,
             'sampling_offset': 0,
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         self.id_string, self.args = set_args('sampling', args, self.args)        
 
 
@@ -2719,7 +2768,8 @@ class to_colmap_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
-
+        self.add_to_cache = True
+        
         self.args = {
             'id_more': '',
             'db': 'colmap.db',
@@ -2736,6 +2786,8 @@ class to_colmap_module:
             'sampling_offset': 0,
         }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('to_colmap' , args, self.args)
 
         self.db = coldb_ext(self.args['db'])
@@ -2908,7 +2960,8 @@ class from_colmap_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
-
+        self.add_to_cache = True
+        
         self.args = {
             'id_more': '',
             'db': 'colmap.db',
@@ -2916,6 +2969,8 @@ class from_colmap_module:
             'include_two_view_geometry': True,
         }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('from_colmap' , args, self.args)
 
         self.db = coldb_ext(self.args['db'])
@@ -3127,7 +3182,8 @@ class pairwise_benchmark_module:
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
-
+        self.add_to_cache = True
+        
         self.args = { 
             'id_more': '',
             'gt': None,
@@ -3142,7 +3198,9 @@ class pairwise_benchmark_module:
             'am_scaling' : 10, # current metric error requires that angular_thresholds[i] / metric_thresholds[i] = am_scaling
             'save_to': None,
             }
-                                
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                                        
         self.id_string, self.args = set_args('pairwise_benchmark', args, self.args)    
         
         if self.args['gt'] is None:
@@ -3507,7 +3565,8 @@ class roma_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'outdoor': True,
@@ -3517,7 +3576,9 @@ class roma_module:
             'max_keypoints': 2000,
             'patch_radius': 16,
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         self.id_string, self.args = set_args('roma', args, self.args)        
 
         roma_args = {}
@@ -3701,7 +3762,8 @@ class r2d2_module:
         self.single_image = True
         self.pipeliner = False
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = { 
             'id_more': '',
             'patch_radius': 16,            
@@ -3715,7 +3777,9 @@ class r2d2_module:
             'repeatability-thr': 0.7,
             'model': 'r2d2/models/r2d2_WAF_N16.pt',
             }
-                
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                        
         self.id_string, self.args = set_args('r2d2', args, self.args)        
 
         if device.type == 'cuda':
@@ -3796,14 +3860,17 @@ if enable_quadtree:
             self.single_image = False
             self.pipeliner = False   
             self.pass_through = False
-                            
+            self.add_to_cache = True
+                                        
             self.args = {
                 'id_more': '',
                 'outdoor': True,
                 'resize': None,                      # self.resize = [800, 600]
                 'patch_radius': 16,
                 }
-    
+            
+            if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
             self.id_string, self.args = set_args('quadtreeattention', args, self.args)        
     
             download_quadtreeattention()
@@ -3938,14 +4005,17 @@ class matchformer_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'model': 'outdoor-large-LA',
             'resize': None,                          # self.resize = [800, 600]
             'patch_radius': 16,
             }
-
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
         self.id_string, self.args = set_args('matchformer', args, self.args)        
 
         download_matchformer()
@@ -4084,13 +4154,16 @@ class aspanformer_module:
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
-                        
+        self.add_to_cache = True
+                                
         self.args = {
             'id_more': '',
             'outdoor': True,
             'resize': None,                              # default [1024, 1024]
             'patch_radius': 16,
             }
+
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
 
         self.id_string, self.args = set_args('aspanformer', args, self.args)        
 
@@ -4234,11 +4307,14 @@ class lpm_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('lpm', args, self.args)        
 
 
@@ -4351,11 +4427,14 @@ class gms_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('gms', args, self.args)     
         
 
@@ -4427,7 +4506,8 @@ class adalam_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             'adalam_params': {
@@ -4446,6 +4526,8 @@ class adalam_module:
                 },   
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('adalam', args, self.args)        
         if self.args['adalam_params']['device'] is None:
             self.args['adalam_params']['device'] = device
@@ -4564,13 +4646,16 @@ class fcgnn_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             'thd': 0.999,
             'min_matches': 10,
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         self.id_string, self.args = set_args('fcgnn', args, self.args)     
         self.fcgnn_refiner = self.fcgnn_custom().to(device)        
 
@@ -4651,13 +4736,16 @@ class oanet_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             'weights': '../weights/oanet/model_best.pth',
             'inlier_threshold': 1,
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         download_oanet()
         
         self.id_string, self.args = set_args('oanet', args, self.args)                     
@@ -4732,13 +4820,16 @@ class acne_module:
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
-                
+        self.add_to_cache = True
+                        
         self.args = {
             'id_more': '',
             'outdoor': True,
             'what': 'ACNe_F',
             }
         
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
         download_acne()
         
         self.id_string, self.args = set_args('acne', args, self.args)                     
@@ -5636,7 +5727,93 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
 
   
 class image_pairs:
-    def __init__(self, to_list, add_path='', check_img=True, colmap_db=None, colmap_mode='exclude', colmap_req='geometry', colmap_min_matches=0):
+    def init_additional_image_pair_check(self, colmap_db_or_list, mode, colmap_req, colmap_min_matches):
+
+        self.additional_colmap_db = None     
+        self.additional_img_list = None
+        self.additional_pair_list = None       
+
+        if isinstance(colmap_db_or_list, str) and os.path.isdir(colmap_db_or_list):
+            file_list = os.listdir(colmap_db_or_list)                    
+
+            self.additional_img_list = {}
+
+            for i in file_list:
+                self.additional_img_list[os.path.split(i)[-1]] = True
+        
+        elif isinstance(colmap_db_or_list, list) or isinstance(colmap_db_or_list, tuple):
+            for k in colmap_db_or_list:
+                if isinstance(k, str):
+                    
+                    if self.additional_img_list is None: self.additional_img_list = {}
+                    
+                    self.additional_img_list[os.path.split(k)[-1]] = True
+
+                elif (isinstance(k, list) or isinstance(k, tuple)) and (len(k) == 2) and isinstance(k[0], str) and isinstance(k[1], str):
+
+                    if self.additional_pair_list is None: self.additional_pair_list = {}
+
+                    i = os.path.split(k[0])[-1]
+                    j = os.path.split(k[1])[-1]
+
+                    if not (i in self.additional_pair_list.keys()):
+                        self.additional_pair_list[i] = {}
+
+                    self.additional_pair_list[i][j] = True
+                    
+        elif isinstance(colmap_db_or_list, str) and (os.path.isfile(colmap_db_or_list)):
+            self.additional_colmap_db = coldb_ext(colmap_db_or_list)            
+        
+        self.mode = mode
+        self.colmap_req = colmap_req
+        self.colmap_min_matches = colmap_min_matches 
+        
+    
+    def must_skip_after_additional_image_pair_check(self, ii, jj):
+        must_skip = False
+
+        i = os.path.split(ii)[-1]
+        j = os.path.split(jj)[-1]        
+
+        if (not must_skip) and (not self.additional_img_list is None):
+            in_img_list = False
+            
+            if (i in self.additional_img_list.keys()) or (j in self.additional_img_list.keys()):
+                in_img_list = True
+            
+            must_skip = (in_img_list and self.mode == 'exclude') or ((not in_img_list) and self.mode == 'include') 
+
+        if (not must_skip) and (not self.additional_pair_list is None):
+            in_pair_list = False
+            
+            if (i in self.additional_pair_list.keys() and j in self.additional_pair_list[i].keys()) or (j in self.additional_pair_list.keys() and i in self.additional_pair_list[j].keys()):
+                in_pair_list = True
+            
+            must_skip = (in_pair_list and self.mode == 'exclude') or ((not in_pair_list) and self.mode == 'include') 
+
+        if (not must_skip) and (not self.additional_colmap_db is None):
+            in_colmap_db = True
+            
+            if not (self.additional_colmap_db is None):
+                im0_id = self.additional_colmap_db.get_image_id(i)
+                im1_id = self.additional_colmap_db.get_image_id(j)
+                
+                if (im0_id is None) or (im1_id is None): in_colmap_db = False
+    
+                if in_colmap_db and (self.colmap_req != 'keypoints'):
+                    if self.colmap_req == 'matches':                            
+                        m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
+                        if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                    else:
+                        m_idx, _ = self.additional_colmap_db.get_matches(im0_id, im1_id)
+                        if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
+                                            
+            must_skip = (in_colmap_db and self.mode == 'exclude') or ((not in_colmap_db) and self.mode == 'include') 
+            
+        return must_skip
+    
+
+    def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
         imgs = []        
 
         if isinstance(to_list, str):
@@ -5711,14 +5888,13 @@ class image_pairs:
             self.add_path = add_path
             self.k = 0
             self.check_img = check_img            
- 
-        self.colmap_db = None     
-        if (not (colmap_db is None)) and (os.path.isfile(colmap_db)): 
-            self.colmap_db = coldb_ext(colmap_db)
-        
-        self.colmap_mode = colmap_mode
-        self.colmap_req = colmap_req
-        self.colmap_min_matches = colmap_min_matches        
+    
+        self.init_additional_image_pair_check(colmap_db_or_list, mode, colmap_req, colmap_min_matches)
+
+        if self.iter_base:
+            self.len = (len(self.imgs) * (len(self.imgs) - 1)) // 2
+        else:
+            self.len = len(self.imgs)
 
 
     def __iter__(self):
@@ -5726,10 +5902,7 @@ class image_pairs:
     
 
     def __len__(self):
-        if self.iter_base:
-            return (len(self.imgs) * (len(self.imgs) - 1)) // 2
-        else:
-            return len(self.imgs)
+        return self.len
 
     
     def __next__(self):
@@ -5745,26 +5918,13 @@ class image_pairs:
                             self.i = self.i + 1
                             self.j = self.i + 1
     
-                        in_colmap_db = True
-                        if not (self.colmap_db is None):
-                            im0_id = self.colmap_db.get_image_id(os.path.split(ii)[-1])
-                            im1_id = self.colmap_db.get_image_id(os.path.split(jj)[-1])
-                            
-                            if (im0_id is None) or (im1_id is None): in_colmap_db = False
-        
-                            if in_colmap_db and (self.colmap_req != 'keypoints'):
-                                if self.colmap_req == 'matches':                            
-                                    m_idx = self.colmap_db.get_matches(im0_id, im1_id)
-                                    if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                                else:
-                                    m_idx, _ = self.colmap_db.get_matches(im0_id, im1_id)
-                                    if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                                                        
-                            if (in_colmap_db and self.colmap_mode == 'exclude') or ((not in_colmap_db) and self.colmap_mode == 'include'): continue
-
+                        if self.must_skip_after_additional_image_pair_check(ii, jj):
+                            self.len = max(0, self.len - 1)
+                            continue
+                                                       
                         return ii, jj
                 else:
-                    if not (self.colmap_db is None): self.colmap_db.close()
+                    if not (self.additional_colmap_db is None): self.additional_colmap_db.close()
                     raise StopIteration
 
         else:
@@ -5780,28 +5940,16 @@ class image_pairs:
                         Image.open(ii).verify()
                         Image.open(jj).verify()
                     except:
+                        self.len = max(0, self.len - 1)
                         continue
-
-                in_colmap_db = True
-                if not (self.colmap_db is None):
-                    im0_id = self.colmap_db.get_image_id(os.path.split(ii)[-1])
-                    im1_id = self.colmap_db.get_image_id(os.path.split(jj)[-1])
-                    
-                    if (im0_id is None) or (im1_id is None): in_colmap_db = False
-
-                    if in_colmap_db and (self.colmap_req != 'keypoints'):
-                        if self.colmap_req == 'matches':                            
-                            m_idx = self.colmap_db.get_matches(im0_id, im1_id)
-                            if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                        else:
-                            m_idx, _ = self.colmap_db.get_matches(im0_id, im1_id)
-                            if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                    
-                    if (in_colmap_db and self.colmap_mode == 'exclude') or ((not in_colmap_db) and self.colmap_mode == 'include'): continue
+                        
+                if self.must_skip_after_additional_image_pair_check(ii, jj):
+                    self.len = max(0, self.len - 1)
+                    continue
     
                 return ii, jj            
 
-            if not (self.colmap_db is None): self.colmap_db.close()
+            if not (self.additional_colmap_db is None): self.additional_colmap_db.close()
             raise StopIteration
 
 
@@ -6143,9 +6291,11 @@ if __name__ == '__main__':
 #           deep_joined_module(what='aliked'),
 #           lightglue_module(what='aliked'),
 #           magsac_module(),
-#           show_matches_module(img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
+#           show_matches_module(id_more='1st', img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
 #           to_colmap_module(db='aliked.db'),            
 #       ]         
+#     # imgs = '../data/ET'
+#     # run_pairs(pipeline, imgs, colmap_db_or_list=['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg'], mode='exclude')
 #       imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
 #       run_pairs(pipeline, imgs, add_path='../data/ET')
 #       # now the remaining mathing pairs only
@@ -6153,10 +6303,38 @@ if __name__ == '__main__':
 #           deep_joined_module(what='aliked'),
 #           lightglue_module(what='aliked'),
 #           magsac_module(),
-#           show_matches_module(img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
+#           show_matches_module(id_more='2nd', img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
 #           to_colmap_module(db='aliked.db'),            
 #       ]         
 #       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs, colmap_db='aliked.db', colmap_mode='exclude', colmap_req='matches')
+#       run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches')
+
+
+#       pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#               [
+#                   deep_joined_module(what='aliked'),
+#                   lightglue_module(what='aliked'),
+#               ],
+#               [
+#                   deep_joined_module(what='superpoint'),
+#                   lightglue_module(what='superpoint'),
+#               ],                
+#               [
+#                   dog_module(),
+#                   patch_module(),
+#                   deep_descriptor_module(),
+#                   smnn_module(),
+#               ],
+#        #      [
+#        #          roma_module(),
+#        #      ]
+#           ]),
+#           magsac_module(),            
+#           show_matches_module(img_prefix='union_', prepend_pair=False),  
+#           to_colmap_module(),                       
+#       ]    
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs, db_name=None)  
 
         print('doh!')
