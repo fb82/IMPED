@@ -93,11 +93,19 @@ def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=Tr
                     if os.path.isfile(scale_file):
                         with open(scale_file, newline='\n') as csvfile:    
                             csv_lines = csv.reader(csvfile, delimiter=',')
-                            next(csv_lines)
+
+                            label_idx = {}
+                            header = True
                             for row in csv_lines:
-                                if row[0] == scene: 
-                                    scale = float(row[1])
+                                if header:
+                                    header = False
+                                    for i, name in enumerate(row): label_idx[name] = i
+                                    continue
+
+                                if row[label_idx['scene']] == scene: 
+                                    scale = float(row[label_idx['scale']])
                                     break
+                                
                     warnings.warn(f'3D model scale for scene {scene} is {str(scale)}')
 
                     for img in imgs:
@@ -158,6 +166,7 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, check_image_only=False,
     for img in img_list: img_dict[img] = 1
     
     data = {}
+    label_idx = {}
 
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -166,13 +175,14 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, check_image_only=False,
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
-            R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
 
             if check_image_only:
                 dataset = dataset_name
@@ -220,6 +230,7 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
     for img in img_list: img_dict[img] = 1
     
     data = {}
+    label_idx = {}
 
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -228,12 +239,13 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            scene = row[0]
-            image = row[-1]
-            R = np.array([float(x) for x in (row[-3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[-2].split(';'))]).reshape(3)
+            scene = row[label_idx['scene']]
+            image = row[label_idx['imgname']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
 
             if (not (scene_name is None)) and (scene != scene_name):
                 continue
@@ -531,16 +543,22 @@ def make_input_data(csv_gt='../kaggle_raw_data/gt.csv', input_folder='../kaggle_
     in any case if two images in the same dataset but different scene have the same name, one is renamed (the mapping is put in <mapping_csv>)'''
     
     data = {}
+    label_idx = {}
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset, scene, image, R, T = row
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = row[label_idx['rotation_matrix']]
+            T = row[label_idx['translation_vector']]
 
             if not dataset in data: data[dataset] = {}
             if not scene in data[dataset]: data[dataset][scene] = {}
@@ -864,6 +882,7 @@ def read_csv(filename):
     '''IMC2025 read gt/submission csv file (not the same of the IMC2024)'''
 
     data = {}
+    label_idx = {}
 
     with open(filename, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -872,13 +891,14 @@ def read_csv(filename):
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
-            R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
             c = -R.T @ t
 
             if not (dataset in data):
@@ -1211,7 +1231,7 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
 tth = {
       'example_dataset': {'example_scene': np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0])},
       'default': np.array([0.01, 0.02, 0.05, 0.1, 0.15, 0.2]),
-}
+}      
 
 
 def tth_to_csv(tth, csv_file='../kaggle_raw_data/thresholds.csv'):    
@@ -1234,19 +1254,21 @@ def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):
     '''read thresholds from csv file <csv_file>'''
 
     tth = {}
+    label_idx = {}
 
     with open(csv_file, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            th = np.array([float(x) for x in (row[2].split(';'))])
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            th = np.array([float(x) for x in (row[label_idx['thresholds']].split(';'))])
 
             if dataset == 'default':
                 tth['default'] = th
@@ -1657,19 +1679,21 @@ def make_mask_csv(gt_filename, pct=0.5, mask_filename='split_mask.csv'):
     '''IMC2025 generate/write split labels'''
 
     data_list = []
+    label_idx = {}
 
     with open(gt_filename, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]         
 
             data_list.append([dataset, scene, image])
     
@@ -1701,20 +1725,22 @@ def read_mask_csv(mask_filename='split_mask.csv'):
     '''IMC2025 read split labels'''
 
     data =  {}
+    label_idx = {}
 
     with open(mask_filename, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
-            label = row[3] == 'True'
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]            
+            label = row[label_idx['mask']] == 'True'
 
             if not (dataset in data):
                 data[dataset] = {}
