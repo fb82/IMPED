@@ -5953,6 +5953,107 @@ class image_pairs:
             raise StopIteration
 
 
+class show_homography_module:
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.pass_through = True
+        self.add_to_cache = True
+
+        self.args = {
+            'id_more': '',
+            'img_prefix': '',
+            'img_suffix': '',
+            'cache_path': 'show_imgs',
+            'prepend_pair': True,
+            'ext': '.jpg',
+            'force': True,
+            'img_max_size': 1280,
+            'img_exp_length': np.inf,
+            'reference_image': 0,
+            'merge': False,
+            'alpha': 0.5,
+            'chessboard_size': None,
+            'interpolation': cv2.INTER_LINEAR,
+        }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('show_hompgraphy' , args, self.args)
+
+                
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+    
+    def run(self, **args):                 
+        H = args['H']
+        
+        if H is None: return {}
+
+        if self.args['reference_image'] == 0:
+            img0 = args['img'][0]
+            img1 = args['img'][1]
+        else:
+            img0 = args['img'][1]
+            img1 = args['img'][0]
+            H = H.inverse()
+
+        im0 = os.path.splitext(os.path.split(img0)[1])[0]
+        im1 = os.path.splitext(os.path.split(img1)[1])[0]
+
+        if self.args['prepend_pair']:            
+            cache_path = os.path.join(self.args['cache_path'], im0 + '_' + im1)
+        else:
+            cache_path = self.args['cache_path']
+                
+        new_img0 = os.path.join(cache_path, self.args['img_prefix'] + im0 + self.args['img_suffix'] + self.args['ext'])
+        new_img1 = os.path.join(cache_path, self.args['img_prefix'] + im1 + self.args['img_suffix'] + self.args['ext'])
+    
+        if os.path.isfile(new_img0) and os.path.isfile(new_img1) and (not self.args['force']): return {}
+
+        os.makedirs(cache_path, exist_ok=True)
+        
+        ima0 = cv2.imread(img0, cv2.IMREAD_UNCHANGED)
+        ima1 = cv2.imread(img1, cv2.IMREAD_UNCHANGED)
+
+        bts0 = torch.tensor([[0.0, 0], [0, ima0.shape[1]], [ima0.shape[0], 0],  [ima0.shape[0], ima0.shape[1]]], device=device, dtype=torch.float)
+        bts0_offset = (torch.tensor([ima0.shape[0], ima0.shape[1]], device=device) * self.args['img_exp_length'] / 2).round()
+        bts0_proj = bts0 + bts0_offset * torch.tensor([[-1.0, -1], [-1, 1], [1, -1], [1, 1]], device=device)
+
+        bts1 = torch.tensor([[0.0, 0], [0, ima1.shape[1]], [ima1.shape[0], 0],  [ima1.shape[0], ima1.shape[1]]], device=device, dtype=torch.float)
+        bts1_proj = apply_homo(bts1, H.inverse().to(torch.float)).round()
+
+        bts_all = torch.cat((bts0, bts1_proj), axis=0)
+        bts_small = [max(min(bts_all[:, 0]), min(bts0_proj[:, 0])).item(), max(min(bts_all[:, 1]), min(bts0_proj[:, 1])).item()]
+        bts_big = [min(max(bts_all[:, 0]), max(bts0_proj[:, 0])).item(), min(max(bts_all[:, 1]), max(bts0_proj[:, 1])).item()]
+
+        bts_orig = torch.tensor(bts_small, device=device)
+        bts_size = torch.tensor(bts_big, device=device) - bts_orig 
+
+        s_rev = max(bts_size / self.args['img_max_size'])
+        s = 1.0 if s_rev <= 1 else 1/s_rev
+        
+        T = torch.eye(3, device=device, dtype=H.dtype)
+        T[:2, 2] = -s * bts_orig
+        T[0, 0] = s
+        T[1, 1] = s
+
+        interp = self.args['interpolation']
+
+        ima0_warp = cv2.warpPerspective(ima0, T.to('cpu').numpy(), (bts_size * s).to(torch.int).to('cpu').numpy(), flags=interp)
+        ima1_warp = cv2.warpPerspective(ima1, (T @ H.inverse()).to('cpu').numpy(), (bts_size * s).to(torch.int).to('cpu').numpy(), flags=interp)
+                
+        cv2.imwrite(new_img0, ima0_warp)
+        cv2.imwrite(new_img1, ima1_warp)
+
+        return {}
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():         
 #       pipeline = [
@@ -6336,5 +6437,15 @@ if __name__ == '__main__':
 #       ]    
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs, db_name=None)  
+
+        pipeline = [
+            deep_joined_module(),
+            lightglue_module(),
+            magsac_module(mode='homography_matrix'),
+            show_homography_module(prepend_pair=False),
+        ]
+        imgs = '../data/graffiti'
+        # no hdf5 cache with db_name=None
+        run_pairs(pipeline, imgs, db_name=None)
 
         print('doh!')
