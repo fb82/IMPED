@@ -5975,7 +5975,7 @@ class show_homography_module:
             'show_merged': True,
             'alpha': 1.0,
             'chessboard_size': 100,
-            'interpolation': cv2.INTER_LINEAR,
+            'interpolation': cv2.INTER_LANCZOS4,
         }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -6105,6 +6105,438 @@ class show_homography_module:
         cv2.imwrite(new_img01, ima01_warp)
 
         return {}
+
+
+def download_planar(bench_path ='bench_data'):   
+    os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)   
+
+    file_to_download = os.path.join(bench_path, 'downloads', 'planar_data.zip')    
+    if not os.path.isfile(file_to_download):    
+        url = "https://drive.google.com/file/d/1XkP4RR9KKbCV94heI5JWlue2l32H0TNs/view?usp=drive_link"
+        gdown.download(url, file_to_download, fuzzy=True)
+
+    out_dir = os.path.join(bench_path, 'planar')
+    if not os.path.isdir(out_dir):    
+        with zipfile.ZipFile(file_to_download, "r") as zip_ref:
+            zip_ref.extractall(out_dir)    
+
+    return
+
+
+def planar_setup(bench_path='bench_data', bench_imgs='imgs', bench_plot='aux_images', dataset='planar', upright=False, max_imgs=6, to_exclude =['graf'], debug_pairs=None, force=False, img_ext='.png', save_ext='.png', check_data=True):        
+    os.makedirs(bench_path, exist_ok=True)    
+    db_file = os.path.join(bench_path, dataset + '.hdf5')    
+    db = pickled_hdf5.pickled_hdf5(db_file, mode='a')    
+
+    data_key = '/' + dataset
+
+    data, is_found = db.get(data_key)                    
+    if (not is_found) or force:
+        download_planar(bench_path)        
+        out_dir = os.path.join(bench_path, dataset)
+
+        in_path = out_dir
+        out_path = os.path.join(bench_path, bench_imgs, dataset)
+        os.makedirs(out_path, exist_ok=True)
+
+        if check_data:
+            check_path = os.path.join(bench_path, bench_plot, dataset)
+            os.makedirs(check_path, exist_ok=True)
+
+        imgs = []
+
+        planar_scenes = sorted([scene[:-5] for scene in os.listdir(out_dir) if (scene[-5:]=='1' + img_ext) and (scene[:5] != 'mask_')])        
+        for i in to_exclude: planar_scenes.remove(i)
+
+        for scene in planar_scenes:     
+            
+            if scene[-3:] == 'rot': continue
+            
+            img1 = scene + '1' + img_ext
+            im1s = os.path.join(in_path, img1)
+
+            img1r = scene + 'rot1' + img_ext
+            im1sr = os.path.join(in_path, img1r)
+    
+            for i in range(2, max_imgs+1):
+                img2 = scene + str(i) + img_ext
+                im2s = os.path.join(in_path, img2)
+    
+                H12 = scene + '_H1' + str(i) + '.txt'                            
+                H12s = os.path.join(in_path, H12)
+ 
+                img2r = scene + 'rot' + str(i) + img_ext
+                im2sr = os.path.join(in_path, img2r)
+   
+                H12r = scene + 'rot_H1' + str(i) + '.txt'                            
+                H12sr = os.path.join(in_path, H12r)
+                
+                if (not os.path.isfile(im1s)) or (not os.path.isfile(im1s)) or (not os.path.isfile(H12s)):
+                    continue
+                
+                if upright:
+                    imgs.append((img1, img2, H12))
+                else:
+                    if (not upright) and (os.path.isfile(im1sr)) and (os.path.isfile(im2sr)) and (os.path.isfile(H12sr)):
+                        imgs.append((img1r, img2r, H12r))
+                    else:
+                        imgs.append((img1, img2, H12))
+                            
+        # for debugging, use only first debug_pairs image pairs
+        if not (debug_pairs is None):
+            imgs = [imgs[i] for i in range(debug_pairs)]
+    
+        image_pairs = imgs
+        image_path = out_path
+        gt = {}
+                
+        for img1, img2, H in image_pairs:
+            im1s = os.path.join(in_path, img1)
+            im2s = os.path.join(in_path, img2)
+
+            im1d = os.path.join(out_path, img1)
+            im2d = os.path.join(out_path, img2)
+ 
+            shutil.copyfile(im1s, im1d)
+            shutil.copyfile(im2s, im2d)
+
+            H_ = np.loadtxt(os.path.join(in_path, H))
+            H_inv_ = np.linalg.inv(H_)
+            
+            im1 = cv2.imread(im1s)
+            sz1 = (im1.shape[0], im1.shape[1])
+            mask1 = np.full(sz1, 1, dtype=bool)
+
+            mask1s = os.path.join(in_path, 'mask_' + img1)
+            if os.path.isfile(mask1s):
+                aux = cv2.imread(mask1s, cv2.IMREAD_GRAYSCALE).astype(bool)
+                mask1 = mask1 & ~aux
+
+            mask1s = os.path.join(in_path, 'mask_bad_' + img1)
+            if os.path.isfile(mask1s):
+                aux = cv2.imread(mask1s, cv2.IMREAD_GRAYSCALE).astype(bool)
+                mask1 = mask1 & ~aux
+
+            im2 = cv2.imread(im2s)
+            sz2 = (im2.shape[0], im2.shape[1])
+            mask2 = np.full(sz2, 1, dtype=bool)
+
+            mask2s = os.path.join(in_path, 'mask_' + img2)
+            if os.path.isfile(mask2s):
+                aux = cv2.imread(mask2s, cv2.IMREAD_GRAYSCALE).astype(bool)
+                mask2 = mask2 & ~aux
+
+            mask2s = os.path.join(in_path, 'mask_bad_' + img2)
+            if os.path.isfile(mask2s):
+                aux = cv2.imread(mask2s, cv2.IMREAD_GRAYSCALE).astype(bool)
+                mask2 = mask2 & ~aux
+
+            mask1_ = cv2.warpPerspective(mask2.astype(np.uint8), H_inv_, (sz1[1], sz1[0]), flags=cv2.INTER_LANCZOS4).astype(bool) 
+            mask2_ = cv2.warpPerspective(mask1.astype(np.uint8), H_, (sz2[1], sz2[0]), flags=cv2.INTER_LANCZOS4).astype(bool)
+            
+            if img1 not in gt:
+                gt[img1] = {}
+                
+            gt[img1][img2] = {'H': H_, 'mask1': mask1, 'mask2': mask2, 'full_mask1': mask1 & mask1_, 'full_mask2': mask2 & mask2_}
+            
+            
+            if check_data:                            
+                im1_ = cv2.warpPerspective(im2, H_inv_, (sz1[1], sz1[0]), flags=cv2.INTER_LANCZOS4)
+                im2_ = cv2.warpPerspective(im1, H_, (sz2[1], sz2[0]), flags=cv2.INTER_LANCZOS4)
+
+                mask1_full = np.expand_dims((mask1 & mask1_).astype(np.uint8), axis=-1)
+                mask2_full = np.expand_dims((mask2 & mask2_).astype(np.uint8), axis=-1)
+
+                mask1 = np.expand_dims(mask1.astype(np.uint8), axis=-1)
+                mask2 = np.expand_dims(mask2.astype(np.uint8), axis=-1)
+
+                mask1_ = np.expand_dims(mask1_.astype(np.uint8), axis=-1)
+                mask2_ = np.expand_dims(mask2_.astype(np.uint8), axis=-1)
+
+
+                im1 = np.concat((im1, mask1 * 196 + mask1_full * 59), axis=-1)
+                im2 = np.concat((im2, mask2 * 196 + mask2_full * 59), axis=-1)
+
+                im1_ = np.concat((im1_, mask1_ * 196 + mask1_full * 59), axis=-1)
+                im2_ = np.concat((im2_, mask2_ * 196 + mask2_full * 59), axis=-1)
+                            
+                cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_1a' + save_ext), im1)
+                cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_1b' + save_ext), im1_)
+                cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_2a' + save_ext), im2)
+                cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_2b' + save_ext), im2_)
+                
+        data = {'image_pairs': image_pairs, 'gt': gt, 'image_path': image_path}
+        db.add(data_key, data)
+        db.close()
+        
+    return data['image_pairs'], data['gt'], data['image_path']
+
+
+# def  refine_mask(im1_mask, im2_mask, sz1, sz2, H):
+                
+#     x = torch.arange(sz1[0], device=device).unsqueeze(0).repeat(sz1[1],1).unsqueeze(-1)
+#     y = torch.arange(sz1[1], device=device).unsqueeze(1).repeat(1,sz1[0]).unsqueeze(-1)
+#     z = torch.ones((sz1[1],sz1[0]), device=device).unsqueeze(-1)
+#     pt1 = torch.cat((x, y, z), dim=-1).reshape((-1, 3))
+#     pt2_ = torch.tensor(H, device=device, dtype=torch.float) @ pt1.permute(1,0)
+#     pt2_ = (pt2_[:2] / pt2_[-1].unsqueeze(0)).reshape(2, sz1[1], -1).round()
+#     mask1_reproj = torch.isfinite(pt2_).all(dim=0) & (pt2_ >= 0).all(dim=0) & (pt2_[0] < sz2[0]) & (pt2_[1] < sz2[1])
+#     mask1_reproj = mask1_reproj & im1_mask
+#     masked_pt2 = pt2_[:, mask1_reproj]
+#     idx = masked_pt2[1] * sz2[0] + masked_pt2[0]
+#     mask1_reproj[mask1_reproj.clone()] = im2_mask.flatten()[idx.type(torch.long)]
+    
+#     return mask1_reproj
+
+
+# def eval_pipe_homography(pipe, dataset_data,  dataset_name, bar_name, bench_path='bench_data', bench_res='res', save_to='res_homography.pbz2', force=False, use_scale=False, rad=15, err_th_list=list(range(1,16)), bench_plot='plot', save_acc_images=True, save_ext='.jpg', **dummy_args):
+#     warnings.filterwarnings("ignore", category=UserWarning)
+
+#     # these are actually pixel errors
+#     angular_thresholds = [5, 10, 15]
+
+#     if os.path.isfile(save_to):
+#         eval_data = decompress_pickle(save_to)
+#     else:
+#         eval_data = {}
+        
+#     n = len(dataset_data['im1'])
+    
+#     pipe_name_base = os.path.join(bench_path, bench_res, dataset_name)
+#     pipe_name_base_small = ''
+#     pipe_name_root = os.path.join(pipe_name_base, pipe[0].get_id())
+#     pipe_img_save = os.path.join(bench_path, bench_plot, 'planar_accuracy')
+
+#     for pipe_module in pipe:
+#         pipe_name_base = os.path.join(pipe_name_base, pipe_module.get_id())
+#         pipe_name_base_small = os.path.join(pipe_name_base_small, pipe_module.get_id())
+#         pipe_img_save = os.path.join(pipe_img_save, pipe_module.get_id())
+
+#         print('Pipeline: ' + pipe_name_base_small)
+
+#         if (pipe_name_base in eval_data.keys()) and not force:
+#             eval_data_ = eval_data[pipe_name_base]                
+#             for a in angular_thresholds:
+#                 print(f"AUC@{str(a).ljust(2,' ')} (H) : {eval_data_['pose_error_h_auc_' + str(a)]}")
+
+#             print(f"precision(H) : {eval_data_['reproj_global_prec_h']}")
+#             print(f"recall (H) : {eval_data_['reproj_global_recall_h']}")
+                                                
+#             continue
+                
+#         eval_data_ = {}
+
+#         # eval_data_['err_plane_1_h'] = []
+#         # eval_data_['err_plane_2_h'] = []        
+
+#         eval_data_['acc_1_h'] = []
+#         eval_data_['acc_2_h'] = []        
+        
+#         eval_data_['reproj_max_error_h'] = []
+#         eval_data_['reproj_inliers_h'] = []
+#         eval_data_['reproj_valid_h'] = []
+#         eval_data_['reproj_prec_h'] = []
+#         eval_data_['reproj_recall_h'] = []
+            
+#         with progress_bar('Completion') as p:
+#             for i in p.track(range(n)):            
+#                 pipe_f = os.path.join(pipe_name_base, 'base', str(i) + '.pbz2')
+
+#                 reproj_max_err =[]
+#                 inl_sum = []
+#                 avg_prec = 0
+#                 avg_recall = 0
+#                 valid_matches = None
+
+#                 if os.path.isfile(pipe_f):
+#                     out_data = decompress_pickle(pipe_f)
+
+#                     pts1 = out_data['pt1']
+#                     pts2 = out_data['pt2']
+                                            
+#                     if torch.is_tensor(pts1):
+#                         pts1 = pts1.detach().cpu().numpy()
+#                         pts2 = pts2.detach().cpu().numpy()
+
+#                     if use_scale:
+#                         scales = dataset_data['im_pair_scale'][i]
+#                     else:
+#                         scales = np.asarray([[1.0, 1.0], [1.0, 1.0]])
+                    
+#                     pts1 = pts1 * scales[0]
+#                     pts2 = pts2 * scales[1]
+                        
+#                     nn = pts1.shape[0]
+                                                
+#                     if nn < 4:
+#                         H = None
+#                     else:
+#                         H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=device)
+
+#                     if nn > 0:
+#                         H_gt = torch.tensor(dataset_data['H'][i], device=device)
+#                         H_inv_gt = torch.tensor(dataset_data['H_inv'][i], device=device)
+                        
+#                         pt1_ = torch.vstack((torch.tensor(pts1.T, device=device), torch.ones((1, nn), device=device)))
+#                         pt2_ = torch.vstack((torch.tensor(pts2.T, device=device), torch.ones((1, nn), device=device)))
+                        
+#                         pt1_reproj = H_gt @ pt1_
+#                         pt1_reproj = pt1_reproj[:2] / pt1_reproj[2].unsqueeze(0)
+#                         d1 = ((pt2_[:2] - pt1_reproj)**2).sum(0).sqrt()
+                        
+#                         pt2_reproj = H_inv_gt @ pt2_
+#                         pt2_reproj = pt2_reproj[:2] / pt2_reproj[2].unsqueeze(0)
+#                         d2 = ((pt1_[:2] - pt2_reproj)**2).sum(0).sqrt()
+                        
+#                         valid_matches = torch.ones(nn, device=device, dtype=torch.bool)
+                        
+#                         if dataset_data['im1_use_mask'][i]:
+#                             valid_matches = valid_matches & ~invalid_matches(dataset_data['im1_mask'][i], dataset_data['im2_full_mask'][i], pts1, pts2, rad)
+
+#                         if dataset_data['im2_use_mask'][i]:
+#                             valid_matches = valid_matches & ~invalid_matches(dataset_data['im2_mask'][i], dataset_data['im1_full_mask'][i], pts2, pts1, rad)
+                                                
+#                         reproj_max_err_ = torch.maximum(d1, d2)                                
+#                         reproj_max_err = reproj_max_err_[valid_matches]
+#                         inl_sum = (reproj_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=device).unsqueeze(0)).sum(dim=0).type(torch.int)
+#                         avg_prec = inl_sum.type(torch.double).mean()/nn
+                                                
+#                         if pipe_name_base==pipe_name_root:
+#                             recall_normalizer = torch.tensor(inl_sum, device=device)
+#                         else:
+#                             recall_normalizer = torch.tensor(eval_data[pipe_name_root]['reproj_inliers_h'][i], device=device)
+#                         avg_recall = inl_sum.type(torch.double) / recall_normalizer
+#                         avg_recall[~avg_recall.isfinite()] = 0
+#                         avg_recall = avg_recall.mean()
+                        
+#                         reproj_max_err = reproj_max_err_.detach().cpu().numpy()
+#                         valid_matches = valid_matches.detach().cpu().numpy()
+#                         inl_sum = inl_sum.detach().cpu().numpy()
+#                         avg_prec = avg_prec.item()
+#                         avg_recall = avg_recall.item()
+#                 else:
+#                     H = None
+#                     valid_matches = torch.zeros(nn, device=device, dtype=torch.bool)
+                                        
+#                 if H is None:
+#                     # eval_data_['err_plane_1_h'].append([])
+#                     # eval_data_['err_plane_2_h'].append([])
+
+#                     eval_data_['acc_1_h'].append(np.inf) 
+#                     eval_data_['acc_2_h'].append(np.inf)        
+#                 else:
+#                     heat1 = homography_error_heat_map(H_gt, H, torch.tensor(dataset_data['im1_full_mask'][i], device=device))
+#                     heat2 = homography_error_heat_map(H_inv_gt, H.inverse(), torch.tensor(dataset_data['im2_full_mask'][i], device=device))
+                    
+#                     eval_data_['acc_1_h'].append(heat1[heat1 != -1].mean().detach().cpu().numpy()) 
+#                     eval_data_['acc_2_h'].append(heat2[heat2 != -1].mean().detach().cpu().numpy())       
+
+#                     # eval_data_['err_plane_1_h'].append(heat1.type(torch.half).detach().cpu().numpy())
+#                     # eval_data_['err_plane_2_h'].append(heat2.type(torch.half).detach().cpu().numpy())
+
+#                     if save_acc_images:
+#                         pipe_img_save_base = os.path.join(pipe_img_save, 'base')
+#                         os.makedirs(pipe_img_save_base, exist_ok=True)
+#                         iname = os.path.splitext(dataset_data['im1'][i])[0] + '_' + os.path.splitext(dataset_data['im2'][i])[0]
+    
+#                         pipe_img_save1 = os.path.join(pipe_img_save_base, iname + '_1' + save_ext)
+#                         if not (os.path.isfile(pipe_img_save1) and not force):
+#                             im1s = os.path.join(bench_path,'planar',dataset_data['im1'][i])
+#                             colorize_plane(im1s, heat1, cmap_name='viridis', max_val=45, cf=0.7, save_to=pipe_img_save1)
+    
+#                         pipe_img_save2 = os.path.join(pipe_img_save_base, iname + '_2' + save_ext)
+#                         if not (os.path.isfile(pipe_img_save2) and not force):
+#                             im2s = os.path.join(bench_path,'planar',dataset_data['im2'][i])
+#                             colorize_plane(im2s, heat2, cmap_name='viridis', max_val=45, cf=0.7, save_to=pipe_img_save2)
+   
+#                 eval_data_['reproj_max_error_h'].append(reproj_max_err)  
+#                 eval_data_['reproj_inliers_h'].append(inl_sum)
+#                 eval_data_['reproj_valid_h'].append(valid_matches)
+#                 eval_data_['reproj_prec_h'].append(avg_prec)                           
+#                 eval_data_['reproj_recall_h'].append(avg_recall)
+                    
+#             aux = np.stack(([eval_data_['acc_1_h'], eval_data_['acc_2_h']]), axis=1)
+#             max_acc_err = np.max(aux, axis=1)        
+#             tmp = np.concatenate((aux, np.expand_dims(max_acc_err, axis=1)), axis=1)
+    
+#             for a in angular_thresholds:       
+#                 auc_1 = error_auc(np.squeeze(eval_data_['acc_1_h']), a)
+#                 auc_2 = error_auc(np.squeeze(eval_data_['acc_2_h']), a)
+#                 auc_max_12 = error_auc(np.squeeze(max_acc_err), a)
+#                 eval_data_['pose_error_h_auc_' + str(a)] = np.asarray([auc_1, auc_2, auc_max_12])
+#                 eval_data_['pose_error_h_acc_' + str(a)] = np.sum(tmp < a, axis=0)/np.shape(tmp)[0]
+
+#                 # accuracy using 1st, 2nd image as reference, and the maximum accuracy
+#                 print(f"AUC@{str(a).ljust(2,' ')} (H) : {eval_data_['pose_error_h_auc_' + str(a)]}")
+            
+#             eval_data_['reproj_global_prec_h'] = torch.tensor(eval_data_['reproj_prec_h'], device=device).mean().item()
+#             eval_data_['reproj_global_recall_h'] = torch.tensor(eval_data_['reproj_recall_h'], device=device).mean().item()
+        
+#             print(f"precision (H) : {eval_data_['reproj_global_prec_h']}")
+#             print(f"recall (H) : {eval_data_['reproj_global_recall_h']}")
+
+#             eval_data[pipe_name_base] = eval_data_    
+#             compressed_pickle(save_to, eval_data)
+
+
+# def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='plane_acc.png'):
+#     im_gray = cv2.imread(ims, cv2.IMREAD_GRAYSCALE)
+#     im_gray = torch.tensor(im_gray, device=device).unsqueeze(0).repeat(3,1,1).permute(1,2,0)
+#     heat_mask = heat != -1
+#     heat_ = heat.clone()
+#     cmap = (colormaps[cmap_name](np.arange(0,(max_val + 1)) / max_val))[:,[2, 1, 0]]
+#     heat_[heat_ > max_val - 1] = max_val - 1
+#     heat_[heat_ == -1] = max_val
+#     cmap = torch.tensor(cmap, device=device)
+#     heat_im = cmap[heat_.type(torch.long)]
+#     heat_im = heat_im.type(torch.float) * 255
+#     blend_mask = heat_mask.unsqueeze(-1).type(torch.float) * cf
+#     imm = heat_im * blend_mask + im_gray.type(torch.float) * (1-blend_mask)                    
+#     cv2.imwrite(save_to, imm.type(torch.uint8).detach().cpu().numpy())   
+ 
+
+# def invalid_matches(mask1, mask2, pts1, pts2, rad):
+#     dmask2 = cv2.dilate(mask2.astype(np.ubyte),np.ones((rad*2+1, rad*2+1)))
+    
+#     pt1 = torch.tensor(pts1, device=device).round().permute(1, 0)
+#     pt2 = torch.tensor(pts2, device=device).round().permute(1, 0)
+
+#     invalid_ = torch.zeros(pt1.shape[1], device=device, dtype=torch.bool)
+
+#     to_exclude = (pt1[0] < 0) | (pt2[0] < 0) | (pt1[0] >= mask1.shape[1]) | (pt2[0] >= mask2.shape[1]) | (pt1[1] < 0) | (pt2[1] < 0) | (pt1[1] >= mask1.shape[0]) | (pt2[1] >= mask2.shape[0])
+
+#     pt1 = pt1[:, ~to_exclude]
+#     pt2 = pt2[:, ~to_exclude]
+    
+#     l1 = (pt1[1, :] * mask1.shape[1] + pt1[0,:]).type(torch.long)
+#     l2 = (pt2[1, :] * mask2.shape[1] + pt2[0,:]).type(torch.long)
+
+#     invalid_check = ~(torch.tensor(mask1, device=device).flatten()[l1]) & ~(torch.tensor(dmask2, device=device, dtype=torch.bool).flatten()[l2])
+#     invalid_[~to_exclude] = invalid_check 
+
+#     return invalid_
+
+
+# def homography_error_heat_map(H12_gt, H12, mask1):
+#     pt1 = mask1.argwhere()
+    
+#     pt1 = torch.cat((pt1, torch.ones(pt1.shape[0], 1, device=device)), dim=1).permute(1,0)   
+
+#     pt2_gt_ = H12_gt.type(torch.float) @ pt1
+#     pt2_gt_ = pt2_gt_[:2] / pt2_gt_[2].unsqueeze(0)
+
+#     pt2_ = H12.type(torch.float) @ pt1
+#     pt2_ = pt2_[:2] / pt2_[2].unsqueeze(0)
+
+#     d1 = ((pt2_gt_ - pt2_)**2).sum(dim=0).sqrt()
+#     d1[~d1.isfinite()] = np.inf
+
+#     heat_map = torch.full(mask1.shape, -1, device=device, dtype=torch.float)
+#     heat_map[mask1] = d1
+    
+#     return heat_map
+
+
 
 
 if __name__ == '__main__':    
@@ -6501,5 +6933,6 @@ if __name__ == '__main__':
 #       imgs = '../data/graffiti'
 #       # no hdf5 cache with db_name=None
 #       run_pairs(pipeline, imgs, db_name=None)
+
 
         print('doh!')
