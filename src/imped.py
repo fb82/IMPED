@@ -360,6 +360,9 @@ def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt
         
         pairs = [(im1, im2) for im1, im2 in zip(data['im1'], data['im2'])]
         gt = {}
+        
+        gt['use_scale'] = True if (dataset == 'megadepth') else False
+        
         for i in range(len(data['im1'])):
             if not data['im1'][i] in gt:
                 gt[data['im1'][i]] = {}
@@ -567,6 +570,8 @@ def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='
     
     pairs = [(im1, im2) for im1, im2 in zip(imc_data['im1'], imc_data['im2'])]
     gt = {}
+    gt['use_scale'] = False    
+    
     for i in range(len(imc_data['im1'])):
         if not imc_data['im1'][i] in gt:
             gt[imc_data['im1'][i]] = {}
@@ -5816,7 +5821,8 @@ def planar_setup(bench_path='bench_data', bench_imgs='imgs', bench_plot='aux_ima
         image_pairs = imgs
         image_path = out_path
         gt = {}
-                        
+        gt['use_scale'] = False    
+                                
         for img1, img2, H in tqdm(image_pairs, desc='planar image setup'):
             im1s = os.path.join(in_path, img1)
             im2s = os.path.join(in_path, img2)
@@ -5921,7 +5927,7 @@ class pairwise_benchmark_module:
             'planar_thresholds': [5, 10, 15],
             'homography_mask_rad': 15,
             'am_scaling' : 10, # current metric error requires that angular_thresholds[i] / metric_thresholds[i] = am_scaling
-            'save_to': 'None',
+            'save_to': None,
             # to save homography heat map
             'img_prefix': '',
             'img_suffix': '',
@@ -5948,8 +5954,73 @@ class pairwise_benchmark_module:
     def finalize(self, **args):
         if self.args['mode'] == 'homography':
             return self.finalize_planar(**args)
+        elif self.args['mode'] == 'epipolar':
+            return self.finalize_epipolar(**args)
         else:
             return self.finalize_non_planar(**args)
+
+
+    def finalize_epipolar(self):
+        keys = self.aux_hdf5.get_keys()
+
+        fe = 'F*'
+            
+        if not (self.args['save_to'] is None):
+            f = open(self.args['save_to'], 'w')
+
+        F_error_1 = []
+        F_error_2 = []
+        n = 0
+        inliers = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+        auc = []
+        acc = []
+
+        for key in keys:      
+            val, is_found = self.aux_hdf5.get(key)
+
+            F_error_1.append(val['F_error_1'])
+            F_error_2.append(val['F_error_2'])
+            n = n + val['n']
+
+            inliers = inliers + val['inliers']
+                        
+            aux = np.asarray([F_error_1, F_error_2]).T            
+            max_F_err = np.max(aux, axis=1)        
+            tmp = np.concatenate((aux, np.expand_dims(max_F_err, axis=1)), axis=1)
+
+        for a in self.args['angular_thresholds']:       
+            auc_F1 = error_auc(F_error_1, a).item()
+            auc_F2 = error_auc(F_error_2, a).item()
+            auc_max_F = error_auc(max_F_err, a).item()
+            acc_ = np.sum(tmp < a, axis=0) / np.shape(tmp)[0]
+
+            auc.append([a, auc_F1, auc_F2, auc_max_F])
+            acc.append([a, acc_[0].item(), acc_[1].item(), acc_[2].item()])
+
+        avg_inliers = inliers.type(torch.float).mean().to('cpu').numpy().item()
+        avg_precision = (inliers / n).type(torch.float).mean().to('cpu').numpy().item()
+
+        if self.args['save_to'] is None:
+            print("            F12      F21  max(F12,F21)")
+            for i, a in enumerate(self.args['angular_thresholds']):       
+                print(f"AUC@{str(a).ljust(2,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")        
+            for i, a in enumerate(self.args['angular_thresholds']):       
+                print(f"Acc@{str(a).ljust(2,' ')} ({fe}) : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")        
+            print(f"Prec  ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
+        else:
+            print("what; angular th; metric th; mode; F12; F21; max(F12,F21); inliers; matches; prec", file=f)
+            for i, am in enumerate(zip(self.args['planar_thresholds'], self.args['metric_thresholds'])):       
+                a = am[0]
+                print(f"AUC; {str(a)}; nan; {fe}; {auc[i][1]}; {auc[i][2]}; {auc[i][3]}; nan; nan; nan", file=f)    
+            for i, am in enumerate(zip(self.args['planar_thresholds'], self.args['metric_thresholds'])):       
+                a = am[0]
+                print(f"Acc; {str(a)}; nan; {fe}; {acc[i][1]}; {acc[i][2]}; {acc[i][3]}; nan; nan; nan", file=f)    
+            print(f"Prec; nan; nan; {fe}; nan; nan; nan; {avg_inliers}; {n}; {avg_precision}", file=f)
+
+        self.aux_hdf5.close()
+
+        if not (self.args['save_to'] is None):
+            f.close()
 
 
     def finalize_planar(self):
@@ -5996,7 +6067,7 @@ class pairwise_benchmark_module:
         avg_precision_valid = (inliers / v).type(torch.float).mean().to('cpu').numpy().item()
 
         if self.args['save_to'] is None:
-            print("           H12      H21    max(H12,H21)")
+            print("            H12      H21  max(H12,H21)")
             for i, a in enumerate(self.args['planar_thresholds']):       
                 print(f"AUC@{str(a).ljust(2,' ')} ({fe}) : {auc[i][1]*100: >6.2f}%, {auc[i][2]*100: >6.2f}%, {auc[i][3]*100: >6.2f}%")        
             for i, a in enumerate(self.args['planar_thresholds']):       
@@ -6004,7 +6075,7 @@ class pairwise_benchmark_module:
             print(f"Prec  ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
             print(f"Prec* ({fe}) : {avg_inliers: .0f} / {v} = {avg_precision_valid*100: >6.2f}%")
         else:
-            print("what; planar th; metric th; H; H12; H21; max(H12,H21); inliers; matches; prec", file=f)
+            print("what; planar th; metric th; mode; H12; H21; max(H12,H21); inliers; matches; prec", file=f)
             for i, am in enumerate(zip(self.args['planar_thresholds'], self.args['metric_thresholds'])):       
                 a = am[0]
                 print(f"AUC; {str(a)}; nan; {fe}; {auc[i][1]}; {auc[i][2]}; {auc[i][3]}; nan; nan; nan", file=f)    
@@ -6074,7 +6145,7 @@ class pairwise_benchmark_module:
                     print(f"Acc@{str(a).ljust(2,' ')} ({fe}) : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")        
                 print(f"Prec ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
             else:
-                print("what; angular th; metric th; F/E; R; t; max(R,t); inliers; matches; prec", file=f)
+                print("what; angular th; metric th; mode; R; t; max(R,t); inliers; matches; prec", file=f)
                 for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
                     a = am[0]
                     m = am[1]
@@ -6113,7 +6184,7 @@ class pairwise_benchmark_module:
                     print(f"@Acc{str(a).ljust(2,' ')},{str(m).ljust(3,' ')} : {acc[i][1]*100: >6.2f}%, {acc[i][2]*100: >6.2f}%, {acc[i][3]*100: >6.2f}%")    
                 print(f"Prec ({fe}) : {avg_inliers: .0f} / {n} = {avg_precision*100: >6.2f}%")
             else:
-                print("what; angular th; metric th; F/E; R; t; max(R,t); inliers; matches; prec", file=f)
+                print("what; angular th; metric th; mode; R; t; max(R,t); inliers; matches; prec", file=f)
                 for i, am in enumerate(zip(self.args['angular_thresholds'], self.args['metric_thresholds'])):       
                     a = am[0]
                     m = am[1]
@@ -6139,8 +6210,143 @@ class pairwise_benchmark_module:
             return self.run_fundamental(**args)
         elif self.args['mode'] == 'essential':
             return self.run_essential(**args)
+        elif self.args['mode'] == 'epipolar':
+            return self.run_epipolar(**args)
         else:
             return self.run_homography(**args)
+
+
+    def run_epipolar(self, **args):
+        err_th_list = self.args['err_th_list']
+        
+        img1 = args['img'][0]
+        img2 = args['img'][1]
+                
+        data_key = '/' + os.path.split(img1)[-1] + '/' + os.path.split(img2)[-1] + '/epipolar'
+        
+        out_data, is_found = self.aux_hdf5.get(data_key)
+        if is_found:
+            return {}
+
+        cannot_do = False
+
+        img1_key = img1[self.args['to_add_path_size'] + 1:]
+        img2_key = img2[self.args['to_add_path_size'] + 1:]
+        
+        if cannot_do or (not (img1_key in self.args['gt'])):
+            cannot_do = True
+                        
+        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+            cannot_do = None
+        
+        use_scale = self.args['gt']['use_scale']
+        
+        if not cannot_do:
+            gt = self.args['gt'][img1_key][img2_key]
+        else:
+            gt = None
+
+        if not (gt is None):
+            K1 = gt['K1']
+            K2 = gt['K2']    
+            R_gt = gt['R']
+            t_gt = gt['T']
+                
+            mm = args['m_idx'][args['m_mask']]
+        
+            pts1 = args['kp'][0][mm[:, 0]]
+            pts2 = args['kp'][1][mm[:, 1]]
+                       
+            if torch.is_tensor(pts1):
+                pts1 = pts1.detach().cpu().numpy()
+                pts2 = pts2.detach().cpu().numpy()
+        
+            scales = gt['image_pair_scale'] if use_scale else np.asarray([[1.0, 1.0], [1.0, 1.0]])    
+        
+            pts1 = pts1 * scales[0]
+            pts2 = pts2 * scales[1]
+        
+            nn = pts1.shape[0]
+
+            inl_sum = torch.zeros(len(err_th_list), device=device, dtype=torch.int)
+        
+            if nn < 8:
+                F = None
+            else:
+                if 'F' in args:
+                    s1 = torch.eye(3, device=device)
+                    s2 = torch.eye(3, device=device)
+
+                    s1[0, 0] = 1 / scales[0, 0]
+                    s1[1, 1] = 1 / scales[0, 1]
+
+                    s2[0, 0] = 1 / scales[1, 0]
+                    s2[1, 1] = 1 / scales[1, 1]
+
+                    F = s2 @ args['F'].type(torch.float) @ s1
+                    F = F / F[2, 2]
+                else:
+                    F = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
+                    if not (F is None): F = torch.tensor(F, device=device)
+        
+            if nn > 0:
+                F_gt = torch.tensor(K2.T, device=device, dtype=torch.float64).inverse() @ \
+                       torch.tensor([[0, -t_gt[2], t_gt[1]],
+                                    [t_gt[2], 0, -t_gt[0]],
+                                    [-t_gt[1], t_gt[0], 0]], device=device) @ \
+                       torch.tensor(R_gt, device=device) @ \
+                       torch.tensor(K1, device=device, dtype=torch.float64).inverse()
+                F_gt = F_gt / F_gt.sum()
+        
+                pt1_ = torch.vstack((torch.tensor(pts1.T, device=device), torch.ones((1, nn), device=device)))
+                pt2_ = torch.vstack((torch.tensor(pts2.T, device=device), torch.ones((1, nn), device=device)))
+        
+                l1_ = F_gt @ pt1_
+                d1 = pt2_.permute(1,0).unsqueeze(-2).bmm(l1_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l1_[:2]**2).sum(0).sqrt()
+        
+                l2_ = F_gt.T @ pt2_
+                d2 = pt1_.permute(1,0).unsqueeze(-2).bmm(l2_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l2_[:2]**2).sum(0).sqrt()
+        
+                epi_max_err = torch.maximum(d1, d2)
+                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=device).unsqueeze(0)).sum(dim=0).type(torch.int)        
+            
+            if F is None:
+                F_error_1 = np.inf
+                F_error_2 = np.inf
+            else:
+                sz1 = np.asarray(Image.open(img1).size)[-1::-1]
+                sz2 = np.asarray(Image.open(img2).size)[-1::-1]
+                
+                heat1 = epipolar_error_heat_map(F_gt, F, sz1)
+                heat2 = epipolar_error_heat_map(F_gt.T, F.T, sz2)
+
+                F_error_1 = heat1.mean().detach().cpu().numpy() 
+                F_error_2 = heat2.mean().detach().cpu().numpy()                  
+        
+                if not (self.args['cache_path'] is None):
+                    im1 = os.path.splitext(os.path.split(img1)[1])[0]
+                    im2 = os.path.splitext(os.path.split(img2)[1])[0]                
+                    
+                    if self.args['prepend_pair']:            
+                        cache_path = os.path.join(self.args['cache_path'], im1 + '_' + im2)
+                    else:
+                        cache_path = self.args['cache_path']
+                            
+                    heat_img1 = os.path.join(cache_path, self.args['img_prefix'] + im1 + self.args['img_suffix'] + self.args['ext'])
+                    heat_img2 = os.path.join(cache_path, self.args['img_prefix'] + im2 + self.args['img_suffix'] + self.args['ext'])
+    
+                    os.makedirs(cache_path, exist_ok=True)
+    
+                    colorize_plane(img1, heat1, cmap_name='viridis', max_val=45, cf=0.7, save_to=heat_img1)            
+                    colorize_plane(img2, heat2, cmap_name='viridis', max_val=45, cf=0.7, save_to=heat_img2)                
+                
+            out_data = {'F_error_1': F_error_1, 'F_error_2': F_error_2, 'n': nn, 'inliers': inl_sum}
+        else:
+            warnings.warn("image pair not in gt data!")            
+            out_data = None
+
+        self.aux_hdf5.add(data_key, out_data)
+        return {}
             
     
     def run_fundamental(self, **args):
@@ -6170,6 +6376,8 @@ class pairwise_benchmark_module:
                         
         if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
             cannot_do = None
+
+        use_scale = self.args['gt']['use_scale']
         
         if not cannot_do:
             gt = self.args['gt'][img1_key][img2_key]
@@ -6194,7 +6402,7 @@ class pairwise_benchmark_module:
                 pts1 = pts1.detach().cpu().numpy()
                 pts2 = pts2.detach().cpu().numpy()
         
-            scales = gt['image_pair_scale']
+            scales = gt['image_pair_scale'] if use_scale else np.asarray([[1.0, 1.0], [1.0, 1.0]])  
         
             pts1 = pts1 * scales[0]
             pts2 = pts2 * scales[1]
@@ -6309,7 +6517,9 @@ class pairwise_benchmark_module:
             gt = self.args['gt'][img1_key][img2_key]
         else:
             gt = None
-
+            
+        use_scale = self.args['gt']['use_scale']
+            
         if not (gt is None):
             K1 = gt['K1']
             K2 = gt['K2']    
@@ -6328,7 +6538,7 @@ class pairwise_benchmark_module:
                 pts1 = pts1.detach().cpu().numpy()
                 pts2 = pts2.detach().cpu().numpy()
         
-            scales = gt['image_pair_scale']
+            scales = gt['image_pair_scale'] if use_scale else np.asarray([[1.0, 1.0], [1.0, 1.0]])  
         
             pts1 = pts1 * scales[0]
             pts2 = pts2 * scales[1]
@@ -6392,6 +6602,8 @@ class pairwise_benchmark_module:
             gt = self.args['gt'][img1_key][img2_key]
         else:
             gt = None
+
+        use_scale = self.args['gt']['use_scale']
         
         if not (gt is None):
             H_gt = torch.tensor(gt['H'], device=device)
@@ -6405,17 +6617,20 @@ class pairwise_benchmark_module:
                 pts1 = pts1.detach().cpu().numpy()
                 pts2 = pts2.detach().cpu().numpy()        
             
-            scales = gt['image_pair_scale']
+            scales = gt['image_pair_scale'] if use_scale else np.asarray([[1.0, 1.0], [1.0, 1.0]])  
         
             pts1 = pts1 * scales[0]
             pts2 = pts2 * scales[1]
             
             nn = pts1.shape[0]
                                                     
-            if nn < 4:
+            if (nn < 4):
                 H = None
             else:
-                H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=device)
+                if not ('H' in args):                
+                    H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=device)
+                else:
+                    H = args['H']
         
             if nn > 0:
                 H_gt_inv = H_gt.inverse()
@@ -6464,7 +6679,7 @@ class pairwise_benchmark_module:
                     os.makedirs(cache_path, exist_ok=True)
     
                     colorize_plane(img1, heat1, cmap_name='viridis', max_val=45, cf=0.7, save_to=heat_img1)            
-                    colorize_plane(img2, heat2, cmap_name='viridis', max_val=45, cf=0.7, save_to=heat_img2)
+                    colorize_plane(img2, heat2, cmap_name='viridis', max_val=45, cf=0.7, save_to=heat_img2)                    
             else:
                 H_error_1 = np.inf
                 H_error_2 = np.inf
@@ -6520,6 +6735,25 @@ def homography_error_heat_map(H12_gt, H12, mask1):
     return heat_map
 
 
+def epipolar_error_heat_map(F_gt, F, sz):
+    y, x = torch.meshgrid(torch.arange(sz[0], device=device), torch.arange(sz[1], device=device))
+    pt = torch.stack((y.flatten(), x.flatten(), torch.ones(sz[0] * sz[1], device=device))).type(torch.float)
+
+    l_gt = F_gt.type(torch.float) @ pt
+    l = F.type(torch.float) @ pt
+    
+    l_gt_n = l_gt / l_gt.norm(dim=0)
+    l_n = l / l.norm(dim=0)
+
+    sim = torch.linalg.vecdot(l_gt_n.T, l_n.T).abs()
+    sim[sim > 1] = 1    
+
+    sim = sim.acos().rad2deg()
+    sim[~sim.isfinite()] = 360
+
+    return sim.reshape((sz[0], sz[1]))
+
+
 def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='plane_acc.png'):
     im_gray = cv2.imread(ims, cv2.IMREAD_GRAYSCALE)
     im_gray = torch.tensor(im_gray, device=device).unsqueeze(0).repeat(3,1,1).permute(1,2,0)
@@ -6532,7 +6766,7 @@ def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='
     heat_im = cmap[heat_.type(torch.long)]
     heat_im = heat_im.type(torch.float) * 255
     blend_mask = heat_mask.unsqueeze(-1).type(torch.float) * cf
-    imm = heat_im * blend_mask + im_gray.type(torch.float) * (1-blend_mask)                    
+    imm = heat_im * blend_mask + im_gray.type(torch.float) * (1 - blend_mask)                    
     cv2.imwrite(save_to, imm.type(torch.uint8).detach().cpu().numpy())   
  
 
@@ -6932,16 +7166,52 @@ if __name__ == '__main__':
 #       run_pairs(pipeline, imgs, db_name=None)
 
 
-        imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
-        pipeline = [
-            deep_joined_module(what='aliked'),
-            lightglue_module(what='aliked'),
-            magsac_module(),
-            show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-            pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
-        ]         
-        imgs = [imgs_planar[i] for i in range(20)]
-        run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
+#       imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
+#       ]         
+#       imgs = [imgs_planar[i] for i in range(20)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
+
+
+#       imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(gt=gt_imc, to_add_path=to_add_path_imc, mode='epipolar'),
+#       ]         
+#       imgs = [imgs_imc[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_imc)   
+
+
+#       imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(gt=gt_megadepth, to_add_path=to_add_path_megadepth, mode='epipolar'),
+#       ]         
+#       imgs = [imgs_megadepth[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)   
+
+
+#       imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
+#       pipeline = [
+#           deep_joined_module(what='aliked'),
+#           lightglue_module(what='aliked'),
+#           magsac_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#           pairwise_benchmark_module(gt=gt_scannet, to_add_path=to_add_path_scannet, mode='epipolar'),
+#       ]         
+#       imgs = [imgs_scannet[i] for i in range(10)]
+#       run_pairs(pipeline, imgs, add_path=to_add_path_scannet)   
 
 
         print('doh!')
