@@ -1,0 +1,9 @@
+what; planar th; metric th; H; H12; H21; max(H12,H21); inliers; matches; prec
+AUC; 5; nan; H; 0.7561463506519794; 0.6118221151828767; 0.5792090439796448; nan; nan; nan
+AUC; 10; nan; H; 0.8780731753259896; 0.7548578745126725; 0.7357694363594056; nan; nan; nan
+AUC; 15; nan; H; 0.9187154502173265; 0.8032385830084484; 0.7905129575729372; nan; nan; nan
+Acc; 5; nan; H; 1.0; 0.8; 0.8; nan; nan; nan
+Acc; 10; nan; H; 1.0; 0.9; 0.9; nan; nan; nan
+Acc; 15; nan; H; 1.0; 0.9; 0.9; nan; nan; nan
+Prec; nan; nan; H; nan; nan; nan; 18435.134765625; 20181; 0.9134896397590637
+Prec*; nan; nan; H; nan; nan; nan; 18435.134765625; 20181; 0.913489580154419
