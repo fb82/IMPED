@@ -24,6 +24,9 @@ import copy
 import wget
 import pycolmap
 import scipy
+import miho.src.miho as mop_miho
+import miho.src.miho_other as mop
+import miho.src.ncc as ncc
 
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
@@ -3480,12 +3483,12 @@ class r2d2_module:
 
 
 if enable_quadtree:
-    cur_dir = os.getcwd()
-    os.chdir(os.path.join(os.path.split(__file__)[0], 'quadtreeattention/FeatureMatching'))    
-    from src.config.default import qta_get_cfg_defaults
-    from src.utils.misc import qta_lower_config
-    from src.loftr import qta_LoFTR
-    os.chdir(cur_dir)
+    conf_path = os.path.split(__file__)[0]
+    sys.path.append(os.path.join(conf_path, 'quadtreeattention'))
+    sys.path.append(os.path.join(conf_path, 'quadtreeattention/QuadTreeAttention'))
+    from FeatureMatching.src.config.default import get_cfg_defaults as qta_get_cfg_defaults
+    from FeatureMatching.src.utils.misc import lower_config as qta_lower_config
+    from FeatureMatching.src.loftr import LoFTR as qta_LoFTR
     
     class quadtreeattention_module:
         def __init__(self, **args):
@@ -6770,6 +6773,77 @@ def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='
     cv2.imwrite(save_to, imm.type(torch.uint8).detach().cpu().numpy())   
  
 
+class mop_module:
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+        self.add_to_cache = True
+                        
+        self.args = {
+            'id_more': '',
+            'miho': True,
+            'out_patch': True,
+            'cfg': None,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('', args, self.args)        
+
+        id_prefix = 'mop_miho' if self.args['miho'] else 'mop'
+        self.id_string = id_prefix + self.id_string
+
+        self.mop = mop_miho.miho() if self.args['miho'] else mop.miho()
+        
+        cfg = self.mop.get_current()
+        
+        if not (self.args['cfg'] is None) and isinstance(self.args['cfg'], dict):
+            for k in self.args['cfg']:
+                cfg[k] = self.args['cfg'][k]
+
+            self.mop.update_params(cfg)            
+
+
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+        
+    def run(self, **args):  
+        pt1_ = args['kp'][0]
+        pt2_ = args['kp'][1]
+
+        mi = args['m_idx']
+        mm = args['m_mask']
+        
+        pt1 = pt1_[mi[mm][:, 0]]
+        pt2 = pt2_[mi[mm][:, 1]]
+
+        lidx = torch.arange(args['m_mask'].shape[0], device=device)[args['m_mask']]
+        
+        Hs, Hidx = self.mop.planar_clustering(pt1, pt2)
+
+        mask = Hidx > -1
+         
+        aux = mm.clone()
+        mm[aux] = mask
+
+        if not self.args['out_patch']: return {'m_mask': mm}
+
+        kH0 = args['kH'][0]
+        kH1 = args['kH'][1]
+        for k1, k2 in enumerate(lidx):            
+            if Hidx[k1] > -1:
+                kH0[mi[lidx[k2]][0]] = Hs[Hidx[k1]][0]
+                kH1[mi[lidx[k2]][1]] = Hs[Hidx[k1]][1]
+        
+        return {'m_mask': mm, 'kH': [kH0, kH1]}
+
+
 if __name__ == '__main__':    
     with torch.inference_mode():         
 #       pipeline = [
@@ -7213,5 +7287,22 @@ if __name__ == '__main__':
 #       imgs = [imgs_scannet[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_scannet)   
 
+
+        pipeline = [
+            dog_module(),
+            patch_module(),
+            deep_descriptor_module(),
+            smnn_module(),
+            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
+            show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
+            mop_module(),
+            show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
+            show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
+            magsac_module(),
+            show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
+            show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
+        ]
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs) 
 
         print('doh!')

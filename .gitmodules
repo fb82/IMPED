@@ -28,3 +28,6 @@
 [submodule "src/fcgnn"]
 	path = src/fcgnn
 	url = https://github.com/xuy123456/fcgnn.git
+[submodule "src/miho"]
+	path = src/miho
+	url = https://github.com/fb82/MiHo
