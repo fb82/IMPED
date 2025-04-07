@@ -837,6 +837,20 @@ def laf2homo(kps, with_scale=False):
 
 
 def homo2laf(c, H, s=None):
+    
+    # D, R = torch.linalg.eigh(H[1].permute((0,2,1)).bmm(H[1]))
+    # aux = torch.eye(3, device=device).reshape((1, 3, 3)).repeat((D.shape[0], 1 , 1))
+    # tmp = aux.clone()
+    # aux[:, 0, 0] = D[:, 0]    
+    # aux[:, 1, 1] = D[:, 1]    
+    # aux[:, 2, 2] = D[:, 2]    
+    # a = (aux**0.5).bmm(R).bmm(tmp)
+    # p = a / a[:, 2, :].unsqueeze(1)
+    # p[:, :, 0] = p[:, :, 0] - p[:, :, 2]
+    # p[:, :, 1] = p[:, :, 1] - p[:, :, 2]
+    # p = p[:, :2]
+    
+    
     Hi = torch.linalg.inv(H)
     kp = Hi[:, :2, :]
     
@@ -7294,7 +7308,7 @@ if __name__ == '__main__':
             deep_descriptor_module(),
             smnn_module(),
             show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-            show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
+#           show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
             mop_module(),
             show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
             show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
