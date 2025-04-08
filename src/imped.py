@@ -838,21 +838,16 @@ def laf2homo(kps, with_scale=False):
 
 def homo2laf(c, H, s=None):
     
-    # D, R = torch.linalg.eigh(H[1].permute((0,2,1)).bmm(H[1]))
-    # aux = torch.eye(3, device=device).reshape((1, 3, 3)).repeat((D.shape[0], 1 , 1))
-    # tmp = aux.clone()
-    # aux[:, 0, 0] = D[:, 0]    
-    # aux[:, 1, 1] = D[:, 1]    
-    # aux[:, 2, 2] = D[:, 2]    
-    # a = (aux**0.5).bmm(R).bmm(tmp)
-    # p = a / a[:, 2, :].unsqueeze(1)
-    # p[:, :, 0] = p[:, :, 0] - p[:, :, 2]
-    # p[:, :, 1] = p[:, :, 1] - p[:, :, 2]
-    # p = p[:, :2]
-    
-    
-    Hi = torch.linalg.inv(H)
-    kp = Hi[:, :2, :]
+    aux = torch.zeros((H.shape[0], 3 , 3), device=device)
+    aux[:, 0, 0] = 1
+    aux[:, 1, 1] = 1
+    aux[:, 2] = 1
+    pt3 = H.inverse().bmm(aux)
+    pt2 = pt3 / pt3[:, 2, :].unsqueeze(1)
+    kp = torch.stack((pt2[:, :2, 0] - pt2[:, :2, 2], pt2[:, :2, 1] - pt2[:, :2, 2], pt2[:, :2, 2]), dim=-1)
+     
+#   Hi = torch.linalg.inv(H)
+#   kp = Hi[:, :2, :]
     
     if not (s is None):
         kp = kp * s.reshape(-1, 1, 1)
@@ -6797,6 +6792,7 @@ class mop_module:
         self.args = {
             'id_more': '',
             'miho': True,
+            'patch_radius': 16.0,
             'out_patch': True,
             'cfg': None,
             }
@@ -6848,12 +6844,27 @@ class mop_module:
 
         if not self.args['out_patch']: return {'m_mask': mm}
 
+        r = self.args['patch_radius']
+        S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device)
+
         kH0 = args['kH'][0]
         kH1 = args['kH'][1]
         for k1, k2 in enumerate(lidx):            
             if Hidx[k1] > -1:
-                kH0[mi[lidx[k2]][0]] = Hs[Hidx[k1]][0]
-                kH1[mi[lidx[k2]][1]] = Hs[Hidx[k1]][1]
+                p1 = args['kp'][0][mi[lidx[k2]][0]]
+                H1 = Hs[Hidx[k1]][0]
+                p1_ = H1 @ torch.tensor([p1[0], p1[1], 1], device=device).unsqueeze(1)
+                p1_ = (p1_ / p1_[2]).squeeze(1)
+                T1 = torch.tensor([[1, 0, -p1_[0].item()], [0, 1, -p1_[1].item()], [0, 0, 1]], device=device) 
+
+                p2 = args['kp'][1][mi[lidx[k2]][1]]
+                H2 = Hs[Hidx[k1]][1]
+                p2_ = H2 @ torch.tensor([p2[0], p2[1], 1], device=device).unsqueeze(1)
+                p2_ = (p2_ / p2_[2]).squeeze(1)
+                T2 = torch.tensor([[1, 0, -p2_[0].item()], [0, 1, -p2_[1].item()], [0, 0, 1]], device=device)
+
+                kH0[mi[lidx[k2]][0]] = (S @ T1 @ H1)
+                kH1[mi[lidx[k2]][1]] = (S @ T2 @ H2)
         
         return {'m_mask': mm, 'kH': [kH0, kH1]}
 
@@ -7308,7 +7319,7 @@ if __name__ == '__main__':
             deep_descriptor_module(),
             smnn_module(),
             show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
+            show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
             mop_module(),
             show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
             show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
