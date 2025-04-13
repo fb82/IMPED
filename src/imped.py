@@ -6812,8 +6812,9 @@ class mop_miho_ncc_module:
             'mop_miho_patches': True,
             'mop_miho_cfg': None,
             'ncc': True,
-            'ncc_todo': None, # ncc_to_do = {'eye', 'laf', 'mop_miho'}
+            'ncc_todo': None,          # ncc_to_do = {'eye', 'laf', 'mop_miho'}
             'ncc_cfg': None,
+            'affine_laf_miho': False,
             }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -6980,10 +6981,27 @@ class mop_miho_ncc_module:
 
             Z1 = T1.bmm(S).bmm(kH1)
             Z2 = T2.bmm(S).bmm(kH2)
-
+            
+            if self.args['affine_laf_miho']:                
+                N1 = Z1 / Z1[:, 2, 2].unsqueeze(1).unsqueeze(2)
+                N2 = Z2 / Z2[:, 2, 2].unsqueeze(1).unsqueeze(2)
+    
+                is_affine = (N1[:, 2].abs().sum(dim=1) - 1 < 1.0e-19) & (N2[:, 2].abs().sum(dim=1) - 1 < 1.0e-19)
+    
+                s1 = (N1[:, 0, 0] * N1[:, 1, 1] - N1[:, 0, 1] * N1[:, 1, 0]) ** 0.5 
+                s2 = (N2[:, 0, 0] * N2[:, 1, 1] - N2[:, 0, 1] * N2[:, 1, 0]) ** 0.5 
+    
+                s1[~is_affine] = 1 
+                s2[~is_affine] = 1
+                
+                s12 = (s1 * s2) ** 0.5
+    
+                Z1[:, :2, :] = Z1[:, :2, :] / s12.unsqueeze(1).unsqueeze(2)
+                Z2[:, :2, :] = Z2[:, :2, :] / s12.unsqueeze(1).unsqueeze(2) 
+    
             Hs_in = torch.stack((Z1, Z2), dim=1)
 
-            pt1_laf, pt2_laf, Hs_laf, val_laf, T_laf = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'], img_patches=False)   
+            pt1_laf, pt2_laf, Hs_laf, val_laf, T_laf = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'])   
             replace_idx = torch.argwhere((torch.cat((val_.unsqueeze(0),val_laf.unsqueeze(0)), dim=0)).max(dim=0)[1] == 1)
             pt1_[replace_idx] = pt1_laf[replace_idx]
             pt2_[replace_idx] = pt2_laf[replace_idx]
