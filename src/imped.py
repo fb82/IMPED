@@ -3,6 +3,7 @@ import warnings
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 import time
 from tqdm import tqdm
+import torchvision.transforms as transforms
 
 import torch
 import kornia as K
@@ -36,6 +37,10 @@ import sys
 
  
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+mop_miho.device = device
+mop.device = device
+ncc.device = device
+
 # device = torch.device('cpu')
 pipe_color = ['red', 'blue', 'lime', 'fuchsia', 'yellow']
 show_progress = True
@@ -1712,7 +1717,7 @@ class poselib_module:
             return {'m_mask': mm, 'H': F}
 
 
-def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False, device=None, io_device=None):
+def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False, device=None, io_device=None, patch_matters=False):
     if device is None: device = torch.device('cpu')
     if io_device is None: io_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -1891,7 +1896,12 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 rank0 = None
                 rank1 = None
             
-            idx0u, idx0r = sortrows(kp0.clone(), idx0, rank0)
+            if patch_matters:
+                kkp0 = torch.cat((kp0, kH0.reshape(-1, 9)), dim=1)
+            else:
+                kkp0 = kp0.clone()
+            
+            idx0u, idx0r = sortrows(kkp0, idx0, rank0)
             
             if counter:
                 counter_new = torch.zeros(idx0u.shape[0], device=device)
@@ -1903,7 +1913,12 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH0 = kH0[idx0u]
             kr0 = kr0[idx0u]
 
-            idx1u, idx1r = sortrows(kp1.clone(), idx1, rank1)
+            if patch_matters:
+                kkp1 = torch.cat((kp1, kH1.reshape(-1, 9)), dim=1)
+            else:
+                kkp1 = kp1.clone()
+
+            idx1u, idx1r = sortrows(kkp1, idx1, rank1)
  
             if counter:
                 counter_new = torch.zeros(idx1u.shape[0], device=device)
@@ -6782,6 +6797,262 @@ def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='
     cv2.imwrite(save_to, imm.type(torch.uint8).detach().cpu().numpy())   
  
 
+class mop_miho_ncc_module:
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+        self.add_to_cache = True
+                        
+        self.args = {
+            'id_more': '',
+            'patch_radius': 16.0,
+            'mop': True,
+            'miho': True,
+            'mop_miho_patches': True,
+            'mop_miho_cfg': None,
+            'ncc': True,
+            'ncc_todo': None, # ncc_to_do = {'eye', 'laf', 'mop_miho'}
+            'ncc_cfg': None,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('', args, self.args)        
+
+        id_prefix = ''
+        if self.args['mop']: id_prefix = id_prefix + '_mop' 
+        if self.args['miho']: id_prefix = id_prefix + '_miho' 
+        if self.args['ncc']: id_prefix = id_prefix + '_ncc' 
+        if id_prefix == '': id_prefix = 'no_mop_miho_ncc'
+        self.id_string = id_prefix + self.id_string
+
+        self.mop = None
+        if self.args['mop']:
+            if self.args['miho']: self.mop = mop_miho.miho()  
+            else: self.mop = mop.miho()
+        
+            mop_miho_cfg = self.mop.get_current()
+        
+            if not (self.args['mop_miho_cfg'] is None) and isinstance(self.args['mop_miho_cfg'], dict):
+                for k in self.args['mop_miho_cfg']:
+                    mop_miho_cfg[k] = self.args['mop_miho_cfg'][k]
+
+            self.mop.update_params(mop_miho_cfg)  
+            
+        if self.args['ncc_todo'] is None: self.args['ncc_todo'] = {'eye', 'laf', 'mop_miho'}
+
+        if self.args['ncc_cfg'] is None:
+            self.args['ncc_cfg'] = {
+                'w': 10,
+                'w_big': None,
+                'angle': [-30, -15, 0, 15, 30],
+                'scale': [[10/14, 1], [10/12, 1], [1, 1], [1, 12/10], [1, 14/10]],
+                'subpix': True,
+                'ref_image': 'both',
+                }
+
+        self.transform = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.PILToTensor() 
+            ]) 
+
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+        
+    def run(self, **args):        
+        if not (self.mop is None):
+            mi = args['m_idx']                     
+            mm = args['m_mask']
+        
+            pt1 = args['kp'][0][mi[mm][:, 0]]
+            pt2 = args['kp'][1][mi[mm][:, 1]]
+
+            lidx = torch.arange(mm.shape[0], device=device)[mm]
+            Hs_mop_, Hidx = self.mop.planar_clustering(pt1, pt2)
+
+            mask = Hidx > -1
+            mm[lidx] = mask   
+            
+            if not len(self.args['ncc_todo']):
+                if (not self.args['mop_miho_patches']) or (not len(Hs_mop_)):
+                    return {'m_mask': mm}
+                            
+                kH0 = args['kH'][0]
+                kH1 = args['kH'][1]
+                
+                lidx = lidx[Hidx > -1]                
+                
+                p1 = args['kp'][0][mi[lidx, 0]]
+                p2 = args['kp'][1][mi[lidx, 1]]
+
+                r = self.args['patch_radius']
+                S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(p1.shape[0], 1, 1)
+                                
+                Ha = torch.stack([Hs_mop_[i][0] for i in range(len(Hs_mop_))], dim=0)
+                Hb = torch.stack([Hs_mop_[i][1] for i in range(len(Hs_mop_))], dim=0)
+                                
+                H1 = Ha[Hidx[Hidx > -1]]
+                H2 = Hb[Hidx[Hidx > -1]]
+                
+                p1_ = H1.bmm(torch.cat((p1, torch.ones((p1.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+                p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
+
+                p2_ = H2.bmm(torch.cat((p2, torch.ones((p2.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+                p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
+
+                T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+                T1[:, :2, 2] = -p1_[:, :2].squeeze(-1)
+
+                T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+                T2[:, :2, 2] = -p2_[:, :2].squeeze(-1)
+
+                kH0[mi[lidx, 0]] = S.bmm(T1).bmm(H1)
+                kH1[mi[lidx, 1]] = S.bmm(T2).bmm(H2)
+                
+                return {'m_mask': mm, 'kH': [kH0, kH1]}
+            
+        if len(self.args['ncc_todo']):
+            pt1 = args['kp'][0]
+            pt2 = args['kp'][1]
+    
+            H1 = args['kH'][0]
+            H2 = args['kH'][1]
+
+            im1 = Image.open(args['img'][0])
+            im2 = Image.open(args['img'][1])
+    
+            im1 = self.transform(im1).type(torch.float16).to(device)
+            im2 = self.transform(im2).type(torch.float16).to(device)               
+                    
+            mi = args['m_idx']                     
+            if self.mop is None: mm = args['m_mask']
+
+            lidx = torch.arange(mm.shape[0], device=device)[mm]
+            l = lidx.shape[0]
+                    
+            pt1_base = args['kp'][0][mi[lidx, 0]]
+            pt2_base = args['kp'][1][mi[lidx, 1]]
+
+            kr1 = args['kr'][0][mi[lidx, 0]]
+            kr2 = args['kr'][1][mi[lidx, 1]]
+
+            pt1_ = pt1_base
+            pt2_ = pt2_base
+            Hs_ = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            T_ = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            val_ = torch.full((l, ), -np.inf, device=device)
+                        
+        if ('eye' in self.args['ncc_todo']) and mm.sum():
+            Hs_in = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            
+            pt1_eye, pt2_eye, Hs_eye, val_eye, T_eye = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'], img_patches=False)   
+            replace_idx = torch.argwhere((torch.cat((val_.unsqueeze(0),val_eye.unsqueeze(0)), dim=0)).max(dim=0)[1] == 1)
+            pt1_[replace_idx] = pt1_eye[replace_idx]
+            pt2_[replace_idx] = pt2_eye[replace_idx]
+            Hs_[replace_idx] = Hs_eye[replace_idx]
+            val_[replace_idx] = val_eye[replace_idx]
+            T_[replace_idx] = T_eye.reshape(T_eye.shape[0] // 2, 2, 3, 3)[replace_idx]
+                        
+        if ('laf' in self.args['ncc_todo']) and mm.sum():
+            r = self.args['patch_radius']
+            S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(l, 1, 1)
+
+            kH1 = args['kH'][0][mi[lidx, 0]]
+            kH2 = args['kH'][1][mi[lidx, 1]]
+
+            p1_ = kH1.bmm(torch.cat((pt1_base, torch.ones((pt1_base.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
+
+            p2_ = kH2.bmm(torch.cat((pt2_base, torch.ones((pt2_base.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
+
+            T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+            T1[:, :2, 2] = p1_[:, :2].squeeze(-1)
+
+            T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+            T2[:, :2, 2] = p2_[:, :2].squeeze(-1)
+
+            Z1 = T1.bmm(S).bmm(kH1)
+            Z2 = T2.bmm(S).bmm(kH2)
+
+            Hs_in = torch.stack((Z1, Z2), dim=1)
+
+            pt1_laf, pt2_laf, Hs_laf, val_laf, T_laf = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'], img_patches=False)   
+            replace_idx = torch.argwhere((torch.cat((val_.unsqueeze(0),val_laf.unsqueeze(0)), dim=0)).max(dim=0)[1] == 1)
+            pt1_[replace_idx] = pt1_laf[replace_idx]
+            pt2_[replace_idx] = pt2_laf[replace_idx]
+            Hs_[replace_idx] = Hs_laf[replace_idx]
+            val_[replace_idx] = val_laf[replace_idx]
+            T_[replace_idx] = T_laf.reshape(T_laf.shape[0] // 2, 2, 3, 3)[replace_idx]
+            
+        if (not (self.mop is None)) and ('mop_miho' in self.args['ncc_todo']) and mm.sum():                        
+            Hs_in = torch.zeros((l, 2, 3, 3), device=device)
+                        
+            Hidx_ = Hidx[Hidx > -1]
+            for i in torch.arange(l):                           
+                 Hs_in[i, 0] = Hs_mop_[Hidx_[i]][0]
+                 Hs_in[i, 1] = Hs_mop_[Hidx_[i]][1]
+                 
+            pt1_mop, pt2_mop, Hs_mop, val_mop, T_mop = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'], img_patches=False)   
+            replace_idx = torch.argwhere((torch.cat((val_.unsqueeze(0),val_mop.unsqueeze(0)), dim=0)).max(dim=0)[1] == 1)
+            pt1_[replace_idx] = pt1_mop[replace_idx]
+            pt2_[replace_idx] = pt2_mop[replace_idx]
+            Hs_[replace_idx] = Hs_mop[replace_idx]
+            val_[replace_idx] = val_mop[replace_idx]
+            T_[replace_idx] = T_mop.reshape(T_mop.shape[0] // 2, 2, 3, 3)[replace_idx]
+
+        if len(self.args['ncc_todo']) and mm.sum():            
+            pipe_unchanged = {
+                'kp': args['kp'],
+                'kr': args['kr'],
+                'kH': args['kH'],
+                'm_idx': args['m_idx'][~mm],
+                'm_val': torch.full(((~mm).sum(),), np.nan, device=device, dtype=torch.bool),
+                'm_mask': mm[~mm],
+                }
+    
+            r = self.args['patch_radius']
+            S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(mm.sum(), 1, 1)
+                            
+            H1 = Hs_[:, 0]
+            H2 = Hs_[:, 1]
+                                    
+            p1_ = H1.bmm(torch.cat((pt1_, torch.ones((pt1_.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
+    
+            p2_ = H2.bmm(torch.cat((pt2_, torch.ones((pt2_.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
+    
+            T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+            T1[:, :2, 2] = -p1_[:, :2].squeeze(-1)
+    
+            T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+            T2[:, :2, 2] = -p2_[:, :2].squeeze(-1)
+    
+            Hs1 = S.bmm(T1).bmm(H1)
+            Hs2 = S.bmm(T2).bmm(H2)
+    
+            pipe_mod = {
+                'kp': [pt1_, pt2_],
+                'kr': [kr1, kr2],
+                'kH': [Hs1, Hs2],
+                'm_idx': torch.arange(pt1_.shape[0], device=device).unsqueeze(1).repeat(1, 2),
+                'm_val': val_,
+                'm_mask': mm[mm],
+                }
+    
+            pipe_out = pipe_union([pipe_unchanged, pipe_mod], unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, preserve_order=True, patch_matters=True)
+            return pipe_out
+        
+        return {}
+
+
 class mop_module:
     def __init__(self, **args):       
         self.single_image = False    
@@ -7027,7 +7298,7 @@ if __name__ == '__main__':
 #       ]
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)  
- 
+
 
 #       pipeline = [
 #           roma_module(),
@@ -7320,7 +7591,7 @@ if __name__ == '__main__':
             smnn_module(),
             show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
             show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
-            mop_module(),
+            mop_miho_ncc_module(),
             show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
             show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
             magsac_module(),
