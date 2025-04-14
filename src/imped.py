@@ -6806,7 +6806,7 @@ class mop_miho_ncc_module:
                         
         self.args = {
             'id_more': '',
-            'patch_radius': 16.0,
+            'patch_radius': 16,
             'mop': True,
             'miho': True,
             'mop_miho_patches': True,
@@ -6962,7 +6962,7 @@ class mop_miho_ncc_module:
                         
         if ('laf' in self.args['ncc_todo']) and mm.sum():
             r = self.args['patch_radius']
-            S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(l, 1, 1)
+            S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=device).unsqueeze(0).repeat(l, 1, 1)
 
             kH1 = args['kH'][0][mi[lidx, 0]]
             kH2 = args['kH'][1][mi[lidx, 1]]
@@ -6986,7 +6986,7 @@ class mop_miho_ncc_module:
                 N1 = Z1 / Z1[:, 2, 2].unsqueeze(1).unsqueeze(2)
                 N2 = Z2 / Z2[:, 2, 2].unsqueeze(1).unsqueeze(2)
     
-                is_affine = (N1[:, 2].abs().sum(dim=1) - 1 < 1.0e-19) & (N2[:, 2].abs().sum(dim=1) - 1 < 1.0e-19)
+                is_affine = (N1[:, 2, :2].abs().sum(dim=1) < 1.0e-8) & (N2[:, 2, :2].abs().sum(dim=1) < 1.0e-8)
     
                 s1 = (N1[:, 0, 0] * N1[:, 1, 1] - N1[:, 0, 1] * N1[:, 1, 0]) ** 0.5 
                 s2 = (N2[:, 0, 0] * N2[:, 1, 1] - N2[:, 0, 1] * N2[:, 1, 0]) ** 0.5 
@@ -7071,37 +7071,78 @@ class mop_miho_ncc_module:
         return {}
 
 
-class mop_module:
-    def __init__(self, **args):       
-        self.single_image = False    
-        self.pipeliner = False     
-        self.pass_through = False
+class show_patches_module:
+    @staticmethod
+    def go_save_diff_patches(im1, im2, pt1, pt2, Hs, w, save_prefix='patch_diff_', stretch=False, grid=[40, 50], save_suffix='.png'):        
+        # warning image must be grayscale and not rgb!
+    
+        pt1_, pt2_, _, Hi1, Hi2 = ncc.get_inverse(pt1, pt2, Hs) 
+                
+        patch1 = ncc.patchify(im1, pt1_, Hi1, w)
+        patch2 = ncc.patchify(im2, pt2_, Hi2, w)
+        
+        for k in range(pt1.shape[0]):
+            pp = patch1[k]
+            pm = torch.isfinite(pp)
+            m_ = pp[pm].min()
+            M_ = pp[pm].max()
+            pp[pm] = (pp[pm] - m_) / (M_ - m_)            
+            patch1[k] = pp * 255        
+        
+            pp = patch2[k]
+            pm = torch.isfinite(pp)
+            m_ = pp[pm].min()
+            M_ = pp[pm].max()
+            pp[pm] = (pp[pm] - m_) / (M_ - m_)            
+            patch2[k] = pp * 255       
+        
+        mask1 = torch.isfinite(patch1) & (~torch.isfinite(patch2))
+        patch2[mask1] = 0
+    
+        mask2 = torch.isfinite(patch2) & (~torch.isfinite(patch1))
+        patch1[mask2] = 0
+    
+        both_patches = torch.zeros((3, patch1.shape[0], patch1.shape[1], patch1.shape[2]), dtype=torch.float32, device=device)
+        both_patches[0] = patch1
+        both_patches[1] = patch2
+    
+        ncc.save_patch(both_patches, save_prefix=save_prefix, save_suffix=save_suffix, stretch=stretch, grid=grid)
+
+
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False        
+        self.pass_through = True
         self.add_to_cache = True
-                        
+
         self.args = {
             'id_more': '',
-            'miho': True,
-            'patch_radius': 16.0,
-            'out_patch': True,
-            'cfg': None,
-            }
+            'img_prefix': '',
+            'img_suffix': '',
+            'cache_path': 'show_imgs',
+            'prepend_pair': True,
+            'ext': '.png',
+            'force': False,
+            'grid': [40, 50],
+            'stretch': True,
+            'max_patches': np.inf,
+            'only_valid': True,
+            'show_mode': {'overlay', 'separated'},
+            'patch_radius': 16,
+            'w': 10,
+            'affine_laf_miho': False,
+        }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
-                
-        self.id_string, self.args = set_args('', args, self.args)        
+                        
+        self.id_string, self.args = set_args('show_patches' , args, self.args)
 
-        id_prefix = 'mop_miho' if self.args['miho'] else 'mop'
-        self.id_string = id_prefix + self.id_string
+        self.transform_gray = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.PILToTensor() 
+            ]) 
 
-        self.mop = mop_miho.miho() if self.args['miho'] else mop.miho()
-        
-        cfg = self.mop.get_current()
-        
-        if not (self.args['cfg'] is None) and isinstance(self.args['cfg'], dict):
-            for k in self.args['cfg']:
-                cfg[k] = self.args['cfg'][k]
-
-            self.mop.update_params(cfg)            
+        self.transform = transforms.PILToTensor() 
 
 
     def get_id(self): 
@@ -7111,51 +7152,114 @@ class mop_module:
     def finalize(self):
         return
 
-        
-    def run(self, **args):  
-        pt1_ = args['kp'][0]
-        pt2_ = args['kp'][1]
+    
+    def run(self, **args):     
+        img0 = args['img'][0]
+        img1 = args['img'][1]
+            
+        im0 = os.path.splitext(os.path.split(img0)[1])[0]
+        im1 = os.path.splitext(os.path.split(img1)[1])[0]
 
-        mi = args['m_idx']
+        if self.args['prepend_pair']:            
+            cache_path = os.path.join(self.args['cache_path'], im0 + '_' + im1)
+        else:
+            cache_path = self.args['cache_path']
+                
+        new_img0_prefix = os.path.join(cache_path, self.args['img_prefix'] + im0 + '_')
+        new_img1_prefix = os.path.join(cache_path, self.args['img_prefix'] + im1 + '_')
+        new_img01_prefix = os.path.join(cache_path, self.args['img_prefix'] + im0 + '_' + im1 + '_')
+        new_img_suffix = self.args['img_suffix'] + self.args['ext']
+        
+        if not ('m_idx' in args): return {}
+                
+        mi = args['m_idx']                     
         mm = args['m_mask']
+
+        lidx = torch.arange(mm.shape[0], device=device)
+        if self.args['only_valid']: lidx = lidx[mm]
+                
+        pt1 = args['kp'][0][mi[lidx, 0]]
+        pt2 = args['kp'][1][mi[lidx, 1]]
+
+        H1 = args['kH'][0][mi[lidx, 0]]
+        H2 = args['kH'][1][mi[lidx, 1]]
+
+        v = args['m_val'][lidx]
         
-        pt1 = pt1_[mi[mm][:, 0]]
-        pt2 = pt2_[mi[mm][:, 1]]
-
-        lidx = torch.arange(args['m_mask'].shape[0], device=device)[args['m_mask']]
+        if len(v) == 0: return {}
         
-        Hs, Hidx = self.mop.planar_clustering(pt1, pt2)
+        zidx = v.argsort(descending=True)
+        zidx = zidx[:min(len(zidx), self.args['max_patches'])]
 
-        mask = Hidx > -1
-         
-        aux = mm.clone()
-        mm[aux] = mask
+        pt1 = pt1[zidx]
+        pt2 = pt2[zidx]
 
-        if not self.args['out_patch']: return {'m_mask': mm}
+        kH1 = H1[zidx]
+        kH2 = H2[zidx]
+
+        run_separated = True if ('separated' in self.args['show_mode']) or ('both' in self.args['show_mode']) else False
+        run_overlay = True if ('overlay' in self.args['show_mode']) or ('both' in self.args['show_mode']) else False
+
+        if run_separated or run_overlay: os.makedirs(cache_path, exist_ok=True)
+        
+        l = len(zidx)       
 
         r = self.args['patch_radius']
-        S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device)
+        S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=device).unsqueeze(0).repeat(l, 1, 1)
 
-        kH0 = args['kH'][0]
-        kH1 = args['kH'][1]
-        for k1, k2 in enumerate(lidx):            
-            if Hidx[k1] > -1:
-                p1 = args['kp'][0][mi[lidx[k2]][0]]
-                H1 = Hs[Hidx[k1]][0]
-                p1_ = H1 @ torch.tensor([p1[0], p1[1], 1], device=device).unsqueeze(1)
-                p1_ = (p1_ / p1_[2]).squeeze(1)
-                T1 = torch.tensor([[1, 0, -p1_[0].item()], [0, 1, -p1_[1].item()], [0, 0, 1]], device=device) 
+        p1_ = kH1.bmm(torch.cat((pt1, torch.ones((pt1.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+        p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
 
-                p2 = args['kp'][1][mi[lidx[k2]][1]]
-                H2 = Hs[Hidx[k1]][1]
-                p2_ = H2 @ torch.tensor([p2[0], p2[1], 1], device=device).unsqueeze(1)
-                p2_ = (p2_ / p2_[2]).squeeze(1)
-                T2 = torch.tensor([[1, 0, -p2_[0].item()], [0, 1, -p2_[1].item()], [0, 0, 1]], device=device)
+        p2_ = kH2.bmm(torch.cat((pt2, torch.ones((pt2.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+        p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
 
-                kH0[mi[lidx[k2]][0]] = (S @ T1 @ H1)
-                kH1[mi[lidx[k2]][1]] = (S @ T2 @ H2)
+        T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+        T1[:, :2, 2] = p1_[:, :2].squeeze(-1)
+
+        T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+        T2[:, :2, 2] = p2_[:, :2].squeeze(-1)
+
+        Z1 = T1.bmm(S).bmm(kH1)
+        Z2 = T2.bmm(S).bmm(kH2)
         
-        return {'m_mask': mm, 'kH': [kH0, kH1]}
+        if self.args['affine_laf_miho']:                
+            N1 = Z1 / Z1[:, 2, 2].unsqueeze(1).unsqueeze(2)
+            N2 = Z2 / Z2[:, 2, 2].unsqueeze(1).unsqueeze(2)
+
+            is_affine = (N1[:, 2, :2].abs().sum(dim=1) < 1.0e-8) & (N2[:, 2, :2].abs().sum(dim=1) < 1.0e-8)
+
+            s1 = (N1[:, 0, 0] * N1[:, 1, 1] - N1[:, 0, 1] * N1[:, 1, 0]) ** 0.5 
+            s2 = (N2[:, 0, 0] * N2[:, 1, 1] - N2[:, 0, 1] * N2[:, 1, 0]) ** 0.5 
+
+            s1[~is_affine] = 1 
+            s2[~is_affine] = 1
+            
+            s12 = (s1 * s2) ** 0.5
+
+            Z1[:, :2, :] = Z1[:, :2, :] / s12.unsqueeze(1).unsqueeze(2)
+            Z2[:, :2, :] = Z2[:, :2, :] / s12.unsqueeze(1).unsqueeze(2) 
+
+        Hs = torch.stack((Z1, Z2), dim=1)
+
+        if run_separated:
+            pt1_, pt2_, _, Hi1, Hi2 = ncc.get_inverse(pt1, pt2, Hs) 
+                    
+            ima0 = self.transform(Image.open(img0)).type(torch.float16).to(device)
+            ima1 = self.transform(Image.open(img1)).type(torch.float16).to(device)
+
+            patch1 = ncc.patchify(ima0, pt1_, Hi1, self.args['w'])
+            patch2 = ncc.patchify(ima1, pt2_, Hi2, self.args['w'])
+        
+            ncc.save_patch(patch1, save_prefix=new_img0_prefix, save_suffix=new_img_suffix, grid=self.args['grid'], stretch=self.args['stretch'])
+            ncc.save_patch(patch2, save_prefix=new_img1_prefix, save_suffix=new_img_suffix, grid=self.args['grid'], stretch=self.args['stretch'])
+
+        if run_overlay:
+            ima0 = self.transform_gray(Image.open(img0)).type(torch.float16).to(device)
+            ima1 = self.transform_gray(Image.open(img1)).type(torch.float16).to(device)
+
+            self.go_save_diff_patches(ima0, ima1, pt1, pt2, Hs, self.args['w'], save_prefix=new_img01_prefix, stretch=self.args['stretch'], grid=self.args['grid'], save_suffix=new_img_suffix)
+
+        return {}
 
 
 if __name__ == '__main__':    
@@ -7612,6 +7716,7 @@ if __name__ == '__main__':
             mop_miho_ncc_module(),
             show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
             show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
+            show_patches_module(id_more='first', img_prefix='block_patches_', prepend_pair=True),
             magsac_module(),
             show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
             show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
