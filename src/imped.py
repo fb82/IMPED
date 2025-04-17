@@ -6842,6 +6842,7 @@ class mop_miho_ncc_module:
             self.mop.update_params(mop_miho_cfg)  
             
         if self.args['ncc_todo'] is None: self.args['ncc_todo'] = {'eye', 'laf', 'mop_miho'}
+        if not self.args['ncc']: self.args['ncc_todo'] = {}
 
         if self.args['ncc_cfg'] is None:
             self.args['ncc_cfg'] = {
@@ -7260,6 +7261,220 @@ class show_patches_module:
             self.go_save_diff_patches(ima0, ima1, pt1, pt2, Hs, self.args['w'], save_prefix=new_img01_prefix, stretch=self.args['stretch'], grid=self.args['grid'], save_suffix=new_img_suffix)
 
         return {}
+
+
+class blob_matching_module:    
+    def __init__(self, **args):
+        self.single_image = False    
+        self.pipeliner = False      
+        self.pass_through = False
+        self.add_to_cache = True
+                                
+        self.args = {
+            'id_more': '',
+            'pf': 10, # f = 10 with union
+            'pn': 5,  # f' = 5
+            'ps': 16, # to = 10
+            'use_stats': True,
+            'out_idx': 10,
+            'distance': 'L2',
+            'split_sz': 1024,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('blob_matching', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+    
+
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        pt1 = args['kp'][0]
+        pt2 = args['kp'][1]
+        
+        desc1 = args['desc'][0].to(torch.float32)
+        desc2 = args['desc'][1].to(torch.float32)
+
+        ss = self.args['split_sz']
+        
+        desc1_blk = torch.split(desc1, ss, dim=0)
+        desc2_blk = torch.split(desc2, ss, dim=0)
+
+        pn = self.args['pn']
+        ps = self.args['ps']
+
+        m = torch.zeros((pt1.shape[0], pt2.shape[0]), dtype=torch.float32, device=device)
+                
+        pmn = 2
+        if self.args['distance'] == 'L1': pmn = 1
+        
+        for i in torch.arange(0, len(desc1_blk)):
+            for j in torch.arange(0, len(desc2_blk)):
+                v1 = desc1_blk[i]
+                v2 = desc2_blk[j]
+
+                m[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]] = torch.cdist(v1.unsqueeze(0), v2.unsqueeze(0), p=pmn)
+
+        m[m==0] = 1.0e-18        
+        
+        s = m.shape
+        pf = self.args['pf'] if self.args['pf'] else torch.inf
+        sign_pf = np.sign(pf).item()
+        pf = abs(pf)
+
+        pf1 = min(pf, s[0])
+        pf2 = min(pf, s[1])
+        
+        mr = torch.sort(m, dim=0)[0][pf1, :].unsqueeze(0).repeat(s[0], 1)
+        mc = torch.sort(m, dim=1)[0][:, pf2].unsqueeze(1).repeat(1, s[1])
+        
+        mm = m.clone()
+        if sign_pf > 0:
+            mm[(mm > mr) & (mm > mc)] = torch.inf
+        else:
+            mm[(mm > mr) | (mm > mc)] = torch.inf
+        
+        t, idx = torch.sort(mm.flatten())
+        i = idx // s[1]
+        j = idx % s[1]
+
+        kt = torch.isfinite(t)
+        idx = idx[kt]
+        t = t[kt].to('cpu').numpy()
+        i = i[kt].to('cpu').numpy()
+        j = j[kt].to('cpu').numpy()
+        
+        r = np.zeros(s[0], dtype=int)
+        c = np.zeros(s[1], dtype=int)
+        l = min(s[0], s[1])
+        p = np.zeros((l * pn, 2), dtype=int)
+        v = np.zeros(l * pn)
+                
+        kc = 0
+        for k in range(idx.shape[0]):
+            if (r[i[k]] < pn) and (c[j[k]] < pn):
+                r[i[k]] += 1
+                c[j[k]] += 1
+                p[kc, 0] = i[k]
+                p[kc, 1] = j[k]
+                v[kc] = t[k]
+                kc += 1
+            if kc >= l * pn: break
+
+        p = torch.tensor(p[:kc], device=device)
+        v = torch.tensor(v[:kc], device=device)
+
+
+        if not self.args['use_stats']:
+            stat_a = torch.zeros((pt1.shape[0], pt1.shape[0]), device=device, dtype=bool)
+            stat_b = torch.zeros((pt2.shape[0], pt2.shape[0]), device=device, dtype=bool)
+        else:
+            stat_a = torch.zeros((pt1.shape[0], pt1.shape[0]), dtype=torch.float32, device=device)            
+            pt1_blk = torch.split(pt1, ss, dim=0)
+            
+            for i in torch.arange(0, len(pt1_blk)):
+                for j in torch.arange(i, len(pt1_blk)):
+                    v1 = pt1_blk[i]
+                    v2 = pt1_blk[j]
+                        
+                    stat_a[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]] = ((v1[:, 0].unsqueeze(-1) - v2[:, 0].unsqueeze(0)) ** 2 + (v1[:, 1].unsqueeze(-1) - v2[:, 1].unsqueeze(0)) ** 2) ** 0.5
+                    stat_a[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_a[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T
+
+            stat_a = stat_a <= ps          
+
+            stat_b = torch.zeros((pt2.shape[0], pt2.shape[0]), dtype=torch.float32, device=device)            
+            pt2_blk = torch.split(pt2, self.args['split_sz'], dim=0)
+            
+            for i in torch.arange(0, len(pt2_blk)):
+                for j in torch.arange(i, len(pt2_blk)):
+                    v1 = pt2_blk[i]
+                    v2 = pt2_blk[j]
+                        
+                    stat_b[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]] = ((v1[:, 0].unsqueeze(-1) - v2[:, 0].unsqueeze(0)) ** 2 + (v1[:, 1].unsqueeze(-1) - v2[:, 1].unsqueeze(0)) ** 2) ** 0.5
+                    stat_b[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_b[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T
+
+            stat_b = stat_b <= ps   
+
+        l = p.shape[0]
+        pp = torch.zeros((l, 15), device = device)
+        for k in range(l):
+            v = m[p[k, 0], p[k, 1]]
+            
+            aux_r = m[p[k, 0]].clone()
+            aux_r[aux_r < v] = torch.inf
+            aux_r[p[k, 1]] = torch.inf
+            
+            mask_r = stat_b[p[k, 1]]
+            aux_r[mask_r] = torch.inf
+            
+            vr = aux_r.min()
+
+            aux_c = m[:, p[k, 1]].clone()
+            aux_c[aux_c < v] = torch.inf
+            aux_c[p[k, 0]] = torch.inf
+            
+            mask_c = stat_a[p[k, 0]]
+            aux_c[mask_c] = torch.inf
+            
+            vc = aux_c.min()
+            
+            if torch.isinf(vr): vr = v
+            if torch.isinf(vc): vc = v
+
+            pp[k, 0] = 2 * v / (vr + vc)                
+            pp[k, 1] = min(v / vr, v / vc)                
+            pp[k, 2] = max(v / vr, v / vc)                
+            pp[k, 3] = v / vr                
+            pp[k, 4] = v / vc                
+
+            pp[k, 5] = (2 * v) / (2 * v + vr + vc)                
+            pp[k, 6] = min(v / (v + vr), v / (v + vc))                
+            pp[k, 7] = max(v / (v + vr), v / (v + vc))  
+            pp[k, 8] = v / (v + vr)                
+            pp[k, 9] = v / (v + vc)                
+            
+            aux_r = m[p[k, 0]].clone()
+            aux_r[p[k, 1]] = torch.inf
+            
+            mask_r = stat_b[p[k, 1]]
+            aux_r[mask_r] = torch.inf
+            
+            vr = aux_r.min()
+
+            aux_c = m[:, p[k, 1]].clone()
+            aux_c[p[k, 0]] = torch.inf
+            
+            mask_c = stat_a[p[k, 0]]
+            aux_c[mask_c] = torch.inf
+            
+            vc = aux_c.min()
+
+            if torch.isinf(vr): vr = v
+            if torch.isinf(vc): vc = v
+
+            pp[k, 10] = (2 * v) / (2 * v + vr + vc)                
+            pp[k, 11] = min(v / (v + vr), v / (v + vc))                
+            pp[k, 12] = max(v / (v + vr), v / (v + vc))  
+            pp[k, 13] = v / (v + vr)                
+            pp[k, 14] = v / (v + vc)                
+    
+            pp[k, 10] = pp[k, 10] / (1 - pp[k, 10])                
+            pp[k, 11] = pp[k, 11] / (1 - pp[k, 11])                
+            pp[k, 12] = pp[k, 12] / (1 - pp[k, 12])                
+            pp[k, 13] = pp[k, 13] / (1 - pp[k, 13])                
+            pp[k, 14] = pp[k, 14] / (1 - pp[k, 14])                
+
+        idx = torch.argsort(pp[:, self.args['out_idx']])
+        m_idx = p[idx]
+        val = pp[idx, self.args['out_idx']]
+        
+        return {'m_idx': m_idx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=device, dtype=torch.bool)}
 
 
 if __name__ == '__main__':    
@@ -7723,5 +7938,29 @@ if __name__ == '__main__':
 #       ]
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs) 
+
+
+        pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#               [
+                    dog_module(),
+                    patch_module(),
+                    deep_descriptor_module(),
+                    blob_matching_module(),   
+#               ],
+#               [
+#                   hz_module(),
+#                   patch_module(),
+#                   deep_descriptor_module(),
+#                   blob_matching_module(),                      
+#               ],
+#           ]),
+            mop_miho_ncc_module(),
+            magsac_module(),
+            show_matches_module(img_prefix='matches_final_', mask_idx=[0, 1]),
+        ]
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs) 
+
 
         print('doh!')
