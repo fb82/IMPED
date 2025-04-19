@@ -31,3 +31,6 @@
 [submodule "src/miho"]
 	path = src/miho
 	url = https://github.com/fb82/MiHo
+[submodule "src/mast3r"]
+	path = src/mast3r
+	url = https://github.com/naver/mast3r.git
