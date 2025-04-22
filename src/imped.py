@@ -7900,6 +7900,7 @@ class dust3r_module:
             'niter': 300,
             'resize': 512, 
             'patch_radius': 16,
+            '3D_pose_refinement': False,
             }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -7926,7 +7927,7 @@ class dust3r_module:
         image0 = args['img'][0]
         image1 = args['img'][1]
 
-        with torch.inference_mode(mode=False):        
+        with torch.inference_mode(mode=(not self.args['3D_pose_refinement'])):        
             images = dust3r_load_images([image0, image1], size=self.args['resize'], verbose=False)
             pairs = dust3r_make_pairs(images, scene_graph='complete', prefilter=None, symmetrize=True)
             output = dust3r_inference(pairs, self.model, device, batch_size=1, verbose=False)
@@ -7950,8 +7951,11 @@ class dust3r_module:
             # with only two input images, you could use GlobalAlignerMode.PairViewer: it would just convert the output
             # if using GlobalAlignerMode.PairViewer, no need to run compute_global_alignment
         
-            # scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PairViewer)      
-            scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer, verbose=False)
+            if not self.args['3D_pose_refinement']:
+                scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PairViewer, verbose=False)      
+            else:
+                scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer, verbose=False)
+
             loss = scene.compute_global_alignment(init="mst", niter=self.args['niter'], schedule=self.args['schedule'], lr=self.args['lr'])
     
         # retrieve useful values from scene:
