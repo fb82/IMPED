@@ -984,13 +984,13 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
         lg = len(gt_dataset)
         lu = len(user_dataset)
                
-        model_table = []
-        registered_table = np.zeros((lt, lg, lu))
-        mAA_table = np.zeros((lg, lu))
-        mAA_th_table = np.zeros((lt, lg, lu))
-        cluster_table = np.zeros((lg, lu))
+        model_table = []        
+        registered_table = np.full((lt, lg, lu), -1.)
+        mAA_table = np.full((lg, lu), -1.)
+        mAA_th_table = np.full((lt, lg, lu), -1.)
+        cluster_table = np.full((lg, lu), -1.)
         gt_scene_sum_table = np.zeros((lg, lu))
-        user_scene_sum_table = np.zeros((lg, lu))
+        user_scene_sum_table = np.zeros((lg, lu))        
 
         best_gt_scene = [[] for k in range(ll)]
         best_user_scene = [[] for k in range(ll)]
