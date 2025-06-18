@@ -1537,7 +1537,7 @@ class image_muxer_module:
                 pipe_data_out['F'] = warp_[1].to(torch.double).inverse().permute((1, 0)) @ pipe_data_out['F'] @ warp_[0].to(torch.double).inverse()
                         
             pipe_data_block.append(pipe_data_out)
-        
+                    
         return self.pipe_gather(pipe_data_block)
         
 
@@ -7386,7 +7386,7 @@ class blob_matching_module:
                     v2 = pt1_blk[j]
                         
                     stat_a[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]] = ((v1[:, 0].unsqueeze(-1) - v2[:, 0].unsqueeze(0)) ** 2 + (v1[:, 1].unsqueeze(-1) - v2[:, 1].unsqueeze(0)) ** 2) ** 0.5
-                    stat_a[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_a[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T
+                    stat_a[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_a[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T.clone()
 
             stat_a = stat_a <= ps          
 
@@ -7399,7 +7399,7 @@ class blob_matching_module:
                     v2 = pt2_blk[j]
                         
                     stat_b[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]] = ((v1[:, 0].unsqueeze(-1) - v2[:, 0].unsqueeze(0)) ** 2 + (v1[:, 1].unsqueeze(-1) - v2[:, 1].unsqueeze(0)) ** 2) ** 0.5
-                    stat_b[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_b[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T
+                    stat_b[j * ss:j * ss + v2.shape[0], i * ss:i * ss + v1.shape[0]] = stat_b[i * ss:i * ss + v1.shape[0], j * ss:j * ss + v2.shape[0]].T.clone()
 
             stat_b = stat_b <= ps   
 
@@ -8043,7 +8043,88 @@ class dust3r_module:
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
 
 
-if __name__ == '__main__':    
+def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, force=False):
+    img = cv2.imread(in_image)
+    sz = img.shape[:2]
+    sz_min = min(sz)
+    sz_max = max(sz)
+
+    os.makedirs(cache_path, exist_ok=True)
+
+    im_list = []
+    im_warp = []
+    for split in range(1, split_max +1):
+        unshared = 1 - (2 * shared)
+        total_len = (unshared * split) + (shared * (split - 1)) + (shared * 2)  
+        im_block = sz_min / total_len
+        
+        i = 0
+        m_min = []
+        while i + im_block - 1 < sz_min:
+            m_min.append([round(i), min(sz_min, round(i + im_block))])
+            i += (im_block * (shared + unshared))
+    
+        max_blocks = np.ceil((sz_max - (im_block * shared)) / (im_block - (im_block * shared)))
+        padded_len = max_blocks * (im_block - (im_block * shared)) + (im_block * shared)
+        padding = (padded_len - sz_max) / 2
+    
+        i = 0
+        m_max = []
+        while i + im_block - 1 < padded_len:
+            m_max.append([max(0, round(i - padding)), min(sz_max , round(min(padded_len, i + im_block) - padding))])
+            i += (im_block * (shared + unshared))    
+    
+        block_max = max(max([r-l for l, r in m_max]), max([r-l for l, r in m_min]))
+        if block_max > block_sz_max:
+            scale = block_sz_max / block_max
+        else:
+            scale = 1.0
+    
+        if sz_min == sz[0]:
+            row = m_min
+            col = m_max
+        else:
+            row = m_max
+            col = m_min
+            
+        for i, r in enumerate(row):
+            for j, c in enumerate(col):
+                new_img = img[r[0]:r[1], c[0]:c[1]]
+                T = torch.eye(3, device=device, dtype=torch.float)
+                T[0, 2] = -c[0]
+                T[1, 2] = -r[0]
+
+                S = torch.eye(3, device=device, dtype=torch.float)
+                if scale != 1.0:
+                    sc = round(scale * (c[1] - c[0]))
+                    sr = round(scale * (r[1] - r[0]))
+                    new_img = cv2.resize(new_img, (sc, sr), 0, 0, interpolation)
+                    
+                    S[0, 0] = sc / (c[1] - c[0])
+                    S[1, 1] = sr / (r[1] - r[0])
+
+                im_name, im_ext = os.path.splitext(os.path.split(in_image)[-1])                
+                im_name = os.path.join(cache_path, im_name + '_' + str(split - 1) + '_' + str(i) + '_' + str(j) + '.png')                 
+                
+                if not os.path.isfile(im_name) or force:                
+                    cv2.imwrite(im_name, new_img)
+                
+                im_list.append(im_name)
+                im_warp.append(S @ T)
+                
+    return im_list, im_warp
+
+
+def pair_pyramid(pair, cache_path='tmp_imgs', force=False, split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, **dummy_args):
+    im_list1, im_warp1 = to_pyramid(pair[0], cache_path=cache_path, split_max=split_max, block_sz_max=block_sz_max, shared=shared, interpolation=interpolation, force=force)
+    im_list2, im_warp2 = to_pyramid(pair[1], cache_path=cache_path, split_max=split_max, block_sz_max=block_sz_max, shared=shared, interpolation=interpolation, force=force)
+
+    for im1, warp1 in zip(im_list1, im_warp1):
+        for im2, warp2 in zip(im_list2, im_warp2):                        
+            yield (im1, im2), [warp1.inverse(), warp2.inverse()], {}
+
+
+if __name__ == '__main__':       
     with torch.inference_mode():         
 #       pipeline = [
 #           dog_module(),
@@ -8546,5 +8627,38 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs)          
 
+
+        pipeline = [
+            image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
+                pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+                    [
+                        dog_module(),
+                        patch_module(),
+                        deep_descriptor_module(),
+                        smnn_module(), 
+#                       show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
+                    ],
+                    [
+                        hz_module(),
+                        patch_module(),
+                        deep_descriptor_module(),
+                        smnn_module(),                    
+#                       show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
+                    ],
+                ]),
+                sampling_module(),
+                mop_miho_ncc_module(ncc=False),
+                magsac_module(),
+#               show_matches_module(id_more='pyramid_show', img_prefix='matches_pyramid_', mask_idx=[1]),               
+                mop_miho_ncc_module(ncc=False),
+                show_matches_module(id_more='pyramie_show', img_prefix='matches_pyramie_', mask_idx=[1]),               
+            ]),
+            sampling_module(),
+            mop_miho_ncc_module(ncc=False),
+            magsac_module(),
+            show_matches_module(id_more='all_show', img_prefix='matches_', mask_idx=[1]),
+        ]
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs) 
 
         print('doh!')
