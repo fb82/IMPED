@@ -6877,8 +6877,18 @@ class mop_miho_ncc_module:
             pt1 = args['kp'][0][mi[mm][:, 0]]
             pt2 = args['kp'][1][mi[mm][:, 1]]
 
+            # params = self.mop.all_params()
+            # params['go_assign']['method'] = mop_miho.cluster_assign_base
+            # params['get_avg_hom']['min_plane_pts'] = 24
+            # params['get_avg_hom']['min_pt_gap'] = 12
+            # self.mop = mop_miho.miho(params)
+            
+            # self.mop.attach_images(Image.open(args['img'][0]),Image.open(args['img'][1]))
+
             lidx = torch.arange(mm.shape[0], device=device)[mm]
             Hs_mop_, Hidx = self.mop.planar_clustering(pt1, pt2)
+            
+            # self.mop.show_clustering()
 
             mask = Hidx > -1
             mm[lidx] = mask   
@@ -8635,14 +8645,16 @@ if __name__ == '__main__':
                         dog_module(),
                         patch_module(),
                         deep_descriptor_module(),
-                        smnn_module(), 
+                        blob_matching_module(),                    
+#                       smnn_module(),      
 #                       show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
                     ],
                     [
                         hz_module(),
                         patch_module(),
                         deep_descriptor_module(),
-                        smnn_module(),                    
+                        blob_matching_module(),                    
+#                       smnn_module(),                    
 #                       show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
                     ],
                 ]),
