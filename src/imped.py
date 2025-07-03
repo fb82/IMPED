@@ -28,6 +28,7 @@ import scipy
 import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
+from scipy.spatial import Delaunay
 
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
@@ -8134,6 +8135,513 @@ def pair_pyramid(pair, cache_path='tmp_imgs', force=False, split_max=3, block_sz
             yield (im1, im2), [warp1.inverse(), warp2.inverse()], {}
 
 
+class dtm_module:
+    @staticmethod
+    def prepare_data(pipe_data, p=0, m_mask=None):
+        im = Image.open(pipe_data['img'][p])
+        sz = im.size
+            
+        kp = pipe_data['kp'][p][pipe_data['m_idx'][pipe_data['m_mask']][:, p]].to('cpu').numpy()
+        if not (m_mask is None): kp = kp[m_mask]
+    
+        kp_ = np.round(kp)
+        ku, u2k, k2u = np.unique(kp_, return_index=True, return_inverse=True, axis=0)
+                    
+        if ku.shape[0] < 4: return None, None, None, None, None
+        
+        tri = Delaunay(ku)
+        t = tri.simplices
+        
+        avg_l = np.ceil((sz[0] * sz[1] / t.shape[0] * 4 / (3 ** 0.5)) ** 0.5)
+        
+        l0 = sz[0] / np.ceil(sz[0] / avg_l)
+        l1 = sz[1] / np.ceil(sz[1] / avg_l)
+        
+        q0 = np.arange(0, sz[0] + 0.001, l0)
+        q1 = np.arange(0, sz[1] + 0.001, l1)
+        
+        np.full((q0.shape[0], ), 0.)
+        
+        b0 = np.stack((q0, np.full((q0.shape[0], ), 0.)))
+        b1 = np.stack((q0, np.full((q0.shape[0], ), float(sz[1]))))
+        b2 = np.stack((np.full((q1.shape[0], ), 0.), q1))
+        b3 = np.stack((np.full((q1.shape[0], ), float(sz[0])), q1))
+        b = np.transpose(np.concatenate((b0, b1, b2, b3), axis=1), axes=[1, 0])
+        b_ = np.round(b)
+        
+        kb = np.concatenate((kp_, b_))
+        ku, u2k, k2u = np.unique(kb, return_index=True, return_inverse=True, axis=0)
+        b_mask = u2k >= kp_.shape[0]
+    
+        u2k_list = [[] for i in range(u2k.shape[0])]
+        for i in range(kp.shape[0]):
+            u2k_list[k2u[i]].append(i)
+            
+        u2k_list = [np.asarray(i) for i in u2k_list]
+        
+        tri = Delaunay(ku)
+        t = tri.simplices
+        t_mask = ~np.reshape(b_mask[t.flatten()], [-1, 3]).any(axis=1)
+        
+        e = np.concatenate((t[~t_mask][:, [0, 1]], t[~t_mask][:, [1, 2]], t[~t_mask][:, [0, 2]]), axis=0)
+        e_mask = np.reshape(~b_mask[e.flatten()], [-1, 2]).all(axis=1)
+        
+        bi = np.unique(np.concatenate((e[e_mask][:, 0], e[e_mask][:, 1]), axis=0))
+        bb_mask = np.zeros(ku.shape[0], dtype=bool)
+        bb_mask[bi] = 1
+        
+        b = np.stack((b_mask, bb_mask), axis=1)
+        
+        vv = np.zeros(ku.shape[0] ** 2, bool)
+        e = np.concatenate((t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]), axis=0)
+        e_mask = np.any(b_mask[e], axis=1)
+        e = e[~e_mask]    
+        vv[e[:, 0] * ku.shape[0] + e[:, 1]] = 1
+        vv[e[:, 1] * ku.shape[0] + e[:, 0]] = 1
+        vv = vv.reshape([ku.shape[0], ku.shape[0]])    
+        vv = [np.argwhere(vv[i]).squeeze(1) for i in range(vv.shape[0])]
+        
+        return tri, k2u, u2k_list, b, vv 
+    
+    
+    @staticmethod    
+    def check_in_tri(tri, tri_pt, query_pt):
+        tri_x = tri_pt[: ,0][tri]
+        tri_y = tri_pt[:, 1][tri]    
+    
+        mx = np.repeat(np.min(tri_x, axis=1)[np.newaxis, :], query_pt.shape[0], axis=0)
+        my = np.repeat(np.min(tri_y, axis=1)[np.newaxis, :], query_pt.shape[0], axis=0)
+    
+        Mx = np.repeat(np.max(tri_x, axis=1)[np.newaxis, :], query_pt.shape[0], axis=0)
+        My = np.repeat(np.max(tri_y, axis=1)[np.newaxis, :], query_pt.shape[0], axis=0)
+    
+        x = np.repeat(query_pt[:, 0][:, np.newaxis], tri.shape[0], axis=1)
+        y = np.repeat(query_pt[:, 1][:, np.newaxis], tri.shape[0], axis=1)
+    
+        check0 = (x >= mx) & (x <= Mx) & (y >= my) & (y <= My)
+    
+        if not np.any(check0): return np.full(query_pt.shape[0], -1, dtype=int)
+    
+        tri_idx = np.any(check0, axis=0)
+        query_idx = np.any(check0, axis=1)
+        
+        tri_ = tri[tri_idx]
+        query_pt_ = query_pt[query_idx]
+        
+        tri_iidx = np.argwhere(tri_idx)
+        query_iidx = np.argwhere(query_idx)
+    
+        x1 = tri_pt[:, 0][tri_[:, 0]]
+        y1 = tri_pt[:, 1][tri_[:, 0]]
+        x0 = tri_pt[:, 0][tri_[:, 1]]
+        y0 = tri_pt[:, 1][tri_[:, 1]]
+        side1 = np.stack((y1-y0, -x1+x0, y0*(x1-x0)-x0*(y1-y0))).transpose(1, 0)
+        # xy = np.concatenate((tri_pt[tri_[:, 2]], np.ones((tri_.shape[0], 1))), axis=1)
+        # sign1 = np.sign(np.sum(side1 * xy, axis=1))
+        
+        x1 = tri_pt[:, 0][tri_[:, 1]]
+        y1 = tri_pt[:, 1][tri_[:, 1]]
+        x0 = tri_pt[:, 0][tri_[:, 2]]
+        y0 = tri_pt[:, 1][tri_[:, 2]]
+        side2 = np.stack((y1-y0, -x1+x0, y0*(x1-x0)-x0*(y1-y0))).transpose(1, 0)
+        # xy = np.concatenate((tri_pt[tri_[:, 0]], np.ones((tri_.shape[0], 1))), axis=1)
+        # sign2 = np.sign(np.sum(side2 * xy, axis=1))
+    
+        x1 = tri_pt[:, 0][tri_[:, 2]]
+        y1 = tri_pt[:, 1][tri_[:, 2]]
+        x0 = tri_pt[:, 0][tri_[:, 0]]
+        y0 = tri_pt[:, 1][tri_[:, 0]]
+        side3 = np.stack((y1-y0, -x1+x0, y0*(x1-x0)-x0*(y1-y0))).transpose(1, 0)
+        # xy = np.concatenate((tri_pt[tri_[:, 1]], np.ones((tri_.shape[0], 1))), axis=1)
+        # sign3 = np.sign(np.sum(side3 * xy, axis=1))
+        
+        check0_ = check0[query_idx][:, tri_idx]
+        to_check = np.argwhere(check0_)
+    
+        to_check_query_pt = np.concatenate((query_pt_[to_check[:, 0]], np.ones((to_check.shape[0],1))), axis=1)
+        # sign1, sign2, sign3 always 1 since Delaunay triangle are ordered clockwise
+        check1 = (np.sum(side1[to_check[:, 1]] * to_check_query_pt, axis=1) > 0) & (np.sum(side2[to_check[:, 1]] * to_check_query_pt, axis=1) > 0) & (np.sum(side3[to_check[:, 1]] * to_check_query_pt, axis=1) > 0)
+    
+        if not np.any(check1): return np.full(query_pt.shape[0], -1, dtype=int)
+        
+        check_tri = np.full(query_pt.shape[0], -1, dtype=int)            
+        check_tri[query_iidx[to_check[:, 0][check1]]] = tri_iidx[to_check[:, 1][check1]]
+    
+        return check_tri
+        
+    @staticmethod    
+    def is_in_tri(tri, query_pt, b=None, max_tri=20000, max_query_pt=20000):
+        if b is None:
+            masked_tri = tri.simplices
+        else:
+            mask_tri = np.all(~b[tri.simplices], axis=1)
+            masked_tri = tri.simplices[mask_tri]
+            
+        in_tri = np.full(query_pt.shape[0], -1, dtype=int)
+        for i in range(0, query_pt.shape[0], max_query_pt):
+            current_query_pt = query_pt[i:min(query_pt.shape[0], i + max_query_pt)]
+            tmp = np.full(current_query_pt.shape[0], -1, dtype=int)
+            for j in range(0, masked_tri.shape[0], max_tri):
+                current_tri = masked_tri[j:min(masked_tri.shape[0], j + max_tri)]
+                aux = dtm_module.check_in_tri(current_tri, tri.points, current_query_pt)
+                tmp[aux > -1] = aux[aux > -1] + j
+            in_tri[i:min(query_pt.shape[0], i + max_query_pt)] = tmp                        
+    
+        if not (b is None):
+            aux = np.arange(tri.simplices.shape[0])[mask_tri]
+            in_tri[in_tri > -1] = aux[in_tri[in_tri > -1]]
+    
+        return in_tri
+    
+    
+    @staticmethod    
+    def plot_tri(pipe_data, p, tri, k2u, b):
+        fig, ax = plt.subplots(1)
+    
+        im = Image.open(pipe_data['img'][p])
+        ax.imshow(im)
+        ax.set_axis_off()
+        
+        t = tri.simplices
+        t_mask = ~np.reshape(b[:,0][t.flatten()], [-1, 3]).any(axis=1)    
+        
+        ku = tri.points
+    
+        ax.triplot(ku[:, 0], ku[:,1], t[t_mask], lw=0.2)
+        ax.triplot(ku[:, 0], ku[:,1], t[~t_mask], lw=0.2, color='r')
+        ax.plot(ku[b[:, 1], 0], ku[b[:, 1], 1], 'g.', markersize=0.5)
+        
+        return fig, ax
+
+            
+    @staticmethod        
+    def plot_matches(pipe_data, m_mask):
+        fig0, ax0 = plt.subplots(1)
+        im = Image.open(pipe_data['img'][0])
+        ax0.imshow(im)
+        ax0.set_axis_off()
+        colors = ['g', 'b', 'r', 'c', 'm', 'y', 'w', 'k']
+    
+        l = np.min(m_mask)
+        
+        for li in range(0, l - 1, -1):
+            c_mask = (m_mask == li)
+            
+            q0 = pipe_data['kp'][0][pipe_data['m_idx'][pipe_data['m_mask']][:, 0]].to('cpu').numpy()
+            q1 = pipe_data['kp'][1][pipe_data['m_idx'][pipe_data['m_mask']][:, 1]].to('cpu').numpy()
+            x = np.stack((q0[:, 0], q1[:, 0]))[:, c_mask]
+            y = np.stack((q0[:, 1], q1[:, 1]))[:, c_mask]
+            ax0.plot(x, y, '-', color=colors[abs(li) % len(colors)], lw=0.2)
+    
+        fig1, ax1 = plt.subplots(1)
+        im = Image.open(pipe_data['img'][1])
+        ax1.imshow(im)
+        ax1.set_axis_off()
+    
+        for li in range(0, l - 1, -1):
+            c_mask = (m_mask == li)
+            
+            q0 = pipe_data['kp'][0][pipe_data['m_idx'][pipe_data['m_mask']][:, 0]].to('cpu').numpy()
+            q1 = pipe_data['kp'][1][pipe_data['m_idx'][pipe_data['m_mask']][:, 1]].to('cpu').numpy()
+            x = np.stack((q0[:, 0], q1[:, 0]))[:, c_mask]
+            y = np.stack((q0[:, 1], q1[:, 1]))[:, c_mask]
+            ax1.plot(x, y, '-', color=colors[abs(li) % len(colors)], lw=0.2)
+        
+        return [fig0, fig1], [ax0, ax1]
+
+    
+    @staticmethod    
+    def in_tri_show(pipe_data, tri, in_tri, to_check_tri_pt, p=0):
+        fig, ax = plt.subplots(1)
+        im = Image.open(pipe_data['img'][p])
+        ax.imshow(im)
+        ax.set_axis_off()        
+    
+        no_tri_pt = to_check_tri_pt[in_tri == -1]
+        ax.plot(no_tri_pt[:, 0], no_tri_pt[:, 1], '.', markersize=0.5)
+        
+        with_tri = to_check_tri_pt[in_tri > -1]
+        related_tri = in_tri[in_tri > -1]
+            
+        related_tri_mask = np.zeros(np.max(related_tri) + 1, dtype=bool)
+        clr = ['b', 'g', 'r', 'c', 'm', 'y',  'w', 'k']
+        for ri in range(with_tri.shape[0]):
+            in_tri_pt = with_tri[ri]
+            rel_tri = tri.simplices[related_tri[ri]]
+            color = clr[related_tri[ri] % len(clr)]
+            tt_ = np.append(rel_tri, rel_tri[0])
+    
+            if not related_tri_mask[related_tri[ri]]:
+                tx = tri.points[tt_, 0]
+                ty = tri.points[tt_, 1]
+    
+                mx = np.mean(tx[:3])
+                my = np.mean(ty[:3])
+    
+                qx = mx - tx
+                qy = my - ty
+    
+                tx = tx + qx * 0.1
+                ty = ty + qy * 0.1
+    
+                ax.plot(tx, ty, color=color, lw=0.5)
+                
+                related_tri_mask[related_tri[ri]] = True
+            ax.plot(in_tri_pt[0], in_tri_pt[1], '+', markersize=0.5, color=color)
+    
+        return fig, ax
+    
+
+    @staticmethod        
+    def dtm1(pipe_data, show_in_progress=False):
+        mask = None
+        it = 0
+        while True:    
+            cmask = None if (mask is None) else (mask == 0)
+            
+            tri0, k2u0, u2k0, b0, e0 = dtm_module.prepare_data(pipe_data, p=0, m_mask=cmask)
+            tri1, k2u1, u2k1, b1, e1 = dtm_module.prepare_data(pipe_data, p=1, m_mask=cmask)
+            
+            if (tri0 is None) or (tri1 is None): return mask
+            
+            if show_in_progress:
+                dtm_module.plot_tri(pipe_data, 0, tri0, k2u0, b0)
+                dtm_module.plot_tri(pipe_data, 1, tri1, k2u1, b1)
+            
+            mm = pipe_data['m_idx'][pipe_data['m_mask']]
+            mv = pipe_data['m_val'][pipe_data['m_mask']]
+        
+            if not (mask is None):
+                mm = mm[cmask]
+                mv = mv[cmask]
+            
+            l = mm.shape[0]
+            
+            m1 = np.zeros((l, l), bool)
+            for i in range(l):
+                aux = [u2k0[j] for j in e0[k2u0[i]]]
+                if len(aux): m1[i, np.concatenate(aux)] = 1
+            
+            m2 = np.zeros((l, l), bool)
+            for i in range(l):
+                aux = [u2k1[j] for j in e1[k2u1[i]]]
+                if len(aux): m2[i, np.concatenate(aux)] = 1
+                
+            qi_r1 = m1 & m2
+            qd_r1 = np.logical_xor(m1, m2)    
+            
+            matches_r1 = np.sum(qi_r1, axis=1)  
+            
+            iaux = np.argsort(-matches_r1)
+            iidx = np.argsort(mv.to('cpu').numpy()[iaux], kind='stable')
+            iidx = iaux[iidx]
+            jidx = np.argsort(iidx)
+            
+            t = np.ones(iidx.shape[0], dtype=bool)
+            for j in range(t.shape[0]):
+                if t[j]: t[jidx[qd_r1[iidx[j], :]]] = False   
+            t = t[jidx]
+            m_mask = np.zeros(iidx.shape[0], dtype=bool)
+            for j in range(m_mask.shape[0]):
+                if t[j]: m_mask[qi_r1[j, :]] = True
+                    
+            if mask is None:
+                it = 1
+                mask = (~m_mask).astype(int)
+            else:
+                it += 1
+                mask[mask == 0] = (~m_mask).astype(int) * it
+                
+            # if it > 1:
+            #     to_check_tri_pt0 = pipe_data['kp'][0][pipe_data['m_idx'][pipe_data['m_mask']][:, 0]].to('cpu').numpy()[mask == 1]
+            #     in_tri0 = is_in_tri(tri0, to_check_tri_pt0, b=b0[:, 0])
+        
+            #     in_tri_show(pipe_data, tri0, in_tri0, to_check_tri_pt0, p=0)
+        
+            #     to_check_tri_pt1 = pipe_data['kp'][1][pipe_data['m_idx'][pipe_data['m_mask']][:, 1]].to('cpu').numpy()[mask == 1]
+            #     in_tri1 = is_in_tri(tri1, to_check_tri_pt1, b=b1[:, 0])
+        
+            #     in_tri_show(pipe_data, tri1, in_tri1, to_check_tri_pt1, p=1)
+                        
+            if show_in_progress: dtm_module.plot_matches(pipe_data, mask)
+                    
+            if np.all(m_mask): break
+        
+        return mask
+    
+    
+    @staticmethod    
+    def dtm2(pipe_data, mask, show_in_progress=False):
+        
+        l = np.max(np.unique(mask))
+        for li in range(l,0,-1):
+            cmask = (mask <= 0)
+            
+            tri0, k2u0, u2k0, b0, e0 = dtm_module.prepare_data(pipe_data, p=0, m_mask=cmask)
+            tri1, k2u1, u2k1, b1, e1 = dtm_module.prepare_data(pipe_data, p=1, m_mask=cmask)
+            
+            if (tri0 is None) or  (tri1 is None): return mask
+            
+            if show_in_progress and (li != l):
+                dtm_module.plot_tri(pipe_data, 0, tri0, k2u0, b0)
+                dtm_module.plot_tri(pipe_data, 1, tri1, k2u1, b1)
+            
+            to_check = (mask == li)
+        
+            to_check_tri_pt0 = pipe_data['kp'][0][pipe_data['m_idx'][pipe_data['m_mask']][:, 0]].to('cpu').numpy()[to_check]
+            to_check_tri_pt1 = pipe_data['kp'][1][pipe_data['m_idx'][pipe_data['m_mask']][:, 1]].to('cpu').numpy()[to_check]
+        
+            m0 = pipe_data['kp'][0][pipe_data['m_idx'][pipe_data['m_mask']][:, 0]].to('cpu').numpy()[cmask]
+            m1 = pipe_data['kp'][1][pipe_data['m_idx'][pipe_data['m_mask']][:, 1]].to('cpu').numpy()[cmask]
+        
+            to_check_good = np.zeros(np.sum(to_check), dtype=bool)
+        
+            in_tri0 = dtm_module.is_in_tri(tri0, to_check_tri_pt0)
+            in_tri1 = dtm_module.is_in_tri(tri1, to_check_tri_pt1)
+        
+            for j in range(in_tri0.shape[0]):
+                if (in_tri0[j] == -1) or ((in_tri1[j] == -1)):
+                    continue
+                
+                aux_tri = tri0.simplices[in_tri0[j]]
+                tri_idx = aux_tri[~b0[:, 0][aux_tri]]
+        
+                if (len(tri_idx) < 3):
+                    if len(tri_idx) < 1:
+                        to_check_good[j] = False
+                        continue            
+                                
+                    tri_pts = tri0.points[tri_idx]
+                    
+                    tidx = tri_idx[np.argmin(np.sum((tri_pts - to_check_tri_pt0[j]) ** 2, axis=1))]
+                    list_pts = np.concatenate([u2k0[q] for q in e0[tidx]])
+                    reproj_pt0 = to_check_tri_pt1[j] + m0[list_pts] - m1[list_pts]
+        
+                    q_tri = dtm_module.check_in_tri(aux_tri[np.newaxis, :], tri0.points, reproj_pt0)
+                    if np.any(q_tri > -1): to_check_good[j] = True
+                    continue
+                
+                q0 = m1[u2k0[aux_tri[0]]]
+                q1 = m1[u2k0[aux_tri[1]]]
+                q2 = m1[u2k0[aux_tri[2]]]
+                
+                q_tri = np.zeros((q0.shape[0] * q1.shape[0] * q2.shape[0], 3), dtype=int)
+                ii = 0
+                for j0 in range(q0.shape[0]):
+                    for j1 in range(q1.shape[0]):
+                        for j2 in range(q2.shape[0]):
+                            q_tri[ii, 0] = j0    
+                            q_tri[ii, 1] = j1 + q0.shape[0]    
+                            q_tri[ii, 2] = j2 + q0.shape[0] + q1.shape[0]   
+                            ii += 1
+                q_tri = dtm_module.check_in_tri(q_tri, np.concatenate((q0, q1, q2), axis=0), to_check_tri_pt1[j][np.newaxis, :])
+                if (q_tri[0] > -1): to_check_good[j] = True
+        
+            for j in range(in_tri1.shape[0]):
+                if not to_check_good[j]:
+                    continue
+                
+                aux_tri = tri1.simplices[in_tri1[j]]
+                tri_idx = aux_tri[~b1[:, 0][aux_tri]]
+        
+                if (len(tri_idx) < 3):
+                    if len(tri_idx) < 1:
+                        to_check_good[j] = False
+                        continue
+                    
+                    tri_pts = tri1.points[tri_idx]
+                    tidx = tri_idx[np.argmin(np.sum((tri_pts - to_check_tri_pt1[j]) ** 2, axis=1))]
+                    list_pts = np.concatenate([u2k1[q] for q in e1[tidx]])
+                    reproj_pt1 = to_check_tri_pt0[j] + m1[list_pts] - m0[list_pts]
+        
+                    q_tri = dtm_module.check_in_tri(aux_tri[np.newaxis, :], tri1.points, reproj_pt1)
+                    if not np.any(q_tri > -1): to_check_good[j] = False
+                    continue
+                
+                q0 = m0[u2k1[aux_tri[0]]]
+                q1 = m0[u2k1[aux_tri[1]]]
+                q2 = m0[u2k1[aux_tri[2]]]
+                
+                q_tri = np.zeros((q0.shape[0] * q1.shape[0] * q2.shape[0], 3), dtype=int)
+                ii = 0
+                for j0 in range(q0.shape[0]):
+                    for j1 in range(q1.shape[0]):
+                        for j2 in range(q2.shape[0]):
+                            q_tri[ii, 0] = j0    
+                            q_tri[ii, 1] = j1 + q0.shape[0]    
+                            q_tri[ii, 2] = j2 + q0.shape[0] + q1.shape[0]   
+                            ii += 1
+                q_tri = dtm_module.check_in_tri(q_tri, np.concatenate((q0, q1, q2), axis=0), to_check_tri_pt0[j][np.newaxis, :])
+                if not (q_tri[0] > -1): to_check_good[j] = False
+                
+            checked_mask = np.full(np.sum(to_check), li, dtype=int)
+            checked_mask[to_check_good] = -li
+            mask[to_check] = checked_mask
+                
+            if show_in_progress: dtm_module.plot_matches(pipe_data, mask)
+    
+        if show_in_progress:        
+            cmask = (mask <= 0)
+            
+            tri0, k2u0, u2k0, b0, e0 = dtm_module.prepare_data(pipe_data, p=0, m_mask=cmask)
+            tri1, k2u1, u2k1, b1, e1 = dtm_module.prepare_data(pipe_data, p=1, m_mask=cmask)        
+            
+            dtm_module.plot_tri(pipe_data, 0, tri0, k2u0, b0)
+            dtm_module.plot_tri(pipe_data, 1, tri1, k2u1, b1)
+    
+        return mask    
+
+
+    @staticmethod    
+    def dtm(pipe_data, show_in_progress=False, full_dtm=True):
+        
+        mask = dtm_module.dtm1(pipe_data, show_in_progress=show_in_progress)
+    
+        if full_dtm:
+            if not (mask is None):            
+                return dtm_module.dtm2(pipe_data, mask, show_in_progress=show_in_progress)
+
+        return mask    
+    
+    
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+        self.add_to_cache = True
+                        
+        self.args = {
+            'id_more': '',
+            'full_dtm': True,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('dtm', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+        
+    def run(self, **args):                
+        mm = args['m_mask']
+                
+        mask_ = dtm_module.dtm(args, show_in_progress=False, full_dtm=self.args['full_dtm'])     
+        if not(mask_ is None):
+            mask = torch.tensor(mask_ <= 0, device=device, dtype=torch.bool)
+            aux = mm.clone()
+            mm[aux] = mask
+        else:
+            mm[:] = False
+        
+        return {'m_mask': mm}        
+
+
 if __name__ == '__main__':       
     with torch.inference_mode():         
 #       pipeline = [
@@ -8647,7 +9155,7 @@ if __name__ == '__main__':
                         deep_descriptor_module(),
                         blob_matching_module(),                    
 #                       smnn_module(),      
-#                       show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
+                        show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
                     ],
                     [
                         hz_module(),
@@ -8655,16 +9163,20 @@ if __name__ == '__main__':
                         deep_descriptor_module(),
                         blob_matching_module(),                    
 #                       smnn_module(),                    
-#                       show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
+                        show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
                     ],
                 ]),
+                dtm_module(),
+                show_matches_module(id_more='pyramid_dtm_show', img_prefix='matches_dtm_', mask_idx=[1]),               
                 sampling_module(),
                 mop_miho_ncc_module(ncc=False),
+                show_matches_module(id_more='pyramid_mop_show', img_prefix='matches_mop_', mask_idx=[1]),               
                 magsac_module(),
-#               show_matches_module(id_more='pyramid_show', img_prefix='matches_pyramid_', mask_idx=[1]),               
+                show_matches_module(id_more='pyramid_magasac_show', img_prefix='matches_magasac_', mask_idx=[1]),               
                 mop_miho_ncc_module(ncc=False),
-                show_matches_module(id_more='pyramie_show', img_prefix='matches_pyramie_', mask_idx=[1]),               
+                show_matches_module(id_more='pyramid_final_show', img_prefix='matches_final_', mask_idx=[1]),               
             ]),
+            dtm_module(),            
             sampling_module(),
             mop_miho_ncc_module(ncc=False),
             magsac_module(),
