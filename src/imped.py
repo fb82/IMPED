@@ -8514,7 +8514,10 @@ class dtm_module:
                     tri_pts = tri0.points[tri_idx]
                     
                     tidx = tri_idx[np.argmin(np.sum((tri_pts - to_check_tri_pt0[j]) ** 2, axis=1))]
-                    list_pts = np.concatenate([u2k0[q] for q in e0[tidx]])
+                    list_pts = [u2k0[q] for q in e0[tidx]]
+                        to_check_good[j] = False
+                        continue
+                    list_pts = np.concatenate(list_pts)
                     reproj_pt0 = to_check_tri_pt1[j] + m0[list_pts] - m1[list_pts]
         
                     q_tri = dtm_module.check_in_tri(aux_tri[np.newaxis, :], tri0.points, reproj_pt0)
@@ -8551,7 +8554,11 @@ class dtm_module:
                     
                     tri_pts = tri1.points[tri_idx]
                     tidx = tri_idx[np.argmin(np.sum((tri_pts - to_check_tri_pt1[j]) ** 2, axis=1))]
-                    list_pts = np.concatenate([u2k1[q] for q in e1[tidx]])
+                    list_pts = [u2k1[q] for q in e1[tidx]]
+                    if len(list_pts) == 0:
+                        to_check_good[j] = False
+                        continue
+                    list_pts = np.concatenate(list_pts)                    
                     reproj_pt1 = to_check_tri_pt0[j] + m1[list_pts] - m0[list_pts]
         
                     q_tri = dtm_module.check_in_tri(aux_tri[np.newaxis, :], tri1.points, reproj_pt1)
