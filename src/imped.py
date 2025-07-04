@@ -8515,6 +8515,7 @@ class dtm_module:
                     
                     tidx = tri_idx[np.argmin(np.sum((tri_pts - to_check_tri_pt0[j]) ** 2, axis=1))]
                     list_pts = [u2k0[q] for q in e0[tidx]]
+                    if len(list_pts) == 0:                    
                         to_check_good[j] = False
                         continue
                     list_pts = np.concatenate(list_pts)
