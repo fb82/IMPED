@@ -8147,9 +8147,8 @@ class dtm_module:
         kp_ = np.round(kp)
         ku, u2k, k2u = np.unique(kp_, return_index=True, return_inverse=True, axis=0)
                     
-        if ku.shape[0] < 4: return None, None, None, None, None
-        
-        tri = Delaunay(ku)
+        try: tri = Delaunay(ku)
+        except: return None, None, None, None, None 
         t = tri.simplices
         
         avg_l = np.ceil((sz[0] * sz[1] / t.shape[0] * 4 / (3 ** 0.5)) ** 0.5)
@@ -8179,7 +8178,8 @@ class dtm_module:
             
         u2k_list = [np.asarray(i) for i in u2k_list]
         
-        tri = Delaunay(ku)
+        try: tri = Delaunay(ku)
+        except: return None, None, None, None, None 
         t = tri.simplices
         t_mask = ~np.reshape(b_mask[t.flatten()], [-1, 3]).any(axis=1)
         
