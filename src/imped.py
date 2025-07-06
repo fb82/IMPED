@@ -5722,8 +5722,8 @@ class show_homography_module:
 
         interp = self.args['interpolation']
 
-        ima0 = np.concat((ima0, np.full((ima0.shape[0], ima0.shape[1], 1), 255, dtype=np.uint8)), axis=-1)
-        ima1 = np.concat((ima1, np.full((ima1.shape[0], ima0.shape[1], 1), 255, dtype=np.uint8)), axis=-1)
+        ima0 = np.concatenate((ima0, np.full((ima0.shape[0], ima0.shape[1], 1), 255, dtype=np.uint8)), axis=-1)
+        ima1 = np.concatenate((ima1, np.full((ima1.shape[0], ima0.shape[1], 1), 255, dtype=np.uint8)), axis=-1)
 
         ima0_warp = cv2.warpPerspective(ima0, T.to('cpu').numpy(), (bts_size * s).to(torch.int).to('cpu').numpy(), flags=interp)
         ima1_warp = cv2.warpPerspective(ima1, (T @ H.inverse()).to('cpu').numpy(), (bts_size * s).to(torch.int).to('cpu').numpy(), flags=interp)
@@ -5916,11 +5916,11 @@ def planar_setup(bench_path='bench_data', bench_imgs='imgs', bench_plot='aux_ima
                 mask2_ = np.expand_dims(mask2_.astype(np.uint8), axis=-1)
 
 
-                im1 = np.concat((im1, mask1 * 196 + mask1_full * 59), axis=-1)
-                im2 = np.concat((im2, mask2 * 196 + mask2_full * 59), axis=-1)
+                im1 = np.concatenate((im1, mask1 * 196 + mask1_full * 59), axis=-1)
+                im2 = np.concatenate((im2, mask2 * 196 + mask2_full * 59), axis=-1)
 
-                im1_ = np.concat((im1_, mask1_ * 196 + mask1_full * 59), axis=-1)
-                im2_ = np.concat((im2_, mask2_ * 196 + mask2_full * 59), axis=-1)
+                im1_ = np.concatenate((im1_, mask1_ * 196 + mask1_full * 59), axis=-1)
+                im2_ = np.concatenate((im2_, mask2_ * 196 + mask2_full * 59), axis=-1)
                             
                 cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_1a' + save_ext), im1)
                 cv2.imwrite(os.path.join(check_path, img1 + '_' + img2 + '_1b' + save_ext), im1_)
@@ -9154,43 +9154,43 @@ if __name__ == '__main__':
 #       run_pairs(pipeline, imgs)          
 
 
-        pipeline = [
-            image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
-                pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-                    [
-                        dog_module(),
-                        patch_module(),
-                        deep_descriptor_module(),
-                        blob_matching_module(),                    
-#                       smnn_module(),      
-                        show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
-                    ],
-                    [
-                        hz_module(),
-                        patch_module(),
-                        deep_descriptor_module(),
-                        blob_matching_module(),                    
-#                       smnn_module(),                    
-                        show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
-                    ],
-                ]),
-                dtm_module(),
-                show_matches_module(id_more='pyramid_dtm_show', img_prefix='matches_dtm_', mask_idx=[1]),               
-                sampling_module(),
-                mop_miho_ncc_module(ncc=False),
-                show_matches_module(id_more='pyramid_mop_show', img_prefix='matches_mop_', mask_idx=[1]),               
-                magsac_module(),
-                show_matches_module(id_more='pyramid_magasac_show', img_prefix='matches_magasac_', mask_idx=[1]),               
-                mop_miho_ncc_module(ncc=False),
-                show_matches_module(id_more='pyramid_final_show', img_prefix='matches_final_', mask_idx=[1]),               
-            ]),
-            dtm_module(),            
-            sampling_module(),
-            mop_miho_ncc_module(ncc=False),
-            magsac_module(),
-            show_matches_module(id_more='all_show', img_prefix='matches_', mask_idx=[1]),
-        ]
-        imgs = '../data/ET'
-        run_pairs(pipeline, imgs) 
+#       pipeline = [
+#           image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
+#                pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#                   [
+#                       dog_module(),
+#                       patch_module(),
+#                       deep_descriptor_module(),
+#                       blob_matching_module(),                    
+# #                     smnn_module(),      
+#                       show_matches_module(id_more='blob_show', img_prefix='matches_blob_', mask_idx=[1]),               
+#                   ],
+#                   [
+#                       hz_module(),
+#                       patch_module(),
+#                       deep_descriptor_module(),
+#                       blob_matching_module(),                    
+# #                     smnn_module(),                    
+#                       show_matches_module(id_more='hz_show', img_prefix='matches_hz_', mask_idx=[1]),               
+#                   ],
+#               ]),
+#               dtm_module(),
+#               show_matches_module(id_more='pyramid_dtm_show', img_prefix='matches_dtm_', mask_idx=[1]),               
+#               sampling_module(),
+#               mop_miho_ncc_module(ncc=False),
+#               show_matches_module(id_more='pyramid_mop_show', img_prefix='matches_mop_', mask_idx=[1]),               
+#               magsac_module(),
+#               show_matches_module(id_more='pyramid_magasac_show', img_prefix='matches_magasac_', mask_idx=[1]),               
+#               mop_miho_ncc_module(ncc=False),
+#               show_matches_module(id_more='pyramid_final_show', img_prefix='matches_final_', mask_idx=[1]),               
+#           ]),
+#           dtm_module(),            
+#           sampling_module(),
+#           mop_miho_ncc_module(ncc=False),
+#           magsac_module(),
+#           show_matches_module(id_more='all_show', img_prefix='matches_', mask_idx=[1]),
+#       ]
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs) 
 
         print('doh!')
