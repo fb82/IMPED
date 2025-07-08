@@ -798,11 +798,11 @@ with torch.no_grad():
     # laf0 = hz0.to(torch.float)
     # laf1 = hz1.to(torch.float)
     
-    laf0 = dog0.to(torch.float)
-    laf1 = dog1.to(torch.float)    
+    # laf0 = dog0.to(torch.float)
+    # laf1 = dog1.to(torch.float)    
     
-    # laf0 = torch.concat((hz0, dog0), dim=1).to(torch.float)
-    # laf1 = torch.concat((hz1, dog1), dim=1).to(torch.float)
+    laf0 = torch.concat((hz0, dog0), dim=1).to(torch.float)
+    laf1 = torch.concat((hz1, dog1), dim=1).to(torch.float)
 
     # Kornia image load
     timg0 = K.io.load_image(img[0], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
