@@ -1,18 +1,17 @@
-import pickle
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import Delaunay
 
 
-def prepare_data(pipe_data, p=0, m_mask=None):
+def prepare_data(pipe_data, p=0, m_mask=None, s=1., t=0.):
     im = Image.open(pipe_data['img'][p])
     sz = im.size
         
     kp = pipe_data['kp'][p][pipe_data['m_idx'][pipe_data['m_mask']][:, p]].to('cpu').numpy()
     if not (m_mask is None): kp = kp[m_mask]
 
-    kp_ = np.round(kp)
+    kp_ = (np.round(kp * s + t) - t) / s
     ku, u2k, k2u = np.unique(kp_, return_index=True, return_inverse=True, axis=0)
                 
     try: tri = Delaunay(ku)
@@ -264,26 +263,26 @@ def in_tri_show(pipe_data, tri, in_tri, to_check_tri_pt, p=0):
     return fig, ax
 
 
-def dtm(pipe_data, show_in_progress=False, full_dtm=True):
+def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.]):
     if show_in_progress: plot_matches(pipe_data, None, title='DTM - input')
     
-    mask = dtm1(pipe_data, show_in_progress=show_in_progress)
+    mask = dtm1(pipe_data, show_in_progress=show_in_progress, st=st)
 
     if full_dtm:
         if not (mask is None):                
-            return dtm2(pipe_data, mask, show_in_progress=show_in_progress)
+            return dtm2(pipe_data, mask, show_in_progress=show_in_progress, st=st)
 
     return mask
 
     
-def dtm1(pipe_data, show_in_progress=False):
+def dtm1(pipe_data, show_in_progress=False, st=[1., 0.]):
     mask = None
     it = 0
     while True:    
         cmask = None if (mask is None) else (mask == 0)
         
-        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask)
-        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask)
+        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask, s=st[0], t=st[1])
+        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask, s=st[0], t=st[1])
 
         if (tri0 is None) or (tri1 is None): return mask        
         
@@ -353,14 +352,14 @@ def dtm1(pipe_data, show_in_progress=False):
     return mask
 
 
-def dtm2(pipe_data, mask, show_in_progress=False):
+def dtm2(pipe_data, mask, show_in_progress=False, st=[1., 0.]):
     
     l = np.max(np.unique(mask))
     for li in range(l,0,-1):
         cmask = (mask <= 0)
         
-        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask)
-        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask)
+        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask, s=st[0], t=st[1])
+        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask, s=st[0], t=st[1])
         
         if (tri0 is None) or  (tri1 is None): return mask        
         
@@ -473,8 +472,8 @@ def dtm2(pipe_data, mask, show_in_progress=False):
     if show_in_progress:        
         cmask = (mask <= 0)
         
-        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask)
-        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask)        
+        tri0, k2u0, u2k0, b0, e0 = prepare_data(pipe_data, p=0, m_mask=cmask, s=st[0], t=st[1])
+        tri1, k2u1, u2k1, b1, e1 = prepare_data(pipe_data, p=1, m_mask=cmask, s=st[0], t=st[1])        
         
         plot_tri(pipe_data, 0, tri0, k2u0, b0, title='DTM2 - end')
         plot_tri(pipe_data, 1, tri1, k2u1, b1, title='DTM2 - end')
@@ -785,9 +784,9 @@ img = [
 with torch.no_grad():
     # Hz+
     hz0, _ = hz.hz_plus(hz.load_to_tensor(img[0]).to(torch.float), output_format='laf')
-    hz0 = KF.ellipse_to_laf(hz0[None]) 
+    hz0 = KF.ellipse_to_laf(hz0[None]).to(device)
     hz1, _ = hz.hz_plus(hz.load_to_tensor(img[1]).to(torch.float), output_format='laf')
-    hz1 = KF.ellipse_to_laf(hz1[None]) 
+    hz1 = KF.ellipse_to_laf(hz1[None]).to(device) 
     
     # DoG
     dog = cv2.SIFT_create(nfeatures=8000, contrastThreshold=-10000, edgeThreshold=10000)
@@ -833,6 +832,12 @@ with torch.no_grad():
     # Blob matching
     m_idx, m_val = blob_matching(kp0, kp1, desc0, desc1)
     m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
+    # or
+    # Mutual NN matching
+    # th = 0.99
+    # m_val, m_idx = K.feature.match_smnn(desc0, desc1, th)
+    # m_val = m_val.squeeze(1)
+    # m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
 
     # DTM
     match_data = {
@@ -843,6 +848,7 @@ with torch.no_grad():
         'm_mask': m_mask,
         }
 
+    st = [1, 0.] # Delaunay pre-quantization
     show_in_progress = False
     dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
 
@@ -865,3 +871,39 @@ with torch.no_grad():
     
     # Show matches
     plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
+    
+    # Re-filter with DTM
+    match_data['m_val'][sac_mask] = 0
+    dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+
+    # RANSAC on re-filtered matches
+    idx = m_idx.to('cpu').detach()
+    pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
+    pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
+    
+    F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
+    poselib_mask = info['inliers']
+    sac_mask = np.copy(dtm_mask)
+    sac_mask[dtm_mask] = poselib_mask
+
+    # Show matches
+    plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
+
+    ii = 0 # Actually can be done more times
+    for i in range(ii):
+        # Re-filter with DTM
+        match_data['m_val'][sac_mask] = 0
+        dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+    
+        # RANSAC on re-filtered matches
+        idx = m_idx.to('cpu').detach()
+        pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
+        pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
+        
+        F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
+        poselib_mask = info['inliers']
+        sac_mask = np.copy(dtm_mask)
+        sac_mask[dtm_mask] = poselib_mask
+    
+        # Show matches
+        plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
