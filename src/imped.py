@@ -1217,11 +1217,15 @@ class patch_module:
         self.args = {
             'id_more': '',
             'sift_orientation': False,
-            'sift_orientation_params': {},
+            'general_orientation_params': {},
             'orinet': True,
-            'orinet_params': {},
+            'orinet_params': {
+                'pretrained': True,
+                },
             'affnet': True,
-            'affnet_params': {},
+            'affnet_params': {
+                'pretrained': True,
+                },
             }
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -1232,15 +1236,15 @@ class patch_module:
         self.ori_module = K.feature.PassLAF()
         if self.args['sift_orientation']:
             base_string = 'sift_orientation'
-            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.PatchDominantGradientOrientation(), **self.args['orinet_params'])
+            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.PatchDominantGradientOrientation(), **self.args['general_orientation_params'])
         if self.args['orinet']:
             base_string = 'orinet'
-            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device), **self.args['orinet_params'])
+            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet(**self.args['orinet_params']).to(device), **self.args['general_orientation_params'])
 
         if self.args['affnet']:
             if len(base_string): base_string = base_string  + '_' + 'affnet'
             else: base_string = 'affnet'
-            self.aff_module = K.feature.LAFAffineShapeEstimator(**self.args['affnet_params'])
+            self.aff_module =  K.feature.LAFAffNetShapeEstimator(**self.args['affnet_params']).to(device)
         else:
             self.aff_module = K.feature.PassLAF()
 
@@ -1261,8 +1265,8 @@ class patch_module:
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
 
-        lafs = self.ori_module(lafs, im)
         lafs = self.aff_module(lafs, im)
+        lafs = self.ori_module(lafs, im)
 
         kp, kH = laf2homo(lafs.squeeze(0))
     

@@ -490,9 +490,14 @@ def blob_matching(pt1, pt2, desc1, desc2,
                   distance='L2',
                   ss=1024, # split size
                   same_order=True,    
+                  device='cpu', # preferred to avoid OOM
         ):
 
-    
+    if pt1.device != device: pt1 = pt1.to(device)
+    if pt2.device != device: pt2 = pt2.to(device)
+    if desc1.device != device: desc1 = desc1.to(device)
+    if desc2.device != device: desc2 = desc2.to(device)
+        
     desc1_blk = torch.split(desc1, ss, dim=0)
     desc2_blk = torch.split(desc2, ss, dim=0)
 
@@ -763,134 +768,125 @@ def plot_pair_matches(img, pt0, pt1, mask_dtm, mask_ransac):
     viz.plot_matches(pt0[mask_dtm & mask_ransac], pt1[mask_dtm & mask_ransac], color='g', lw=0.2, ps=6, a=0.3, axes=axes, fig_num=fig.number)
     viz.plot_matches(pt0[mask_dtm & ~mask_ransac], pt1[mask_dtm & ~mask_ransac], color='r', lw=0.2, ps=6, a=0.3, axes=axes, fig_num=fig.number)
             
-    
-import torch
-import cv2
-import hz.hz as hz
-import poselib
-import kornia as K
-import kornia.feature as KF
-from kornia_moons.feature import laf_from_opencv_kpts
-import plot.viz2d as viz
-import plot.utils as viz_utils
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if __name__ == "__main__":
 
-img = [
-       '../data/ET/et000.jpg',
-       '../data/ET/et001.jpg',
-      ]
+    import sys
+    import os
+    import torch
+    import cv2
+    import hz.hz as hz
+    import poselib
+    import kornia as K
+    import kornia.feature as KF
+    from kornia_moons.feature import laf_from_opencv_kpts
+    import plot.viz2d as viz
+    import plot.utils as viz_utils
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-with torch.no_grad():
-    # Hz+
-    hz0, _ = hz.hz_plus(hz.load_to_tensor(img[0]).to(torch.float), output_format='laf')
-    hz0 = KF.ellipse_to_laf(hz0[None]).to(device)
-    hz1, _ = hz.hz_plus(hz.load_to_tensor(img[1]).to(torch.float), output_format='laf')
-    hz1 = KF.ellipse_to_laf(hz1[None]).to(device) 
-    
-    # DoG
-    dog = cv2.SIFT_create(nfeatures=8000, contrastThreshold=-10000, edgeThreshold=10000)
-    dog0 = laf_from_opencv_kpts(dog.detect(cv2.imread(img[0], cv2.IMREAD_GRAYSCALE), None), device=device)
-    dog1 = laf_from_opencv_kpts(dog.detect(cv2.imread(img[1], cv2.IMREAD_GRAYSCALE), None), device=device)
-    
-    # concatenate Hz+ and Dog lafs (or only one if you don't have enough GPU memory)
-    # laf0 = hz0.to(torch.float)
-    # laf1 = hz1.to(torch.float)
-    
-    # laf0 = dog0.to(torch.float)
-    # laf1 = dog1.to(torch.float)    
-    
-    laf0 = torch.concat((hz0, dog0), dim=1).to(torch.float)
-    laf1 = torch.concat((hz1, dog1), dim=1).to(torch.float)
+    if len(sys.argv) >= 3:
+        img = [sys.argv[1], sys.argv[2]]
+    else:    
+        img = [
+               '../data/ET/et000.jpg',
+               '../data/ET/et001.jpg',
+              ]
 
-    # Kornia image load
-    timg0 = K.io.load_image(img[0], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
-    timg1 = K.io.load_image(img[1], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+    if (not os.path.isfile(img[0])) or (not os.path.isfile(img[1])):
+        print('one or both input images not found!')
     
-    # patch estimation
-    orinet = K.feature.LAFOrienter(angle_detector=K.feature.OriNet().to(device))
-    affnet = K.feature.LAFAffineShapeEstimator().to(device)
+    with torch.no_grad():
+        # Hz+
+        hz0, _ = hz.hz_plus(hz.load_to_tensor(img[0]).to(torch.float), output_format='laf')
+        hz0 = KF.ellipse_to_laf(hz0[None]).to(device)
+        hz1, _ = hz.hz_plus(hz.load_to_tensor(img[1]).to(torch.float), output_format='laf')
+        hz1 = KF.ellipse_to_laf(hz1[None]).to(device) 
+        
+        # DoG
+        dog = cv2.SIFT_create(nfeatures=8000, contrastThreshold=-10000, edgeThreshold=10000)
+        dog0 = laf_from_opencv_kpts(dog.detect(cv2.imread(img[0], cv2.IMREAD_GRAYSCALE), None), device=device)
+        dog1 = laf_from_opencv_kpts(dog.detect(cv2.imread(img[1], cv2.IMREAD_GRAYSCALE), None), device=device)
+        
+        # concatenate Hz+ and Dog lafs (or only one if you don't have enough GPU memory)
+        # laf0 = hz0.to(torch.float)
+        # laf1 = hz1.to(torch.float)
+        
+        # laf0 = dog0.to(torch.float)
+        # laf1 = dog1.to(torch.float)    
+        
+        laf0 = torch.concat((hz0, dog0), dim=1).to(torch.float)
+        laf1 = torch.concat((hz1, dog1), dim=1).to(torch.float)
     
-    laf0 = affnet(orinet(laf0, timg0), timg0)
-    laf1 = affnet(orinet(laf1, timg1), timg1)
+        # Kornia image load
+        timg0 = K.io.load_image(img[0], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        timg1 = K.io.load_image(img[1], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        
+        # patch estimation
+        affnet = K.feature.LAFAffNetShapeEstimator(pretrained=True).to(device)
+        orinet = K.feature.LAFOrienter(angle_detector=K.feature.OriNet(pretrained=True).to(device))
+                
+        laf0 = affnet(laf0, timg0)
+        laf1 = affnet(laf1, timg1)
+
+        laf0 = orinet(laf0, timg0)
+        laf1 = orinet(laf1, timg1)
+            
+        # Hardnet
+        hardnet = K.feature.LAFDescriptor(patch_descriptor_module=K.feature.HardNet().to(device))
+        
+        desc0 = hardnet(timg0, laf0).squeeze(0)
+        desc1 = hardnet(timg1, laf1).squeeze(0)
     
-    del orinet
-    del affnet
+        # Keypoints
+        kp0 = laf0[:, :, :, 2].to(torch.float).squeeze(0)
+        kp1 = laf1[:, :, :, 2].to(torch.float).squeeze(0)
     
-    # Hardnet
-    hardnet = K.feature.LAFDescriptor(patch_descriptor_module=K.feature.HardNet().to(device))
+        # Blob matching (on CPU to avoid OOM)
+        m_idx, m_val = blob_matching(kp0, kp1, desc0, desc1, device='cpu')
+        m_idx = m_idx.to(device)
+        m_val = m_val.to(device)
+        m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
+        # or
+        # Mutual NN matching
+        # th = 0.99
+        # m_val, m_idx = K.feature.match_smnn(desc0, desc1, th)
+        # m_val = m_val.squeeze(1)
+        # m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
     
-    desc0 = hardnet(timg0, laf0).squeeze(0)
-    desc1 = hardnet(timg1, laf1).squeeze(0)
-
-    del hardnet
-
-    # Keypoints
-    kp0 = laf0[:, :, :, 2].to(torch.float).squeeze(0)
-    kp1 = laf1[:, :, :, 2].to(torch.float).squeeze(0)
-
-    # Blob matching
-    m_idx, m_val = blob_matching(kp0, kp1, desc0, desc1)
-    m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
-    # or
-    # Mutual NN matching
-    # th = 0.99
-    # m_val, m_idx = K.feature.match_smnn(desc0, desc1, th)
-    # m_val = m_val.squeeze(1)
-    # m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
-
-    # DTM
-    match_data = {
-        'img': img,
-        'kp': [kp0, kp1],
-        'm_idx': m_idx,
-        'm_val': m_val,
-        'm_mask': m_mask,
-        }
-
-    st = [1, 0.] # Delaunay pre-quantization
-    show_in_progress = False
-    dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
-
-    # RANSAC
-    poselib_params = {            
-     'max_iterations': 100000,
-     'min_iterations': 50,
-     'success_prob': 0.9999,
-     'max_epipolar_error': 3,
-     }
-     
-    idx = m_idx.to('cpu').detach()
-    pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
-    pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
+        # DTM
+        match_data = {
+            'img': img,
+            'kp': [kp0, kp1],
+            'm_idx': m_idx,
+            'm_val': m_val,
+            'm_mask': m_mask,
+            }
     
-    F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
-    poselib_mask = info['inliers']
-    sac_mask = np.copy(dtm_mask)
-    sac_mask[dtm_mask] = poselib_mask
+        st = [1., 0.] # Delaunay pre-quantization
+        show_in_progress = False
+        dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
     
-    # Show matches
-    plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
-    
-    # Re-filter with DTM
-    match_data['m_val'][sac_mask] = 0
-    dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
-
-    # RANSAC on re-filtered matches
-    idx = m_idx.to('cpu').detach()
-    pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
-    pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
-    
-    F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
-    poselib_mask = info['inliers']
-    sac_mask = np.copy(dtm_mask)
-    sac_mask[dtm_mask] = poselib_mask
-
-    # Show matches
-    plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
-
-    ii = 0 # Actually can be done more times
-    for i in range(ii):
+        # RANSAC
+        poselib_params = {            
+         'max_iterations': 100000,
+         'min_iterations': 50,
+         'success_prob': 0.9999,
+         'max_epipolar_error': 3,
+         }
+         
+        idx = m_idx.to('cpu').detach()
+        pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
+        pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
+        
+        F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
+        poselib_mask = info['inliers']
+        sac_mask = np.copy(dtm_mask)
+        sac_mask[dtm_mask] = poselib_mask
+        
+        # Show matches
+        plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
+        
         # Re-filter with DTM
         match_data['m_val'][sac_mask] = 0
         dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
@@ -907,3 +903,24 @@ with torch.no_grad():
     
         # Show matches
         plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
+    
+        ii = 0 # Actually can be done more times
+        for i in range(ii):
+            # Re-filter with DTM
+            match_data['m_val'][sac_mask] = 0
+            dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+        
+            # RANSAC on re-filtered matches
+            idx = m_idx.to('cpu').detach()
+            pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
+            pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
+            
+            F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
+            poselib_mask = info['inliers']
+            sac_mask = np.copy(dtm_mask)
+            sac_mask[dtm_mask] = poselib_mask
+        
+            # Show matches
+            plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
+            
+        plt.show()
