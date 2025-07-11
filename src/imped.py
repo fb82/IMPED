@@ -936,7 +936,10 @@ class keynet_module:
                 
         self.args = {
             'id_more': '',
-            'params': {'num_features': 8000},
+            'params': {
+                'pretrained': True,
+                'num_features': 8000,
+                },
         }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -1217,6 +1220,7 @@ class patch_module:
         self.args = {
             'id_more': '',
             'sift_orientation': False,
+            'sift_orientation_params': {},
             'general_orientation_params': {},
             'orinet': True,
             'orinet_params': {
@@ -1236,7 +1240,7 @@ class patch_module:
         self.ori_module = K.feature.PassLAF()
         if self.args['sift_orientation']:
             base_string = 'sift_orientation'
-            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.PatchDominantGradientOrientation(), **self.args['general_orientation_params'])
+            self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.PatchDominantGradientOrientation(**self.args['sift_orientation_params']), **self.args['general_orientation_params'])
         if self.args['orinet']:
             base_string = 'orinet'
             self.ori_module = K.feature.LAFOrienter(angle_detector=K.feature.OriNet(**self.args['orinet_params']).to(device), **self.args['general_orientation_params'])
@@ -1283,7 +1287,9 @@ class deep_descriptor_module:
         self.args = {
             'id_more': '',
             'descriptor': 'hardnet',
-            'desc_params': {},
+            'desc_params': {
+                'pretrained': True,
+                },
             'patch_params': {},
             }
         
@@ -1293,9 +1299,9 @@ class deep_descriptor_module:
         
         if self.args['descriptor'] == 'hardnet':
             base_string = 'hardnet'
-            desc = K.feature.HardNet().to(device)
+            desc = K.feature.HardNet(**self.args['desc_params']).to(device)
         if self.args['descriptor'] == 'sosnet':
-            desc = K.feature.SOSNet().to(device)
+            desc = K.feature.SOSNet(**self.args['desc_params']).to(device)
             base_string = 'sosnet'
         if self.args['descriptor'] == 'hynet':
             desc = K.feature.HyNet(**self.args['desc_params']).to(device)

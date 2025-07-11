@@ -833,7 +833,7 @@ if __name__ == "__main__":
         laf1 = orinet(laf1, timg1)
             
         # Hardnet
-        hardnet = K.feature.LAFDescriptor(patch_descriptor_module=K.feature.HardNet().to(device))
+        hardnet = K.feature.LAFDescriptor(patch_descriptor_module=K.feature.HardNet(pretrained=True).to(device))
         
         desc0 = hardnet(timg0, laf0).squeeze(0)
         desc1 = hardnet(timg1, laf1).squeeze(0)
