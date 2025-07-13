@@ -71,6 +71,91 @@ def prepare_data(pipe_data, p=0, m_mask=None, s=1., t=0.):
     return tri, k2u, u2k_list, b, vv 
 
 
+def prepare_data_other(pipe_data, p=0, m_mask=None, s=1., t=0.):
+    im = Image.open(pipe_data['img'][p])
+    sz = im.size
+
+    kp_all = pipe_data['kp'][p].to('cpu').numpy()
+    kp_all_ = (np.round(kp_all * s + t) - t) / s
+    ku_, _, _ = np.unique(kp_all_, return_index=True, return_inverse=True, axis=0)
+
+    kp = pipe_data['kp'][p][pipe_data['m_idx'][pipe_data['m_mask']][:, p]].to('cpu').numpy()
+    if not (m_mask is None): kp = kp[m_mask]
+
+    kp_ = (np.round(kp * s + t) - t) / s
+    ku, u2k, k2u = np.unique(kp_, return_index=True, return_inverse=True, axis=0)
+
+    ku_aux, u2k_aux, k2u_aux = np.unique(np.concatenate((ku, ku_)), return_index=True, return_inverse=True, axis=0)
+    aux_mask = np.zeros(ku_aux.shape[0], dtype=bool)
+    aux_mask[k2u_aux[:ku.shape[0]]] = True    
+    kp_out_ = ku_aux[~aux_mask]
+                    
+    avg_l = np.ceil((sz[0] * sz[1] / ku.shape[0]) ** 0.5)
+    
+    l0 = sz[0] / np.ceil(sz[0] / avg_l)
+    l1 = sz[1] / np.ceil(sz[1] / avg_l)
+    
+    q0 = np.arange(0, sz[0] + 0.001, l0)
+    q1 = np.arange(0, sz[1] + 0.001, l1)
+    
+    np.full((q0.shape[0], ), 0.)
+    
+    b0 = np.stack((q0, np.full((q0.shape[0], ), 0.)))
+    b1 = np.stack((q0, np.full((q0.shape[0], ), float(sz[1]))))
+    b2 = np.stack((np.full((q1.shape[0], ), 0.), q1))
+    b3 = np.stack((np.full((q1.shape[0], ), float(sz[0])), q1))
+    b = np.transpose(np.concatenate((b0, b1, b2, b3), axis=1), axes=[1, 0])
+    b_ = np.round(b)
+
+    kb_tmp = np.concatenate((kp_, kp_out_, b_))
+    ku_tmp, u2k_tmp, k2u_tmo = np.unique(kb_tmp, return_index=True, return_inverse=True, axis=0)
+
+    try: tri = Delaunay(ku_tmp)
+    except: return None, None, None, None, None 
+    t = tri.simplices
+
+    border_tri_keep = np.all(u2k_tmp[t] >= kp_.shape[0], axis=1) & np.any(u2k_tmp[t] >= kp_.shape[0] + kp_out_.shape[0], axis=1)
+    to_keep = u2k_tmp[t[border_tri_keep].flatten()]
+    idx_to_keep = np.unique(to_keep[(to_keep >= kp_.shape[0]) & (to_keep < kp_.shape[0] + kp_out_.shape[0])] - kp_.shape[0])
+    kp_out_to_keep = kp_out_[idx_to_keep]
+    b_new_ = np.concatenate((b_, kp_out_to_keep))
+    
+    kb = np.concatenate((kp_, b_new_))
+    ku, u2k, k2u = np.unique(kb, return_index=True, return_inverse=True, axis=0)
+    b_mask = u2k >= kp_.shape[0]
+
+    u2k_list = [[] for i in range(u2k.shape[0])]
+    for i in range(kp.shape[0]):
+        u2k_list[k2u[i]].append(i)
+        
+    u2k_list = [np.asarray(i) for i in u2k_list]
+    
+    try: tri = Delaunay(ku)
+    except: return None, None, None, None, None 
+    t = tri.simplices
+    t_mask = ~np.reshape(b_mask[t.flatten()], [-1, 3]).any(axis=1)
+    
+    e = np.concatenate((t[~t_mask][:, [0, 1]], t[~t_mask][:, [1, 2]], t[~t_mask][:, [0, 2]]), axis=0)
+    e_mask = np.reshape(~b_mask[e.flatten()], [-1, 2]).all(axis=1)
+    
+    bi = np.unique(np.concatenate((e[e_mask][:, 0], e[e_mask][:, 1]), axis=0))
+    bb_mask = np.zeros(ku.shape[0], dtype=bool)
+    bb_mask[bi] = 1
+    
+    b = np.stack((b_mask, bb_mask), axis=1)
+    
+    vv = np.zeros(ku.shape[0] ** 2, bool)
+    e = np.concatenate((t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]), axis=0)
+    e_mask = np.any(b_mask[e], axis=1)
+    e = e[~e_mask]    
+    vv[e[:, 0] * ku.shape[0] + e[:, 1]] = 1
+    vv[e[:, 1] * ku.shape[0] + e[:, 0]] = 1
+    vv = vv.reshape([ku.shape[0], ku.shape[0]])    
+    vv = [np.argwhere(vv[i]).squeeze(1) for i in range(vv.shape[0])]
+    
+    return tri, k2u, u2k_list, b, vv 
+
+
 def check_in_tri(tri, tri_pt, query_pt):
     tri_x = tri_pt[: ,0][tri]
     tri_y = tri_pt[:, 1][tri]    
@@ -263,19 +348,19 @@ def in_tri_show(pipe_data, tri, in_tri, to_check_tri_pt, p=0):
     return fig, ax
 
 
-def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.]):
+def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.], prepare_data=prepare_data_other):
     if show_in_progress: plot_matches(pipe_data, None, title='DTM - input')
     
-    mask = dtm1(pipe_data, show_in_progress=show_in_progress, st=st)
+    mask = dtm1(pipe_data, show_in_progress=show_in_progress, st=st, prepare_data=prepare_data)
 
     if full_dtm:
         if not (mask is None):                
-            return dtm2(pipe_data, mask, show_in_progress=show_in_progress, st=st)
+            return dtm2(pipe_data, mask, show_in_progress=show_in_progress, st=st, prepare_data=prepare_data)
 
     return mask
 
     
-def dtm1(pipe_data, show_in_progress=False, st=[1., 0.]):
+def dtm1(pipe_data, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_other):
     mask = None
     it = 0
     while True:    
@@ -352,7 +437,7 @@ def dtm1(pipe_data, show_in_progress=False, st=[1., 0.]):
     return mask
 
 
-def dtm2(pipe_data, mask, show_in_progress=False, st=[1., 0.]):
+def dtm2(pipe_data, mask, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_other):
     
     l = np.max(np.unique(mask))
     for li in range(l,0,-1):
@@ -865,7 +950,8 @@ if __name__ == "__main__":
     
         st = [1., 0.] # Delaunay pre-quantization
         show_in_progress = False
-        dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+        prepare_data_ = prepare_data_other
+        dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
     
         # RANSAC
         poselib_params = {            
@@ -889,7 +975,7 @@ if __name__ == "__main__":
         
         # Re-filter with DTM
         match_data['m_val'][sac_mask] = 0
-        dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+        dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
     
         # RANSAC on re-filtered matches
         idx = m_idx.to('cpu').detach()
@@ -908,7 +994,7 @@ if __name__ == "__main__":
         for i in range(ii):
             # Re-filter with DTM
             match_data['m_val'][sac_mask] = 0
-            dtm_mask = dtm(match_data, show_in_progress=show_in_progress) == 0
+            dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
         
             # RANSAC on re-filtered matches
             idx = m_idx.to('cpu').detach()
