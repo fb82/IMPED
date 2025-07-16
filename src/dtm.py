@@ -71,7 +71,7 @@ def prepare_data(pipe_data, p=0, m_mask=None, s=1., t=0.):
     return tri, k2u, u2k_list, b, vv 
 
 
-def prepare_data_other(pipe_data, p=0, m_mask=None, s=1., t=0.):
+def prepare_data_shaped(pipe_data, p=0, m_mask=None, s=1., t=0., diff_i_limit=2):
     im = Image.open(pipe_data['img'][p])
     sz = im.size
 
@@ -108,16 +108,96 @@ def prepare_data_other(pipe_data, p=0, m_mask=None, s=1., t=0.):
     b_ = np.round(b)
 
     kb_tmp = np.concatenate((kp_, kp_out_, b_))
-    ku_tmp, u2k_tmp, k2u_tmo = np.unique(kb_tmp, return_index=True, return_inverse=True, axis=0)
+    ku_tmp, u2k_tmp, k2u_tmp = np.unique(kb_tmp, return_index=True, return_inverse=True, axis=0)
 
     try: tri = Delaunay(ku_tmp)
     except: return None, None, None, None, None 
     t = tri.simplices
+    
+    diff_i = 1
+    diff_mask = np.zeros(ku_tmp.shape[0], dtype=int)
+    diff_mask[u2k_tmp >= kp_.shape[0] + kp_out_.shape[0]] = diff_i
+    diff_in_set = np.all(u2k_tmp[t] >= kp_.shape[0], axis=1)
 
-    border_tri_keep = np.all(u2k_tmp[t] >= kp_.shape[0], axis=1) & np.any(u2k_tmp[t] >= kp_.shape[0] + kp_out_.shape[0], axis=1)
-    to_keep = u2k_tmp[t[border_tri_keep].flatten()]
-    idx_to_keep = np.unique(to_keep[(to_keep >= kp_.shape[0]) & (to_keep < kp_.shape[0] + kp_out_.shape[0])] - kp_.shape[0])
-    kp_out_to_keep = kp_out_[idx_to_keep]
+    while True:
+        border_tri_keep = diff_in_set & np.any(diff_mask[k2u_tmp[u2k_tmp[t]]] > 0, axis=1)
+        to_keep = u2k_tmp[t[border_tri_keep].flatten()]
+        idx_to_keep = to_keep[(to_keep >= kp_.shape[0]) & (diff_mask[k2u_tmp[to_keep]] == 0)]
+
+        if idx_to_keep.shape[0] == 0: break
+
+        diff_i += 1
+        diff_mask[k2u_tmp[idx_to_keep]] = diff_i
+        
+        if diff_i == diff_i_limit: break
+        
+        
+    # colors = ['g', 'b', 'r', 'c', 'm', 'y', 'w', 'k']
+
+    # fig0, ax0 = plt.subplots(1)
+    # im = Image.open(pipe_data['img'][p])
+    # ax0.imshow(im)
+    # ax0.set_axis_off()
+    
+    # tpt = tri.points
+    # ax0.triplot(tpt[:, 0], tpt[:,1], t, lw=0.2)
+
+    # li = 0
+    # q = kp_
+    # ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+
+    # li = 1
+    # q = b_[u2k_tmp[diff_mask == li] - kp_.shape[0] - kp_out_.shape[0]] 
+    # ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+              
+    # for li in range(2, diff_i + 1):
+    #     q = kp_out_[u2k_tmp[diff_mask == li] - kp_.shape[0]]
+    #     ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+
+
+###
+
+    # diff_i = 1
+    # diff_mask_ = np.zeros(ku_tmp.shape[0], dtype=int)
+    # diff_mask_[u2k_tmp < kp_.shape[0]] = diff_i
+    # diff_in_set_ = np.all(u2k_tmp[t] < kp_.shape[0] + kp_out_.shape[0], axis=1)
+
+    # while True:
+    #     border_tri_keep = diff_in_set_ & np.any(diff_mask_[k2u_tmp[u2k_tmp[t]]] > 0, axis=1)
+    #     to_keep = u2k_tmp[t[border_tri_keep].flatten()]
+    #     idx_to_keep = to_keep[(to_keep >= kp_.shape[0]) & (to_keep < kp_.shape[0] + kp_out_.shape[0]) & (diff_mask_[k2u_tmp[to_keep]] == 0)]
+
+    #     if idx_to_keep.shape[0] == 0: break
+
+    #     diff_i += 1
+    #     diff_mask_[k2u_tmp[idx_to_keep]] = diff_i
+        
+        
+    # colors = ['g', 'b', 'r', 'c', 'm', 'y', 'w', 'k']
+
+    # fig0, ax0 = plt.subplots(1)
+    # im = Image.open(pipe_data['img'][p])
+    # ax0.imshow(im)
+    # ax0.set_axis_off()
+    
+    # tpt = tri.points
+    # ax0.triplot(tpt[:, 0], tpt[:,1], t, lw=0.2)
+
+    # li = 0
+    # q = kp_
+    # ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+
+    # li = 1
+    # q = b_ 
+    # ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+              
+    # for li in range(2, diff_i + 1):
+    #     q = kp_out_[u2k_tmp[diff_mask_ == li] - kp_.shape[0]]
+    #     ax0.plot(q[:, 0], q[:, 1], '.', color=colors[abs(li) % len(colors)], lw=0.2, markersize=0.5)
+
+###
+
+    kp_out_to_keep = kp_out_[u2k_tmp[(diff_mask >= 2) & (diff_mask <= diff_i_limit)] - kp_.shape[0]]
     b_new_ = np.concatenate((b_, kp_out_to_keep))
     
     kb = np.concatenate((kp_, b_new_))
@@ -348,7 +428,7 @@ def in_tri_show(pipe_data, tri, in_tri, to_check_tri_pt, p=0):
     return fig, ax
 
 
-def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.], prepare_data=prepare_data_other):
+def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.], prepare_data=prepare_data_shaped):
     if show_in_progress: plot_matches(pipe_data, None, title='DTM - input')
     
     mask = dtm1(pipe_data, show_in_progress=show_in_progress, st=st, prepare_data=prepare_data)
@@ -360,7 +440,7 @@ def dtm(pipe_data, show_in_progress=False, full_dtm=True, st=[1., 0.], prepare_d
     return mask
 
     
-def dtm1(pipe_data, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_other):
+def dtm1(pipe_data, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_shaped):
     mask = None
     it = 0
     while True:    
@@ -437,7 +517,7 @@ def dtm1(pipe_data, show_in_progress=False, st=[1., 0.], prepare_data=prepare_da
     return mask
 
 
-def dtm2(pipe_data, mask, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_other):
+def dtm2(pipe_data, mask, show_in_progress=False, st=[1., 0.], prepare_data=prepare_data_shaped):
     
     l = np.max(np.unique(mask))
     for li in range(l,0,-1):
@@ -932,8 +1012,10 @@ if __name__ == "__main__":
         m_idx = m_idx.to(device)
         m_val = m_val.to(device)
         m_mask = torch.ones(m_val.shape[0], device=device, dtype=torch.bool)
+        
         # or
-        # Mutual NN matching
+        
+        # Mutual NN matching (with a high threshold)
         # th = 0.99
         # m_val, m_idx = K.feature.match_smnn(desc0, desc1, th)
         # m_val = m_val.squeeze(1)
@@ -948,11 +1030,14 @@ if __name__ == "__main__":
             'm_mask': m_mask,
             }
     
+        # if one just wants to use spatial clues only and not similarity
+        # match_data['m_val'][:] = 1.0
+    
         st = [1., 0.] # Delaunay pre-quantization
         show_in_progress = False
-        prepare_data_ = prepare_data_other
-        dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
-    
+        prepare_data_ = prepare_data_shaped        
+        dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0 # retained correspondences have 0s in the mask
+
         # RANSAC
         poselib_params = {            
          'max_iterations': 100000,
@@ -970,29 +1055,12 @@ if __name__ == "__main__":
         sac_mask = np.copy(dtm_mask)
         sac_mask[dtm_mask] = poselib_mask
         
-        # Show matches
+        # show matches
         plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
-        
-        # Re-filter with DTM
-        match_data['m_val'][sac_mask] = 0
-        dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
-    
-        # RANSAC on re-filtered matches
-        idx = m_idx.to('cpu').detach()
-        pt0 = np.ascontiguousarray(kp0.to('cpu').detach())[idx[:, 0]]
-        pt1 = np.ascontiguousarray(kp1.to('cpu').detach())[idx[:, 1]]   
-        
-        F, info = poselib.estimate_fundamental(pt0[dtm_mask], pt1[dtm_mask], poselib_params, {})
-        poselib_mask = info['inliers']
-        sac_mask = np.copy(dtm_mask)
-        sac_mask[dtm_mask] = poselib_mask
-    
-        # Show matches
-        plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
-    
-        ii = 0 # Actually can be done more times
+         
+        ii = 1 # actually can be done zero or more times
         for i in range(ii):
-            # Re-filter with DTM
+            # re-filter with DTM, guided filtering on previous matches by forcing their similarity values to the lowest value
             match_data['m_val'][sac_mask] = 0
             dtm_mask = dtm(match_data, show_in_progress=show_in_progress, prepare_data=prepare_data_) == 0
         
@@ -1006,7 +1074,7 @@ if __name__ == "__main__":
             sac_mask = np.copy(dtm_mask)
             sac_mask[dtm_mask] = poselib_mask
         
-            # Show matches
+            # show matches
             plot_pair_matches(img, pt0, pt1, dtm_mask, sac_mask)
             
         plt.show()
