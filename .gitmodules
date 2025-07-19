@@ -34,3 +34,6 @@
 [submodule "src/mast3r"]
 	path = src/mast3r
 	url = https://github.com/naver/mast3r.git
+[submodule "src/dtm"]
+	path = src/dtm
+	url = https://github.com/fb82/DTM.git
