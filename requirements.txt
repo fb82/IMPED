@@ -42,7 +42,6 @@ pytorch_lightning==2.5.0.post0
 quaternion==3.5.2.post4
 rich==14.1.0
 roma==1.5.2.1
-romatch.egg==info
 scikit_learn==1.7.1
 scipy==1.16.1
 setuptools==75.6.0
