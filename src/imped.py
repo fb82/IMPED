@@ -8658,19 +8658,25 @@ if __name__ == '__main__':
 #       run_pairs(pipeline, imgs) 
 
         pipeline = [
-            dog_module(),
-            patch_module(),
-            deep_descriptor_module(),
-            smnn_module(),
-            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
+            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+                    [
+                        dog_module(),
+                        patch_module(),
+                        deep_descriptor_module(),
+                        blob_matching_module(),                    
+#                       smnn_module(),      
+                    ],
+                    [
+                        hz_module(),
+                        patch_module(),
+                        deep_descriptor_module(),
+                        blob_matching_module(),                    
+#                       smnn_module(),                    
+                    ],
+                ]),
+            dtm_module(),
             mop_miho_ncc_module(ncc=False),
-            show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
-#           show_patches_module(id_more='first', img_prefix='block_patches_', prepend_pair=True),
-#           magsac_module(),
-#           show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
+            show_matches_module(img_prefix='matches_', mask_idx=[1]),
         ]
         imgs = '../data/ET'
         run_pairs(pipeline, imgs) 
