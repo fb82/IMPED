@@ -250,7 +250,7 @@ qstylizer==0.2.4
 QtAwesome==1.4.0
 qtconsole==5.6.1
 QtPy==2.4.2
-quadtree_attention_package==0.0.0
+# quadtree_attention_package==0.0.0
 referencing==0.35.1
 regex==2024.11.6
 requests==2.32.3
