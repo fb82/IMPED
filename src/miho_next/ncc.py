@@ -446,10 +446,51 @@ def refinement_miho_other(im1, im2, pt1, pt2, mihoo=None, Hs_laf=None, remove_ba
         return pt1, pt2, Hs, idx, Hs_laf
 
 
-def norm_corr(patch1, patch2, subpix=True):     
+def norm_corr(patch1, patch2, subpix=True, use_covariance=True, centered_derivative=True):     
     w = patch2.size()[1]
     ww = w * w
     n = patch1.size()[0]
+    
+    if use_covariance:
+        if centered_derivative:     
+            dx = patch1[:, 1:-1, :-2] - patch1[:, 1:-1, 2:]
+            dy = patch1[:, :-2, 1:-1] - patch1[:, 2:, 1:-1]
+        else:
+            dx = patch1[:, :-1, :-1] - patch1[:, :-1, 1:]
+            dy = patch1[:, :-1, :-1] - patch1[:, 1:, :-1]    
+    
+        r = dx.shape[1] / 2 - 0.5
+        aux = torch.arange(-r, r + 0.5, device=device).unsqueeze(0).repeat([dx.shape[1], 1])
+        disk = ((aux ** 2) + (aux.permute([1, 0]) ** 2) <= r ** 2).unsqueeze(0)
+        
+        dx = dx * disk
+        dy = dy * disk
+    
+        d_ok = dx.isfinite() & dy.isfinite() 
+        dx[~d_ok] = 0
+        dy[~d_ok] = 0
+    
+        d_sum = d_ok.sum(dim=[1, 2])
+        
+        mu = torch.zeros((patch1.shape[0], 2, 2), device=device)    
+        mu[:, 0, 0] = (dx ** 2).sum(dim=[1, 2]) / d_sum
+        mu[:, 1, 1] = (dy ** 2).sum(dim=[1, 2]) / d_sum
+        mu[:, 0, 1] = (dx * dy).sum(dim=[1, 2]) / d_sum    
+        mu[:, 1, 0] = mu[:, 0, 1]
+        
+        d, v = torch.linalg.eigh(mu)
+        dm , _ = d.max(dim=1)
+        di = d / dm.unsqueeze(-1)
+        di = di ** 0.5
+        di[di < 2. / patch2.shape[1]] = 2. / patch2.shape[1]
+        di = 1. / di
+        v = v.permute([0, 2, 1])
+        
+        r = patch2.shape[1] / 2 - 0.5
+        aux = torch.arange(-r, r + 0.5, device=device).unsqueeze(0).repeat([patch2.shape[1], 1])
+    
+        xy = torch.stack((aux.flatten(), aux.permute([1, 0]).flatten()))    
+        mask = (((di.unsqueeze(-1) * (v @ xy)) ** 2).sum(dim=1) <= r ** 2).reshape((v.shape[0], patch2.shape[1], patch2.shape[2]))    
     
     with torch.no_grad():
         conv_ = torch.nn.Conv2d(1, 1, (w, w), padding='valid', bias=False, device=device)
@@ -469,6 +510,8 @@ def norm_corr(patch1, patch2, subpix=True):
 
     nc = ((ww * cc) - (m1 * m2.reshape(n, 1, 1))) / torch.sqrt(s1 * s2.reshape(n, 1, 1))   
     nc.flatten()[~torch.isfinite(nc.flatten())] = -torch.inf
+
+    if use_covariance: nc[~mask] = -torch.inf
 
     w_ = nc.shape[1]
     ww_ = w_ * w_    
