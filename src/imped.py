@@ -25,9 +25,9 @@ import copy
 import wget
 import pycolmap
 import scipy
-import miho_next.miho as mop_miho
-import miho_next.miho_other as mop
-import miho_next.ncc as ncc
+import miho.src.miho as mop_miho
+import miho.src.miho_other as mop
+import miho.src.ncc as ncc
 
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
@@ -1462,7 +1462,7 @@ def pipe_max_matches(pipe_block):
         
 
 class image_muxer_module:
-    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None, add_to_cache=True):
+    def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None, add_to_cache=True, check_border=True):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
@@ -1472,6 +1472,7 @@ class image_muxer_module:
         self.pair_generator = pair_generator
         self.pipe_gather = pipe_gather
         self.add_to_cache = add_to_cache
+        self.check_border = check_border
 
         if pipeline is None: pipeline = []
         self.pipeline = pipeline
@@ -1510,13 +1511,38 @@ class image_muxer_module:
                     apply_homo(pipe_data_in['kp'][0], warp_[0].inverse()),
                     apply_homo(pipe_data_in['kp'][1], warp_[1].inverse())
                     ]
-
+                
+                if self.check_border:
+                    sz0 = Image.open(pair_[0]).size
+                    sz1 = Image.open(pair_[1]).size     
+                    bmask0 = (pipe_data_in['kp'][0][:, 0] >= 0) & (pipe_data_in['kp'][0][:, 0] <= sz0[0] - 1) & (pipe_data_in['kp'][0][:, 1] >= 0) & (pipe_data_in['kp'][0][:, 1] <= sz0[1] - 1)
+                    bmask1 = (pipe_data_in['kp'][1][:, 0] >= 0) & (pipe_data_in['kp'][1][:, 0] <= sz1[0] - 1) & (pipe_data_in['kp'][1][:, 1] >= 0) & (pipe_data_in['kp'][1][:, 1] <= sz1[1] - 1)
+                       
             if 'kH' in pipe_data_in:
                 pipe_data_in['kH'] = [    
                     change_patch_homo(pipe_data_in['kH'][0], warp_[0]),
                     change_patch_homo(pipe_data_in['kH'][1], warp_[1]),
                     ]
+
+            if self.check_border:
+                if 'kp' in pipe_data_in:
+                    pipe_data_in['kp'] = [pipe_data_in['kp'][0][bmask0], pipe_data_in['kp'][1][bmask1]]
                 
+                if 'kH' in pipe_data_in:                
+                    pipe_data_in['kH'] = [pipe_data_in['kH'][0][bmask0], pipe_data_in['kH'][1][bmask1]]
+
+                if 'kr' in pipe_data_in:                
+                    pipe_data_in['kr'] = [pipe_data_in['kr'][0][bmask0], pipe_data_in['kr'][1][bmask1]]
+
+                if 'desc' in pipe_data_in:
+                    pipe_data_in['desc'] = [pipe_data_in['desc'][0][bmask0], pipe_data_in['desc'][1][bmask1]]
+
+                if 'm_idx' in pipe_data_in:
+                    bmask01 = bmask0[pipe_data_in['m_idx'][:, 0]] & bmask1[pipe_data_in['m_idx'][:, 2]]
+                    pipe_data_in['m_idx'] = pipe_data_in['m_idx'][bmask01]
+                    pipe_data_in['m_val'] = pipe_data_in['m_val'][bmask01]
+                    pipe_data_in['m_mask'] = pipe_data_in['m_mask'][bmask01]
+                                
             if ('H' in pipe_data_in) and (not pipe_data_in['H'] is None):
                 pipe_data_in['H'] = warp_[1].to(torch.double) @ pipe_data_in['H'] @ warp_[0].to(torch.double)
 
@@ -1738,10 +1764,12 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
     kp0 = []
     kH0 = []
     kr0 = []
+    dd0 = []
 
     kp1 = []
     kH1 = []
     kr1 = []
+    dd1 = []
     
     use_w = False
     for pipe_data in pipe_block:
@@ -1787,6 +1815,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
 
             kr0.append(pipe_data['kr'][0].to(device))
             kr1.append(pipe_data['kr'][1].to(device))
+            
+            if 'desc' in pipe_data:
+                dd0.append(pipe_data['desc'][0].to(device))
+                dd1.append(pipe_data['desc'][1].to(device))            
             
             if use_w:
                 w0.append(pipe_data['w'][0].to(device))
@@ -1841,6 +1873,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         if counter:
             counter0 = torch.cat(counter0)
             counter1 = torch.cat(counter1)
+          
+        if 'desc' in pipe_data:  
+            dd0 = torch.cat(dd0)
+            dd1 = torch.cat(dd1)
           
         if 'm_idx' in pipe_data:
             m_idx = torch.cat(m_idx)
@@ -1924,6 +1960,9 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kp0 = kp0[idx0u]
             kH0 = kH0[idx0u]
             kr0 = kr0[idx0u]
+            
+            if 'desc' in pipe_data:
+                dd0 = dd0[idx0u]
 
             if patch_matters:
                 kkp1 = torch.cat((kp1, kH1.reshape(-1, 9)), dim=1)
@@ -1942,6 +1981,9 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH1 = kH1[idx1u]
             kr1 = kr1[idx1u]
             
+            if 'desc' in pipe_data:
+                dd1 = dd1[idx1u]
+                        
             if use_w:
                 w0 = w0[idx0u]
                 w1 = w1[idx1u]
@@ -1976,11 +2018,17 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         kp0 = kp0[t0]
         kH0 = kH0[t0]
         kr0 = kr0[t0]
+        
+        if 'desc' in pipe_data:
+            dd0 = dd0[t0]
 
         kp1 = kp1[t1]
         kH1 = kH1[t1]
         kr1 = kr1[t1]
-                
+        
+        if 'desc' in pipe_data:
+            dd1 = dd1[t1]
+        
         if use_w:
             w0 = w0[t0]            
             w1 = w1[t1]            
@@ -2004,10 +2052,16 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kp0 = kp0[idx0]
             kH0 = kH0[idx0]
             kr0 = kr0[idx0]
+
+            if 'desc' in pipe_data:
+                dd0 = dd0[idx0]
     
             kp1 = kp1[idx1]
             kH1 = kH1[idx1]
             kr1 = kr1[idx1]
+            
+            if 'desc' in pipe_data:
+                dd1 = dd1[idx1]
                     
             if use_w:
                 w0 = w0[idx0]            
@@ -2026,7 +2080,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         pipe_data_out['kp'] = [kp0.to(io_device), kp1.to(io_device)]
         pipe_data_out['kH'] = [kH0.to(io_device), kH1.to(io_device)]
         pipe_data_out['kr'] = [kr0.to(io_device), kr1.to(io_device)]
-        
+
+        if 'desc' in pipe_data:
+            pipe_data_out['desc'] = [dd0.to(io_device), dd1.to(io_device)]
+                    
         if use_w:
             w0[:, :2] = kp0
             w1[:, :2] = kp1
@@ -6864,6 +6921,8 @@ class mop_miho_ncc_module:
                 'scale': [[10/14, 1], [10/12, 1], [1, 1], [1, 12/10], [1, 14/10]],
                 'subpix': True,
                 'ref_image': 'both',
+                'use_covariance': True,
+                'centered_derivative': True,                
                 }
 
         self.transform = transforms.Compose([
@@ -8639,6 +8698,7 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs) 
 
+
 #       pipeline = [
 #           hz_module(),
 #           patch_module(),
@@ -8657,26 +8717,56 @@ if __name__ == '__main__':
 #       imgs = '../data/ET'
 #       run_pairs(pipeline, imgs) 
 
+
+#       pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#                   [
+#                       dog_module(),
+#                       patch_module(),
+#                       deep_descriptor_module(),
+# #                     blob_matching_module(),                    
+#                       smnn_module(),      
+#                   ],
+#                   [
+#                       hz_module(),
+#                       patch_module(),
+#                       deep_descriptor_module(),
+# #                     blob_matching_module(),                    
+#                       smnn_module(),                    
+#                   ],
+#               ]),
+#           dtm_module(),
+#           mop_miho_ncc_module(),
+#           show_matches_module(img_prefix='matches_', mask_idx=[1]),
+#       ]
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs) 
+
+
         pipeline = [
             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-                    [
-                        dog_module(),
-                        patch_module(),
-                        deep_descriptor_module(),
-#                       blob_matching_module(),                    
-                        smnn_module(),      
-                    ],
-                    [
-                        hz_module(),
-                        patch_module(),
-                        deep_descriptor_module(),
-#                       blob_matching_module(),                    
-                        smnn_module(),                    
-                    ],
-                ]),
+                [
+                    dog_module(),
+                    patch_module(),
+                    deep_descriptor_module(),
+                ],
+                [
+                    hz_module(),
+                    patch_module(),
+                    deep_descriptor_module(),
+                ],
+            ]),            
+            image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
+                blob_matching_module(),                    
+                smnn_module(),      
+                dtm_module(),
+                mop_miho_ncc_module(ncc=False),
+                show_matches_module(id_more='pyramid_show', img_prefix='pyramid_matches_', mask_idx=[1]),                
+            ]),
             dtm_module(),
-            mop_miho_ncc_module(),
-            show_matches_module(img_prefix='matches_', mask_idx=[1]),
+            mop_miho_ncc_module(ncc=False),
+            magsac_module(),
+            show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
         ]
         imgs = '../data/ET'
         run_pairs(pipeline, imgs) 
