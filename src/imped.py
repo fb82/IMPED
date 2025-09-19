@@ -8643,13 +8643,13 @@ if __name__ == '__main__':
 #       run_pairs(pipeline, imgs) 
 
 
-#       pipeline = [
-#           mast3r_module(),
-#           magsac_module(),
-#           show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#       ]
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)  
+        pipeline = [
+            mast3r_module(),
+            magsac_module(),
+            show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        ]
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)  
         
 
 #       pipeline = [
@@ -8745,32 +8745,32 @@ if __name__ == '__main__':
 #       run_pairs(pipeline, imgs) 
 
 
-        pipeline = [
-            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-                [
-                    dog_module(),
-                    patch_module(),
-                    deep_descriptor_module(),
-                ],
-                [
-                    hz_module(),
-                    patch_module(),
-                    deep_descriptor_module(),
-                ],
-            ]),            
-            image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
-                blob_matching_module(),                    
-                smnn_module(),      
-                dtm_module(),
-                mop_miho_ncc_module(ncc=False),
-                show_matches_module(id_more='pyramid_show', img_prefix='pyramid_matches_', mask_idx=[1]),                
-            ]),
-            dtm_module(),
-            mop_miho_ncc_module(ncc=False),
-            magsac_module(),
-            show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
-        ]
-        imgs = '../data/ET'
-        run_pairs(pipeline, imgs) 
+#       pipeline = [
+#           pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#               [
+#                   dog_module(),
+#                   patch_module(),
+#                   deep_descriptor_module(),
+#               ],
+#               [
+#                   hz_module(),
+#                   patch_module(),
+#                   deep_descriptor_module(),
+#               ],
+#           ]),            
+#           image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
+#               blob_matching_module(),                    
+# #             smnn_module(),      
+#               dtm_module(),
+#               mop_miho_ncc_module(ncc=False),
+#               show_matches_module(id_more='pyramid_show', img_prefix='pyramid_matches_', mask_idx=[1]),                
+#           ]),
+#           dtm_module(),
+#           mop_miho_ncc_module(ncc=False),
+#           magsac_module(),
+#           show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
+#       ]
+#       imgs = '../data/ET'
+#       run_pairs(pipeline, imgs) 
 
         print('doh!')
