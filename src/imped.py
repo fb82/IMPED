@@ -1761,6 +1761,8 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
 
     if not isinstance(pipe_block, list): pipe_block = [pipe_block]
 
+    bring_desc = np.unique([pipe['desc'][0].shape[1] for pipe in pipe_block if 'desc' in pipe]).shape[0] == 1
+
     kp0 = []
     kH0 = []
     kr0 = []
@@ -1816,7 +1818,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kr0.append(pipe_data['kr'][0].to(device))
             kr1.append(pipe_data['kr'][1].to(device))
             
-            if 'desc' in pipe_data:
+            if ('desc' in pipe_data) and bring_desc:
                 dd0.append(pipe_data['desc'][0].to(device))
                 dd1.append(pipe_data['desc'][1].to(device))            
             
@@ -1874,7 +1876,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             counter0 = torch.cat(counter0)
             counter1 = torch.cat(counter1)
           
-        if 'desc' in pipe_data:  
+        if ('desc' in pipe_data) and bring_desc:  
             dd0 = torch.cat(dd0)
             dd1 = torch.cat(dd1)
           
@@ -1961,7 +1963,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH0 = kH0[idx0u]
             kr0 = kr0[idx0u]
             
-            if 'desc' in pipe_data:
+            if ('desc' in pipe_data) and bring_desc:
                 dd0 = dd0[idx0u]
 
             if patch_matters:
@@ -1981,7 +1983,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH1 = kH1[idx1u]
             kr1 = kr1[idx1u]
             
-            if 'desc' in pipe_data:
+            if ('desc' in pipe_data) and bring_desc:
                 dd1 = dd1[idx1u]
                         
             if use_w:
@@ -2019,14 +2021,14 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         kH0 = kH0[t0]
         kr0 = kr0[t0]
         
-        if 'desc' in pipe_data:
+        if ('desc' in pipe_data) and bring_desc:
             dd0 = dd0[t0]
 
         kp1 = kp1[t1]
         kH1 = kH1[t1]
         kr1 = kr1[t1]
         
-        if 'desc' in pipe_data:
+        if ('desc' in pipe_data) and bring_desc:
             dd1 = dd1[t1]
         
         if use_w:
@@ -2053,14 +2055,14 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             kH0 = kH0[idx0]
             kr0 = kr0[idx0]
 
-            if 'desc' in pipe_data:
+            if ('desc' in pipe_data) and bring_desc:
                 dd0 = dd0[idx0]
     
             kp1 = kp1[idx1]
             kH1 = kH1[idx1]
             kr1 = kr1[idx1]
             
-            if 'desc' in pipe_data:
+            if ('desc' in pipe_data) and bring_desc:
                 dd1 = dd1[idx1]
                     
             if use_w:
@@ -2081,7 +2083,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
         pipe_data_out['kH'] = [kH0.to(io_device), kH1.to(io_device)]
         pipe_data_out['kr'] = [kr0.to(io_device), kr1.to(io_device)]
 
-        if 'desc' in pipe_data:
+        if ('desc' in pipe_data) and bring_desc:
             pipe_data_out['desc'] = [dd0.to(io_device), dd1.to(io_device)]
                     
         if use_w:
