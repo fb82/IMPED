@@ -3335,14 +3335,25 @@ class roma_module:
 
 
     def run(self, **args):
-        W_A, H_A = Image.open(args['img'][0]).size
-        W_B, H_B = Image.open(args['img'][1]).size
+        H, W = self.roma_model.get_output_resolution()
+
+        im1 = Image.open(args['img'][0])
+        im1 = im1.convert("RGB")
+
+        im2 = Image.open(args['img'][1])
+        im2 = im2.convert("RGB")
+
+        W_A, H_A = im1.size
+        W_B, H_B = im2.size
+
+        im1 = im1.resize((W, H))
+        im2 = im2.resize((W, H))
     
         # Match
         if self.args['use_tiny']:
             warp, certainty = self.roma_model.match(args['img'][0], args['img'][1])
         else:
-            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1], device=device)
+            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1])
         # Sample matches for estimation
         
         sampling_args = {}
@@ -3350,10 +3361,13 @@ class roma_module:
             sampling_args['num'] = self.args['max_keypoints']
         
         matches, certainty = self.roma_model.sample(warp, certainty, **sampling_args)
-        kpts1, kpts2 = self.roma_model.to_pixel_coordinates(matches, H_A, W_A, H_B, W_B)    
+        kpts1, kpts2 = self.roma_model.to_pixel_coordinates(matches, H, W, H, W)    
 
         kps1 = kpts1.detach().to(device)
         kps2 = kpts2.detach().to(device)
+
+        kps1 = kps1 / torch.tensor([W/float(W_A), H/float(H_A)], device=device).unsqueeze(0)
+        kps2 = kps2 / torch.tensor([W/float(W_B), H/float(H_B)], device=device).unsqueeze(0)
         
         kp = [kps1, kps2]
         kH = [
