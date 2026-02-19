@@ -5549,7 +5549,7 @@ class image_pairs:
                         m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
                         if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
                     else:
-                        m_idx, _ = self.additional_colmap_db.get_matches(im0_id, im1_id)
+                        m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
                         if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
                                             
             must_skip = (in_colmap_db and self.mode == 'exclude') or ((not in_colmap_db) and self.mode == 'include') 
