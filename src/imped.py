@@ -1885,6 +1885,10 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             m_val = torch.cat(m_val)
             m_mask = torch.cat(m_mask)
             
+        if bring_desc:
+            if (kp0.shape[0] != dd0.shape[0]) or (kp1.shape[0] != dd1.shape[0]):
+                bring_desc = False
+            
     if not (sampling_mode is None):
         kp0_unsampled = kp0.clone()
         kp1_unsampled = kp1.clone()
