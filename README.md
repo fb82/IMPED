@@ -6,7 +6,7 @@
 |-----|---|---|
 | Create requirements file | ✅ | |
 | Test all existing pipelines | ✅ | |
-| Fix broken pipelines |  |📝 |
+| Fix broken pipelines | ✅ | |
 | Move test pipelines to test files |  |📝 |
 | Split codebase |  |📝 |
 | Comment codebase |  | 📝 |

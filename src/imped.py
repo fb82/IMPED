@@ -8306,46 +8306,46 @@ if __name__ == '__main__':
     #   imgs = '../data/ET'
     #   run_pairs(pipeline, imgs)    
 
-# ##  Not working
-#       pipeline = [
-#           loftr_module(),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(),
-#       ]
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)       
+# ## Working
+#         pipeline = [
+#             loftr_module(),
+#             magsac_module(),
+#             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#             to_colmap_module(),
+#         ]
+#         imgs = '../data/ET'
+#         run_pairs(pipeline, imgs)       
         
-# ## Not working
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(),
-#       ]
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)  
+# ## Working
+#         pipeline = [
+#             deep_joined_module(what='aliked'),
+#             lightglue_module(what='aliked'),
+#             magsac_module(),
+#             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#             to_colmap_module(),
+#         ]
+#         imgs = '../data/ET'
+#         run_pairs(pipeline, imgs)  
                 
-# ## Not working
-#       pipeline = [
-#           loftr_module(),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(),
-#       ]
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)  
+# ## Working
+#         pipeline = [
+#             loftr_module(),
+#             magsac_module(),
+#             show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+#             to_colmap_module(),
+#         ]
+#         imgs = '../data/ET'
+#         run_pairs(pipeline, imgs)  
 
-# ## Not working: manca modulo local_corr
-#       pipeline = [
-#           roma_module(),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(),
-#       ]    
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs)  
+    # ## Not working: manca modulo local_corr probabilmente errore mancanza scheda nvidia
+    #     pipeline = [
+    #         roma_module(),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         to_colmap_module(),
+    #     ]    
+    #     imgs = '../data/ET'
+    #     run_pairs(pipeline, imgs)  
  
 ## Working
     #   pipeline = [
@@ -8433,108 +8433,108 @@ if __name__ == '__main__':
 #       imgs = [imgs_imc[i] for i in range(10)]
 #       run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
-# ## Not working
-#       imgs = '../data/ET'
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(db='aliked.db'),            
-#       ]         
-#       run_pairs(pipeline, imgs)
-#       #
-#       pipeline = [
-#           deep_joined_module(what='superpoint'),
-#           lightglue_module(what='superpoint'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-#           to_colmap_module(db='superpoint.db'),            
-#       ]         
-#       run_pairs(pipeline, imgs)
-#       #
-#       device = torch.device('cpu')
-#       merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
+    # ## Working
+    #     imgs = '../data/ET'
+    #     pipeline = [
+    #         deep_joined_module(what='aliked'),
+    #         lightglue_module(what='aliked'),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         to_colmap_module(db='aliked.db'),            
+    #     ]         
+    #     run_pairs(pipeline, imgs)
+    #     #
+    #     pipeline = [
+    #         deep_joined_module(what='superpoint'),
+    #         lightglue_module(what='superpoint'),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         to_colmap_module(db='superpoint.db'),            
+    #     ]         
+    #     run_pairs(pipeline, imgs)
+    #     #
+    #     device = torch.device('cpu')
+    #     merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
 
-## Not working
-    #   pipeline = [
-    #       deep_joined_module(what='aliked'),
-    #       lightglue_module(what='aliked'),
-    #       magsac_module(),
-    #       show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-    #       to_colmap_module(db='aliked.db'),            
-    #   ]         
-    #   imgs = '../data/ET'
-    #   run_pairs(pipeline, imgs)
-    #   os.makedirs('aliked_colmap_models', exist_ok=True)          
-    #   pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    #   filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    # Not working
+        pipeline = [
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
+            magsac_module(),
+            show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+            to_colmap_module(db='aliked.db'),            
+        ]         
+        imgs = '../data/ET'
+        run_pairs(pipeline, imgs)
+        os.makedirs('aliked_colmap_models', exist_ok=True)          
+        pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
+        filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
 
-## Not working
-    #   imgs = '../data/ET'
-    #   pipeline = [
-    #       deep_joined_module(what='aliked'),
-    #       lightglue_module(what='aliked'),
-    #       magsac_module(),
-    #       show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-    #       to_colmap_module(db='aliked.db'),            
-    #   ]         
-    #   run_pairs(pipeline, imgs)
-    #   os.makedirs('aliked_colmap_models', exist_ok=True)          
-    #   pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    #   filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
-    #   #
-    #   pipeline = [
-    #       deep_joined_module(what='superpoint'),
-    #       lightglue_module(what='superpoint'),
-    #       magsac_module(),
-    #       show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-    #       to_colmap_module(db='superpoint.db'),            
-    #   ]         
-    #   run_pairs(pipeline, imgs)
-    #   os.makedirs('superpoint_colmap_models', exist_ok=True)          
-    #   pycolmap.incremental_mapping(database_path='superpoint.db', image_path=imgs, output_path='superpoint_colmap_models')            
-    #   filter_colmap_reconstruction(input_model_path='superpoint_colmap_models/0', db_path='superpoint.db', img_path=imgs, output_model_path='superpoint_colmap_models/filtered_model', to_filter=['et001.jpg', 'et002.jpg', 'et003.jpg', 'et004.jpg', 'et005.jpg'], how_filter='include', only_cameras=False, add_3D_points=True)
-    #   #
-    #   device = torch.device('cpu')
-    #   align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
+    # # Not working
+    #     imgs = '../data/ET'
+    #     pipeline = [
+    #         deep_joined_module(what='aliked'),
+    #         lightglue_module(what='aliked'),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         to_colmap_module(db='aliked.db'),            
+    #     ]         
+    #     run_pairs(pipeline, imgs)
+    #     os.makedirs('aliked_colmap_models', exist_ok=True)          
+    #     pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
+    #     filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    #     #
+    #     pipeline = [
+    #         deep_joined_module(what='superpoint'),
+    #         lightglue_module(what='superpoint'),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         to_colmap_module(db='superpoint.db'),            
+    #     ]         
+    #     run_pairs(pipeline, imgs)
+    #     os.makedirs('superpoint_colmap_models', exist_ok=True)          
+    #     pycolmap.incremental_mapping(database_path='superpoint.db', image_path=imgs, output_path='superpoint_colmap_models')            
+    #     filter_colmap_reconstruction(input_model_path='superpoint_colmap_models/0', db_path='superpoint.db', img_path=imgs, output_model_path='superpoint_colmap_models/filtered_model', to_filter=['et001.jpg', 'et002.jpg', 'et003.jpg', 'et004.jpg', 'et005.jpg'], how_filter='include', only_cameras=False, add_3D_points=True)
+    #     #
+    #     device = torch.device('cpu')
+    #     align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
-## Not working
-    #   pipeline = [
-    #       deep_joined_module(),
-    #       lightglue_module(),
-    #       magsac_module(),
-    #       to_colmap_module(),            
-    #       show_matches_module(mask_idx=[1], prepend_pair=False),
-    #   ]
-    #   imgs = '../data/ET'
-    #   # no hdf5 cache with db_name=None
-    #   run_pairs(pipeline, imgs, db_name=None)
+    # # Working
+    #     pipeline = [
+    #         deep_joined_module(),
+    #         lightglue_module(),
+    #         magsac_module(),
+    #         to_colmap_module(),            
+    #         show_matches_module(mask_idx=[1], prepend_pair=False),
+    #     ]
+    #     imgs = '../data/ET'
+    #     # no hdf5 cache with db_name=None
+    #     run_pairs(pipeline, imgs, db_name=None)
 
-# ## Not working
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(id_more='1st', img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
-#           to_colmap_module(db='aliked.db'),            
-#       ]         
-#     # imgs = '../data/ET'
-#     # run_pairs(pipeline, imgs, colmap_db_or_list=['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg'], mode='exclude')
-#       imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
-#       run_pairs(pipeline, imgs, add_path='../data/ET')
-#       # now the remaining mathing pairs only
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(id_more='2nd', img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
-#           to_colmap_module(db='aliked.db'),            
-#       ]         
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches')
+    # ## Working
+    #     pipeline = [
+    #         deep_joined_module(what='aliked'),
+    #         lightglue_module(what='aliked'),
+    #         magsac_module(),
+    #         show_matches_module(id_more='1st', img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
+    #         to_colmap_module(db='aliked.db'),            
+    #     ]         
+    #     # imgs = '../data/ET'
+    #     # run_pairs(pipeline, imgs, colmap_db_or_list=['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg'], mode='exclude')
+    #     imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
+    #     run_pairs(pipeline, imgs, add_path='../data/ET')
+    #     # now the remaining mathing pairs only
+    #     pipeline = [
+    #         deep_joined_module(what='aliked'),
+    #         lightglue_module(what='aliked'),
+    #         magsac_module(),
+    #         show_matches_module(id_more='2nd', img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
+    #         to_colmap_module(db='aliked.db'),            
+    #     ]         
+    #     imgs = '../data/ET'
+    #     run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches')
 
-# ## Not working
+# ## Working
 #         pipeline = [
 #             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
 #                 [
@@ -8573,17 +8573,17 @@ if __name__ == '__main__':
     #   # no hdf5 cache with db_name=None
     #   run_pairs(pipeline, imgs, db_name=None)
 
-# ## Not working
-#       imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
-#       pipeline = [
-#           deep_joined_module(what='aliked'),
-#           lightglue_module(what='aliked'),
-#           magsac_module(),
-#           show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-#           pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
-#       ]         
-#       imgs = [imgs_planar[i] for i in range(20)]
-#       run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
+    # ## Working
+    #     imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
+    #     pipeline = [
+    #         deep_joined_module(what='aliked'),
+    #         lightglue_module(what='aliked'),
+    #         magsac_module(),
+    #         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+    #         pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
+    #     ]         
+    #     imgs = [imgs_planar[i] for i in range(20)]
+    #     run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
 
 # ## Working
 #       imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
@@ -8621,26 +8621,25 @@ if __name__ == '__main__':
     #   imgs = [imgs_scannet[i] for i in range(10)]
     #   run_pairs(pipeline, imgs, add_path=to_add_path_scannet)   
 
-# ## Not Working
-#       pipeline = [
-#           dog_module(),
-#           patch_module(),
-#           deep_descriptor_module(),
-#           smnn_module(),
-#           show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
-#           mop_miho_ncc_module(),
-#           show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
-#           show_patches_module(id_more='first', img_prefix='block_patches_', prepend_pair=True),
-#           magsac_module(),
-#           show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
-#           show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
-#       ]
-#       imgs = '../data/ET'
-#       run_pairs(pipeline, imgs) 
+    # ## Working
+    #     pipeline = [
+    #         dog_module(),
+    #         patch_module(),
+    #         deep_descriptor_module(),
+    #         smnn_module(),
+    #         show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0]),
+    #         show_kpts_module(id_more='first', img_prefix='patches_', mask_idx=[1, 0], prepend_pair=True),
+    #         mop_miho_ncc_module(),
+    #         show_matches_module(id_more='second', img_prefix='matches_after_filter_', mask_idx=[1, 0]),
+    #         show_kpts_module(id_more='second', img_prefix='patches_after_filter_', mask_idx=[1, 0], prepend_pair=True),
+    #         show_patches_module(id_more='first', img_prefix='block_patches_', prepend_pair=True),
+    #         magsac_module(),
+    #         show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
+    #         show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
+    #     ]
+    #     imgs = '../data/ET'
+    #     run_pairs(pipeline, imgs) 
 
-# FINO QUI
 
 ## Working
         # pipeline = [
@@ -8768,33 +8767,33 @@ if __name__ == '__main__':
     #     run_pairs(pipeline, imgs) 
 
 
-# NOT working
-    #     pipeline = [
-    #         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-    #             [
-    #                 dog_module(),
-    #                 patch_module(),
-    #                 deep_descriptor_module(),
-    #             ],
-    #             [
-    #                 hz_module(),
-    #                 patch_module(),
-    #                 deep_descriptor_module(),
-    #             ],
-    #         ]),            
-    #         image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
-    #             blob_matching_module(),                    
-    # #             smnn_module(),      
-    #             dtm_module(),
-    #             mop_miho_ncc_module(ncc=False),
-    #             show_matches_module(id_more='pyramid_show', img_prefix='pyramid_matches_', mask_idx=[1]),                
-    #         ]),
-    #         dtm_module(),
-    #         mop_miho_ncc_module(ncc=False),
-    #         magsac_module(),
-    #         show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
-    #     ]
-    #     imgs = '../data/ET'
-    #     run_pairs(pipeline, imgs) 
+# ## Working
+#         pipeline = [
+#             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+#                 [
+#                     dog_module(),
+#                     patch_module(),
+#                     deep_descriptor_module(),
+#                 ],
+#                 [
+#                     hz_module(),
+#                     patch_module(),
+#                     deep_descriptor_module(),
+#                 ],
+#             ]),            
+#             image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
+#                 blob_matching_module(),                    
+#     #             smnn_module(),      
+#                 dtm_module(),
+#                 mop_miho_ncc_module(ncc=False),
+#                 show_matches_module(id_more='pyramid_show', img_prefix='pyramid_matches_', mask_idx=[1]),                
+#             ]),
+#             dtm_module(),
+#             mop_miho_ncc_module(ncc=False),
+#             magsac_module(),
+#             show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
+#         ]
+#         imgs = '../data/ET'
+#         run_pairs(pipeline, imgs) 
 
         print('doh!')
