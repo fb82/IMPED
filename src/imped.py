@@ -339,7 +339,24 @@ def benchmark_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_dat
                             upright=upright, max_imgs=max_imgs, to_exclude=to_exclude, img_ext=img_ext, save_ext=save_ext, check_data=check_data)
 
 
-def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', dataset='megadepth', debug_pairs=None, force=False, max_sz=1200):        
+def megadepth_scannet_setup(bench_path='bench_data', bench_imgs='imgs', bench_gt='gt_data', dataset='megadepth', debug_pairs=None, force=False, max_sz=1200):  
+    """
+    Downloads and organizes the MegaDepth or ScanNet datasets for evaluation.
+
+    This function acts as a wrapper that swaps between outdoor (MegaDepth) 
+    and indoor (ScanNet) logic. It handles image resizing, camera pose 
+    extraction (R, T matrices), and coordinate scaling.
+
+    Args:
+        dataset (str): Either 'megadepth' or 'scannet'.
+        debug_pairs (int): If set, only loads a small subset of the data 
+            to speed up testing and debugging.
+        max_sz (int): The maximum dimension (width or height) for images; 
+            larger images are automatically downscaled.
+
+    Returns:
+        tuple: (image_pairs, ground_truth_dict, base_image_path)
+    """      
     if dataset == 'megadepth':
         download = download_megadepth
         img_list = megadepth_1500_list
@@ -411,7 +428,20 @@ def decompress_pickle(file):
 
 
 def imc_phototourism_setup(bench_path='bench_data', bench_imgs='imgs', dataset='imc', sample_size=800, seed=42, covisibility_range=[0.1, 0.7], new_sample=False, force=False):
-    
+    """
+    Downloads and prepares the IMC Phototourism dataset for benchmarking.
+
+    This function automates the retrieval of landmark images and their 
+    corresponding 'Ground Truth' (GT) calibration data. It filters image 
+    pairs based on 'covisibility'—ensuring that the pairs selected actually 
+    overlap enough to be matched.
+
+    The final data is stored in a pickled HDF5 database for rapid loading 
+    in future sessions.
+
+    Returns:
+        tuple: (image_pairs, ground_truth_dict, base_image_path)
+    """
     os.makedirs(bench_path, exist_ok=True)
     db_file = os.path.join(bench_path, dataset + '.hdf5')    
     db = pickled_hdf5.pickled_hdf5(db_file, mode='a')   
@@ -635,6 +665,22 @@ def go_iter(to_iter, msg='', active=True, params=None):
 
 
 def visualize_LAF(img, LAF, img_idx = 0, color='r', linewidth=1, draw_ori = True, fig=None, ax = None, return_fig_ax = False, **kwargs):
+    """
+    Renders Local Affine Frames (LAFs) onto an image for visual inspection.
+
+    An LAF is more than a point; it's a 2x3 matrix representing a local 
+    coordinate system. This function draws the boundary of the 'patch' 
+    (usually an ellipse) and optionally a line indicating the dominant 
+    orientation.
+
+    Args:
+        img (torch.Tensor): The image tensor (CxHxW).
+        LAF (torch.Tensor): The Local Affine Frames tensor (Nx2x3).
+        draw_ori (bool): If True, draws a line from the center to the 
+                         edge to show the rotation of the feature.
+        return_fig_ax (bool): If True, returns the Matplotlib figure 
+                              and axis for further plotting.
+    """
     from kornia_moons.feature import to_numpy_image
 
     x, y = K.feature.laf.get_laf_pts_to_draw(K.feature.laf.scale_laf(LAF, 0.5), img_idx)
@@ -757,6 +803,22 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
                 
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
+    """
+    Executes a sequence of image processing modules on a pair of images.
+
+    This function iterates through a list of 'pipeline' modules, handles 
+    data dependencies, and manages persistent storage (db). It distinguishes 
+    between 'single_image' tasks (like keypoint detection) and 'pair' tasks 
+    (like feature matching).
+
+    Key Features:
+    - Smart Caching: Checks the 'db' for existing results based on a unique 
+      hierarchical key before running a module.
+    - Data Propagation: Updates a shared 'pipe_data' dictionary that grows 
+      as images move through the pipeline.
+    - Hierarchical Naming: Builds a 'pipe_name' string (e.g., /sift/smnn/magsac) 
+      to track the specific lineage of the data.
+    """
     if pipe_data is None: pipe_data = {}
 
     if not pipe_data:
@@ -878,6 +940,21 @@ def set_args(id_string, args, args_):
 
 
 class dog_module:
+    """
+    A feature detection module using the Difference of Gaussians (DoG) method.
+
+    This module identifies keypoints by subtracting two blurred versions of 
+    the same image. This highlights 'blobs' and corners at various scales. 
+    It is the standard detector used in the SIFT framework and is highly 
+    stable for 3D reconstruction and image alignment.
+
+    Attributes:
+        nfeatures (int): The number of top-ranked keypoints to retain 
+            (default: 8000).
+        upright (bool): If True, forces all keypoints to have an orientation 
+            of 0 degrees, disabling rotation invariance.
+        contrastThreshold: Filters out weak features in low-contrast regions.
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False                
@@ -927,6 +1004,20 @@ class dog_module:
 
 
 class keynet_module:
+    """
+    A deep-learning feature detection module using the KeyNet architecture.
+
+    KeyNet is designed to combine the strengths of traditional geometric 
+    detectors (like Hessian or Harris) with the power of CNNs. It uses 
+    learned filters to find stable, repeatable points that are 
+    optimized for matching across different viewpoints.
+
+    Attributes:
+        num_features (int): The number of top-scoring keypoints to extract 
+            (default: 8000).
+        pretrained (bool): Uses weights trained on the HPatches dataset 
+            for state-of-the-art repeatability.
+    """
     def __init__(self, **args):
         self.single_image = True        
         self.pipeliner = False   
@@ -966,6 +1057,22 @@ class keynet_module:
 import hz.hz as hz
 
 class hz_module:
+    """
+    A high-precision feature detection module based on the Hessian-Affine algorithm.
+
+    This module identifies stable 'blobs' in an image by analyzing the 
+    Hessian matrix of the intensity values. It specifically targets 
+    affine-invariant regions, meaning it can detect the same physical 
+    surface even if the camera's viewpoint causes significant 
+    geometric stretching or tilting.
+
+    Attributes:
+        plus (bool): If True, uses the 'hz_plus' variant (color/multichannel). 
+            If False, uses standard grayscale Hessian detection.
+        max_max_pts (int): The maximum number of keypoints to extract 
+            (default: 8000).
+        block_mem (int): Memory management parameter for GPU processing.
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -1009,6 +1116,24 @@ class hz_module:
 
 
 class show_kpts_module:
+    """
+    A module for visualizing Local Affine Frames (LAFs) on a per-image basis.
+
+    It renders keypoints not just as dots, but as ellipses or oriented frames 
+    that represent the local geometry (scale and orientation) detected by 
+    modules like 'patch_module' or 'sift_module'. 
+
+    It can operate in 'single_image' mode (one file per image) or 
+    'matching' mode (filtering points based on whether they were 
+    successfully matched).
+
+    Attributes:
+        mask_idx: If None, shows all detected points. If a list (e.g., [1]), 
+            it only shows points that were verified as inliers in a match.
+        params (list): A list of dictionaries containing plotting 
+            styles (color, linewidth, and whether to draw the orientation vector).
+        cache_path (str): The directory where the resulting JPG/PNG files are stored.
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -1098,6 +1223,22 @@ class show_kpts_module:
 
 
 class show_matches_module:
+    """
+    A diagnostic module for generating and saving match visualization plots.
+
+    This module creates 'side-by-side' image plots with lines connecting 
+    corresponding keypoints. It is highly configurable, allowing for 
+    color-coded distinction between inliers (correct matches) and 
+    outliers (incorrect matches) based on the geometric mask.
+
+    Attributes:
+        cache_path (str): The directory where visualization images are saved.
+        mask_idx (list): Controls what to show. [1] shows inliers only, 
+            [0, 1] shows both, and -1 shows all raw matches.
+        params (list): A list of visual styles (colors) for each mask category.
+        fig_max_size (int): Constrains the resolution of the output image 
+            to save disk space while maintaining clarity.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -1210,6 +1351,22 @@ class show_matches_module:
 
 
 class patch_module:
+    """
+    A module for refining the orientation and affine shape of keypoints.
+
+    This module takes initial keypoints and 'upgrades' them by estimating 
+    their dominant orientation (rotation) and affine shape (tilt/shear). 
+    By normalizing these geometric properties, descriptors extracted later 
+    (like SIFT or HardNet) become much more robust to viewpoint changes.
+
+    Attributes:
+        orinet (bool): Uses a deep neural network (OriNet) to predict 
+            the best orientation for the keypoint.
+        affnet (bool): Uses a deep neural network (AffNet) to estimate 
+            the local affine shape, effectively 'un-tilting' the image patch.
+        sift_orientation (bool): Uses traditional gradient-based methods 
+            to find the dominant rotation.
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -1277,6 +1434,19 @@ class patch_module:
 
 
 class deep_descriptor_module:
+    """
+    A module for extracting learned local descriptors using deep neural networks.
+
+    This module takes existing keypoints (represented as Local Affine Frames) 
+    and passes them through a specialized CNN (HardNet, SOSNet, or HyNet). 
+    These networks are trained on millions of patches to be invariant to 
+    extreme changes in lighting, perspective, and seasonal appearance.
+
+    Attributes:
+        descriptor (str): The CNN architecture to use ('hardnet', 'sosnet', 'hynet').
+        desc_params (dict): Parameters passed to the specific network (e.g., pretrained=True).
+        patch_params (dict): Parameters for patch extraction (e.g., patch_size).
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -1328,6 +1498,20 @@ class deep_descriptor_module:
 
 
 class sift_module:
+    """
+    A descriptor extraction module using the SIFT algorithm.
+
+    This module takes pre-existing keypoints and extracts SIFT descriptors 
+    from the grayscale version of the image. It supports standard SIFT 
+    and the 'RootSIFT' variant, which often provides better matching 
+    performance by using Hellinger distance instead of Euclidean distance.
+
+    Note: This module does not 'detect' points; it only 'describes' them.
+
+    Attributes:
+        rootsift (bool): If True, applies L1 normalization and a 
+            square root to the descriptors to improve matching robustness.
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False        
@@ -1376,6 +1560,21 @@ class sift_module:
 
 
 class smnn_module:
+    """
+    A feature matching module using Symmetric Mutual Nearest Neighbors (SMNN).
+
+    SMNN is a strict filtering strategy. For a pair of points (A, B) to be 
+    considered a match, two conditions must be met:
+    1. B must be the closest neighbor to A in the second image.
+    2. A must be the closest neighbor to B in the first image.
+
+    This 'double-check' significantly reduces the number of false 
+    positives compared to a simple one-way nearest neighbor search.
+
+    Attributes:
+        th (float): The distance threshold (ratio test). Only matches 
+            with a distance ratio better than this value are kept.
+    """
     def __init__(self, **args):
         self.single_image = False    
         self.pipeliner = False      
@@ -1407,6 +1606,22 @@ class smnn_module:
 
 
 def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
+    """
+    A generator that yields four rotated versions of an image pair.
+
+    It keeps the first image fixed and rotates the second image by 0, 90, 
+    180, and 270 degrees. For each rotation, it calculates the precise 
+    3x3 'warp matrix' needed to map coordinates from the rotated image 
+    back to the original upright orientation.
+
+    Args:
+        pair (list): Paths to the [Reference Image, Target Image].
+        cache_path (str): Folder to store the physically rotated .jpg/.png files.
+        force (bool): If True, re-rotates and overwrites existing cached images.
+
+    Yields:
+        tuple: ((img0, img_rotated), [Identity_Matrix, Warp_Matrix], extra_data)
+    """
     yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)], {}
 
     rot_mat = np.eye(2)
@@ -1451,6 +1666,22 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
 
 
 def pipe_max_matches(pipe_block):
+    """
+    Selects the single best result from a collection of matching attempts.
+
+    This function evaluates each block in the 'pipe_block' list based on 
+    the total count of geometric inliers (m_mask). It identifies which 
+    transformation or model produced the most matches and returns only 
+    that result, discarding the others.
+
+    Args:
+        pipe_block (list): A list of dictionary objects containing 
+                           matching results (kp, m_mask, etc.).
+
+    Returns:
+        dict: The single dictionary from the input list with the 
+              highest number of confirmed inliers.
+    """
     n_matches = torch.zeros(len(pipe_block), device=device)
     for i in range(len(pipe_block)):
         if 'm_mask' in pipe_block[i]:
@@ -1462,6 +1693,24 @@ def pipe_max_matches(pipe_block):
         
 
 class image_muxer_module:
+    """
+    A module that executes a pipeline across multiple image transformations.
+
+    By using a 'pair_generator', this module can create variations of the 
+    input image pair (such as 90-degree rotations). It runs the matching 
+    pipeline on each variation and then 'unwarps' the results back to the 
+    original coordinate system.
+
+    This is highly effective for matchers that are not naturally 
+    rotation-invariant or to increase the total number of matches 
+    through TTA (Test-Time Augmentation).
+
+    Attributes:
+        pair_generator (function): Logic to create image variations (e.g., pair_rot4).
+        pipe_gather (function): Method to combine results (e.g., pipe_max_matches).
+        check_border (bool): If True, discards keypoints that fall outside 
+            the image boundaries after transformation.
+    """
     def __init__(self, id_more='', cache_path='tmp_imgs', pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=None, add_to_cache=True, check_border=True):
         self.single_image = False
         self.pipeliner = True
@@ -1582,6 +1831,20 @@ def change_patch_homo(kH, warp):
 
 
 def apply_homo(p, H):
+    """
+    Transforms 2D points from one coordinate system to another using a Homography.
+
+    This function converts 2D points (x, y) into 'Homogeneous Coordinates' (x, y, 1), 
+    multiplies them by the transformation matrix H, and then projects them 
+    back into 2D space by dividing by the third (w) coordinate.
+
+    Args:
+        p (torch.Tensor): A tensor of shape (N, 2) representing N points.
+        H (torch.Tensor): A 3x3 Homography transformation matrix.
+
+    Returns:
+        torch.Tensor: The transformed (N, 2) points.
+    """
     
     pt = torch.zeros((p.shape[0], 3), device=device)
     pt[:, :2] = p
@@ -1591,6 +1854,22 @@ def apply_homo(p, H):
 
 
 class magsac_module:
+    """
+    A geometric verification module using the MAGSAC++ robust estimator.
+
+    MAGSAC++ is an improvement over traditional RANSAC. It is less sensitive 
+    to the 'px_th' (pixel threshold) parameter because it considers 
+    multiple noise scales simultaneously. This makes it exceptionally 
+    good at filtering out outliers in noisy deep-learning matches.
+
+    Attributes:
+        mode (str): 'fundamental_matrix' for 3D scenes or 'homography' 
+            for planes/rotations.
+        px_th (float): The maximum expected noise scale (in pixels).
+        conf (float): Confidence level (0 to 1).
+        max_try (int): Number of retry attempts if the solver fails 
+            due to numerical instability.
+    """
     def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False  
@@ -1675,6 +1954,22 @@ class magsac_module:
 
 
 class poselib_module:
+    """
+    A geometric estimation module using the PoseLib library.
+
+    This module performs robust RANSAC estimation to find the Fundamental 
+    Matrix (F) or Homography (H) between two images. It filters out 
+    'outliers' (false matches) by ensuring all kept points satisfy a 
+    specific geometric constraint within a pixel threshold.
+
+    Attributes:
+        mode (str): Either 'fundamental_matrix' (for general 3D scenes) 
+            or 'homography' (for planar scenes or pure rotations).
+        px_th (int): The error threshold in pixels. Points with an error 
+            higher than this are discarded as outliers.
+        max_iters (int): Maximum number of RANSAC iterations.
+        conf (float): The desired probability of finding a correct model.
+    """
     def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
@@ -1756,6 +2051,21 @@ class poselib_module:
 
 
 def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, sampling_mode=None, sampling_scale=1, sampling_offset=0, overlapping_cells=False, preserve_order=False, counter=False, device=None, io_device=None, patch_matters=False):
+    """
+    Combines and cleans multiple sets of image matching results.
+
+    This function is the core of the pipeline's 'Ensemble' capability. 
+    It doesn't just stack lists; it performs coordinate sampling, 
+    removes duplicate keypoints, handles descriptor merging, and 
+    re-indexes match lists to maintain geometric consistency.
+
+    Key Features:
+    - deduplication: Merge identical keypoints from different matchers.
+    - sampling: Refine coordinates using 'avg' or 'best' modes.
+    - order preservation: Keeps points in a specific rank if needed.
+    - geometric re-indexing: Updates 'm_idx' to point to the new, 
+      consolidated keypoint indices.
+    """
     if device is None: device = torch.device('cpu')
     if io_device is None: io_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -2107,6 +2417,26 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
 
 
 def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, counter=None, device=None):
+    """
+    Refines keypoint coordinates based on multiple observations and reliability scores.
+
+    This function resolves 'collisions' where multiple matches point to the same 
+    keypoint index. It uses sorting to group these observations and then applies 
+    statistical or heuristic rules (Averaging or Best-Selection) to update 
+    the final keypoint positions.
+
+    Args:
+        sampling_mode (str): The strategy to use ('raw', 'best', 'avg_all_matches', 
+                             'avg_inlier_matches').
+        kp (torch.Tensor): The current keypoint coordinates (to be updated).
+        kp_unsampled (torch.Tensor): Original, high-precision coordinates before any rounding.
+        kr (torch.Tensor): Reliability/confidence scores for the keypoints.
+        ms_idx, ms_val, ms_mask: Matching indices, values, and inlier masks from RANSAC.
+        counter (torch.Tensor, optional): A frequency weight for how often a point was seen.
+
+    Returns:
+        torch.Tensor: The refined and updated keypoint coordinates.
+    """
     if device is None: device = torch.device('cpu')
 
     if (sampling_mode == 'raw') or (kp.shape[0] == 0): return kp
@@ -2211,7 +2541,28 @@ def sampling(sampling_mode, kp, kp_unsampled, kr, ms_idx, ms_val, ms_mask, count
     return kp
 
 
-def sortrows(kp, idx_prev=None, rank=None, device=None):    
+def sortrows(kp, idx_prev=None, rank=None, device=None): 
+    """
+    Sorts a set of keypoints lexicographically and identifies unique points.
+
+    This function performs a stable sort across coordinate columns (typically X and Y)
+    to group identical points together. It is essential for 'cleaning' a 
+    keypoint database after merging results from different matchers.
+
+    Args:
+        kp (torch.Tensor): The keypoint coordinates (N x 2).
+        idx_prev (torch.Tensor, optional): Previous indices if performing 
+            nested sorting.
+        rank (torch.Tensor, optional): A quality score (e.g., confidence). 
+            If multiple identical points exist, the one with the best 
+            (lowest) rank is preserved.
+
+    Returns:
+        tuple: (idxa, idxb)
+            idxa: Indices of the unique, best-ranked keypoints.
+            idxb: A 'reverse map' that tells every original keypoint 
+                  which unique index it now belongs to.
+    """   
     if device is None: device = torch.device('cpu')
 
     idx = torch.arange(kp.shape[0], device=device)
@@ -2257,6 +2608,23 @@ def sortrows(kp, idx_prev=None, rank=None, device=None):
     return idxa, idxb
 
 class pipeline_muxer_module:
+    """
+    A meta-module that executes multiple independent pipelines in parallel.
+
+    The Muxer (Multiplexer) allows for complex 'ensemble' strategies. For example, 
+    you can run a Transformer-based matcher (LoFTR) and a Sparse matcher (SuperPoint) 
+    at the same time. The results from all sub-pipelines are then merged using 
+    a gathering function (like 'pipe_union').
+
+    This is particularly useful for achieving high robustness across 
+    diverse datasets where a single model might fail.
+
+    Attributes:
+        pipeline (list): A list of pipeline definitions to be executed.
+        pipe_gather (function): The method used to combine results from 
+            different pipelines (defaults to pipe_union).
+        id_more (str): An optional suffix to differentiate multiple muxers.
+    """
     def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None, add_to_cache=True):
         self.single_image = False
         self.pipeliner = True
@@ -2303,6 +2671,22 @@ from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DI
 from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 
 class deep_joined_module:
+    """
+    A unified extractor for deep-learning-based keypoints and descriptors.
+
+    This module acts as a factory, allowing you to switch between different 
+    neural feature extractors (SuperPoint, DISK, ALIKED, etc.) using a 
+    single interface. It handles image loading, resizing, and the 
+    transformation of raw network outputs into the pipeline's standard 
+    Local Affine Frame (LAF) format.
+
+    Attributes:
+        what (str): The specific extractor to use. Options include 
+            'superpoint', 'disk', 'aliked', 'sift', or 'doghardnet'.
+        num_features (int): The maximum number of keypoints to extract.
+        resize (int): The maximum dimension for image scaling before 
+            extraction (helps maintain VRAM and speed).
+    """
     def __init__(self, **args):
         self.single_image = True
         self.pipeliner = False
@@ -2368,6 +2752,24 @@ class deep_joined_module:
 
 
 class lightglue_module:
+    """
+    A high-performance feature matcher based on the LightGlue architecture.
+
+    LightGlue is a 'deep matcher' that uses a lightweight Transformer to 
+    iteratively update the descriptors of keypoints based on their 
+    spatial context and their similarity to points in the other image. 
+
+    Unlike traditional matchers that use a simple distance ratio test, 
+    LightGlue is adaptive: it can stop early if a match is easy, or 
+    perform more iterations for difficult cases, making it both 
+    faster and more accurate than its predecessors.
+
+    Attributes:
+        what (str): The type of feature being matched (e.g., 'superpoint', 
+            'disk', 'aliked', 'sift').
+        desc_cf (float): A scaling factor for descriptors, used to normalize 
+            different feature types (e.g., set to 255 for SIFT).
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False
@@ -2455,6 +2857,20 @@ class lightglue_module:
     
 
 class loftr_module:
+    """
+    A dense matching module using LoFTR (Local Feature Transformer).
+
+    LoFTR bypasses the traditional 'detect-then-describe' pipeline. Instead, 
+    it establishes dense correspondences by processing image pairs through 
+    a coarse-to-fine transformer architecture. This allows it to find 
+    matches in low-texture areas where traditional detectors fail.
+
+    Attributes:
+        outdoor (bool): Switch between 'outdoor' (MegaDepth) and 'indoor' 
+            (ScanNet) pretrained weights.
+        resize (list, optional): Image resolution for processing.
+        patch_radius (int): Normalization factor for local homography metadata.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -2576,6 +2992,24 @@ class loftr_module:
 
 
 class sampling_module:
+    """
+    A data management module for filtering and merging keypoints and matches.
+
+    This module handles the 'bookkeeping' of a matching pipeline. It ensures 
+    that if multiple matchers or multiple image scales are used, the resulting 
+    keypoints are merged logically without duplicates. It also provides 
+    strategies for 'thinning' dense matches to improve downstream performance.
+
+    Attributes:
+        sampling_mode (str): The strategy for merging/filtering points 
+            (e.g., 'raw', 'best', 'avg_inlier_matches').
+        unique (bool): If True, removes duplicate keypoints at the same 
+            pixel location.
+        only_matched (bool): If True, discards any keypoints that do not 
+            belong to a valid correspondence pair.
+        sampling_scale (int): Used to sub-sample matches (e.g., keeping 
+            every N-th match).
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False
@@ -2633,6 +3067,17 @@ WATERMARK = 7 # Watermark, pure 2D translation in image borders.
 MULTIPLE = 8 # Multi-model configuration, i.e. the inlier matches result from multiple individual, non-degenerate configurations.
 
 class coldb_ext(coldb.COLMAPDatabase):
+    """
+    An extended interface for interacting with COLMAP SQLite databases.
+
+    This class provides helper methods to abstract away complex SQL operations 
+    and binary data conversions. It handles:
+    1. Image/Camera Lookups: Resolving filenames to internal database IDs.
+    2. Blob Management: Converting NumPy arrays to SQLite BLOBs and back.
+    3. Geometric Integrity: Ensuring that when image pairs are flipped 
+       (e.g., Image 2 to Image 1), the corresponding matrices (H, E, F) 
+       and match indices are correctly transposed or inverted.
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -2856,6 +3301,21 @@ class coldb_ext(coldb.COLMAPDatabase):
 
 
 def kpts_as_colmap(idx, **args): 
+    """
+    Decomposes a local homography (kH) into COLMAP's affine components.
+
+    COLMAP expects keypoints in the format: (x, y, a11, a12, a21, a22). 
+    This function extracts the (x, y) coordinates and solves for the 
+    2x2 affine matrix by removing the translation component from the 
+    full 3x3 local homography matrix.
+
+    Args:
+        idx (int): The image index (0 or 1) in the current processing pair.
+        **args: The pipeline data dictionary containing 'kp' and 'kH'.
+
+    Returns:
+        torch.Tensor: A tensor of shape (N, 6) formatted for COLMAP storage.
+    """
     kp = args['kp'][idx]
     kH = args['kH'][idx]
      
@@ -2879,6 +3339,24 @@ def kpts_as_colmap(idx, **args):
 
 
 class to_colmap_module:
+    """
+    A data-export module that saves pipeline results into a COLMAP database.
+
+    This module handles the heavy lifting of:
+    1. Registering new cameras and images in the database.
+    2. Converting PyTorch keypoints to COLMAP's binary blob format.
+    3. Merging new matches with existing ones using various 'sampling_modes'.
+    4. Injecting verified geometric models (Homography, Essential, Fundamental).
+
+    Attributes:
+        db (str): Path to the target COLMAP '.db' file.
+        focal_cf (float): A multiplier for focal length if camera intrinsics 
+            are unknown (defaults to 1.2 * max(width, height)).
+        sampling_mode (str): Determines how to handle overlapping keypoints 
+            (e.g., 'raw', 'avg_all_matches').
+        include_two_view_geometry (bool): If True, saves the 'Verified' 
+            matches into the two_view_geometry table.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -3051,6 +3529,22 @@ class to_colmap_module:
 
 
 def kpts_from_colmap(kp): 
+    """
+    Converts COLMAP-style keypoints into the pipeline's standard LAF format.
+
+    COLMAP stores keypoints as (x, y, a11, a12, a21, a22), where the last 
+    four elements describe the affine shape (scale and orientation) of 
+    the feature. This function reconstructs the full homography matrix 
+    representing the local patch around the keypoint.
+
+    Args:
+        kp (torch.Tensor): A tensor of shape (N, 4) or (N, 6). 
+            Columns 0-1 are (x, y). 
+            Columns 2-5 are the affine shape matrix components.
+
+    Returns:
+        tuple: (keypoint_coords, local_homographies, reliability_scores)
+    """
     w_ = kp[:, 2:]
     kp = kp[:, :2]
     w = torch.zeros((kp.shape[0], 3, 3), device=device)
@@ -3071,6 +3565,21 @@ def kpts_from_colmap(kp):
 
 
 class from_colmap_module:
+    """
+    A data-loading module that retrieves keypoints and geometry from a COLMAP database.
+
+    This module allows you to use COLMAP's pre-computed results (like SIFT 
+    features or geometric verification masks) within the pipeline. It can 
+    be used for 'evaluation only' tasks or to feed COLMAP-detected points 
+    into a deep-learning refiner like FCGNN.
+
+    Attributes:
+        db (str): Path to the COLMAP '.db' file.
+        only_keypoints (bool): If True, only extracts points for a single 
+            image (useful for feature-only evaluation).
+        include_two_view_geometry (bool): If True, retrieves the verified 
+            inliers and geometric models (H, E, F) computed by COLMAP.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -3208,6 +3717,23 @@ class from_colmap_module:
 
 
 def relative_pose_error_angular(R_gt, t_gt, R, t, ignore_gt_t_thr=0.0):
+    """
+    Computes the angular error for both rotation and translation direction.
+
+    This metric is standard for Monocular Structure-from-Motion (SfM) because 
+    it ignores absolute scale and focuses purely on whether the camera 
+    moved in the correct direction. 
+
+    Args:
+        R_gt, t_gt: Ground truth rotation (3x3) and translation vector (3x1).
+        R, t: Predicted rotation and translation.
+        ignore_gt_t_thr (float): Threshold for 'pure rotation'. If the ground 
+            truth movement is smaller than this, the translation error is 
+            ignored (set to 0) to avoid noisy metrics in static scenes.
+
+    Returns:
+        tuple: (translation_angular_error, rotation_angular_error) in degrees.
+    """
     # angle error between 2 vectors
     # t_gt = T_0to1[:3, 3]
     n = np.linalg.norm(t) * np.linalg.norm(t_gt)
@@ -3226,6 +3752,25 @@ def relative_pose_error_angular(R_gt, t_gt, R, t, ignore_gt_t_thr=0.0):
 
 
 def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, max_iters=10000):
+    """
+    Estimates the relative rotation (R) and translation (t) between two cameras.
+
+    This function performs the following steps:
+    1. Normalizes 2D keypoints using intrinsic camera matrices (K).
+    2. Robustly estimates the Essential Matrix using RANSAC to handle outliers.
+    3. Decomposes the Essential Matrix into physically plausible R and t.
+    4. Performs 'cheirality check' to ensure points are in front of both cameras.
+
+    Args:
+        kpts0, kpts1 (np.array): Matched 2D coordinates in Image 0 and Image 1.
+        K0, K1 (3x3 array): Internal camera calibration (focal length, principal point).
+        thresh (float): RANSAC inlier threshold in pixels.
+        conf (float): Desired confidence level for the RANSAC result.
+        max_iters (int): Maximum number of RANSAC iterations.
+
+    Returns:
+        tuple: (R, t, inlier_mask) or None if estimation fails.
+    """
     if len(kpts0) < 5:
         return None
     # normalize keypoints
@@ -3256,6 +3801,26 @@ def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, max_iters=10000):
 
 
 def relative_pose_error_metric(R_gt, t_gt, R, t, scale_cf=1.0, use_gt_norm=True, t_ambiguity=True):
+    """
+    Computes the angular rotation error and translation distance between two poses.
+
+    In Monocular Vision, we can estimate direction but not absolute scale 
+    (the 'size' of the world). This function handles that limitation by 
+    optionally normalizing translations or accounting for 180-degree 
+    ambiguities in the vector direction.
+
+    Args:
+        R_gt, t_gt: Ground truth rotation matrix (3x3) and translation vector (3x1).
+        R, t: Predicted rotation matrix and translation vector.
+        scale_cf (float): Scale correction factor to align units (e.g., mm to meters).
+        use_gt_norm (bool): If True, scales the predicted translation to match 
+            the length of the ground truth (evaluating direction only).
+        t_ambiguity (bool): If True, accounts for the fact that a translation 
+            vector 'forward' might be predicted as 'backward' (cheating/baselines).
+
+    Returns:
+        tuple: (translation_error, rotation_error_in_degrees)
+    """
     t_gt = t_gt * scale_cf
     t = t * scale_cf
     if use_gt_norm: 
@@ -3283,6 +3848,25 @@ def relative_pose_error_metric(R_gt, t_gt, R, t, scale_cf=1.0, use_gt_norm=True,
 
 
 def error_auc(errors, thr):
+    """
+    Calculates the Area Under the Curve (AUC) for a cumulative error distribution.
+
+    This function measures the 'recall' of a model under a specific error 
+    threshold (thr). It represents the probability that the estimated 
+    geometric model (Homography, Essential Matrix, etc.) has an error 
+    lower than the threshold.
+
+    A higher AUC indicates that the pipeline consistently produces 
+    accurate results across many image pairs.
+
+    Args:
+        errors (list/np.array): A list of scalar error values (e.g., degrees or pixels).
+        thr (float): The maximum error threshold to consider for the AUC 
+            (e.g., 5°, 10°, or 20°).
+
+    Returns:
+        float: The normalized AUC value between 0 and 1.
+    """
     errors = [0] + sorted(errors)
     recall = list(np.linspace(0, 1, len(errors)))
 
@@ -3295,6 +3879,22 @@ def error_auc(errors, thr):
 from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
 class roma_module:
+    """
+    A robust dense matching module using a warping-based transformer.
+
+    RoMa is designed to provide high-quality correspondences by combining 
+    a coarse global matching stage with a fine-grained refinement stage. 
+    It estimates a dense 'warp' field and a 'certainty' map, allowing it 
+    to find matches even in challenging scenarios like large viewpoint 
+    changes or extreme lighting conditions.
+
+    Attributes:
+        use_tiny (bool): If True, uses the lightweight 'TinyRoMa' variant 
+            for faster processing on lower-end hardware.
+        coarse_resolution (int): Resolution for the initial global match.
+        upsample_resolution (int): Resolution for the final pixel-accurate refinement.
+        max_keypoints (int): The number of points to sample from the dense warp field.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -3410,6 +4010,27 @@ from r2d2.tools.dataloader import norm_RGB as r2d2_norm_RGB
 import r2d2.nets.patchnet as r2d2_patchnet 
 
 class r2d2_module:
+    """
+    A unified keypoint detector and descriptor module.
+
+    R2D2 learns to jointly estimate three outputs for an image:
+    1. Repeatability Map: High values indicate locations likely to be 
+       detected under different viewing conditions.
+    2. Reliability Map: High values indicate locations where the 
+       resulting descriptor is unique and trustworthy for matching.
+    3. Dense Descriptors: High-dimensional vectors used for point-to-point 
+       correspondence.
+
+    This module supports multi-scale extraction, allowing it to find 
+    features that are robust to large changes in distance/zoom.
+
+    Attributes:
+        reliability-thr (float): Minimum confidence for a point to be 
+            considered reliable.
+        repeatability-thr (float): Minimum confidence for a point to be 
+            considered repeatable.
+        top-k (int): Maximum number of keypoints to keep per image.
+    """
     def load_network(model_fn): 
         checkpoint = torch.load(model_fn, weights_only=False)
         # print("\n>> Creating net = " + checkpoint['net']) 
@@ -3604,6 +4225,23 @@ if enable_quadtree:
     from FeatureMatching.src.loftr import LoFTR as qta_LoFTR
     
     class quadtreeattention_module:
+        """
+    A dense matching module using QuadTree Attention (hierarchical LoFTR).
+
+    QuadTree Attention reduces the quadratic complexity of standard 
+    Transformers ($O(N^2)$) by selectively attending to image regions. 
+    It builds a pyramid of features and only performs fine-grained 
+    matching in regions that show high probability of containing matches 
+    at a coarser level.
+
+    This makes it significantly more memory-efficient than standard LoFTR, 
+    allowing for higher-resolution processing on the same hardware.
+
+    Attributes:
+        outdoor (bool): Switch between outdoor (MegaDepth) and indoor (ScanNet) weights.
+        resize (list, optional): Processing resolution.
+        patch_radius (int): Used to construct local homography metadata.
+    """
         def __init__(self, **args):
             self.single_image = False
             self.pipeliner = False   
@@ -3749,6 +4387,19 @@ from matchformer.model.utils.misc import lower_config as mf_lower_config
 from matchformer.config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
   
 class matchformer_module:
+    """
+    A dense matching module using MatchFormer (Interleaving Attention).
+
+    MatchFormer treats the image matching task as a dual-softmax problem 
+    using a hierarchical transformer. It interleaves self-attention 
+    (understanding an image's own context) and cross-attention 
+    (finding similarities between the two images) at multiple scales.
+
+    Attributes:
+        model (str): The specific architecture variant (e.g., 'outdoor-large-LA').
+        resize (list, optional): Target resolution for processing.
+        patch_radius (int): Scaling factor for the local homography metadata.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -3898,6 +4549,22 @@ from aspanformer.src.config.default import get_cfg_defaults as as_get_cfg_defaul
 from aspanformer.src.utils.misc import lower_config as as_lower_config
   
 class aspanformer_module:
+    """
+    A detector-free matching module using Asymmetric-Sampling Transformers.
+
+    ASpanFormer improves upon models like LofTR by using an 'asymmetric 
+    sampling' strategy. It adaptively adjusts the sampling span (the area 
+    it looks at) based on the image content. This allows it to handle 
+    large scale differences and extreme camera motions more effectively 
+    than fixed-grid transformers.
+
+    Attributes:
+        outdoor (bool): Switch between models trained on outdoor (MegaDepth) 
+            or indoor (ScanNet) datasets.
+        resize (list, optional): Target resolution for processing (e.g., [1024, 1024]).
+        patch_radius (int): Defines the local area size for the homography 
+            metadata associated with each match.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -4051,6 +4718,20 @@ class aspanformer_module:
 import lpm.LPM as lpm
 
 class lpm_module:
+    """
+    An outlier rejection module using Locality Preserving Matching.
+
+    LPM is a non-parametric approach to feature matching. Instead of 
+    fitting a global geometric model (like a Homography), it enforces 
+    local neighborhood consistency. It is highly effective for:
+    1. Non-rigid deformations (e.g., matching a flag waving in the wind).
+    2. Scenes with heavy perspective distortion.
+    3. High-speed filtering without the need for GPU-heavy deep learning.
+
+    The algorithm determines inliers by checking if the neighbors of a 
+    point in Image 1 map to the neighbors of the corresponding point 
+    in Image 2.
+    """
     def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
@@ -4096,6 +4777,22 @@ class lpm_module:
 import gms.python.gms_matcher as gms
 
 class gms_module:
+    """
+    An outlier rejection module using Grid-based Motion Statistics.
+
+    GMS converts the problem of identifying correct matches into a 
+    statistical counting problem. It divides the images into grids 
+    and assumes that for a true match, the neighborhood (grid cells) 
+    in Image 1 should map to the corresponding neighborhood in Image 2.
+
+    The algorithm is particularly effective for high-recall scenarios 
+    (where you have thousands of initial matches) and provides a 
+    massive speedup over traditional iterative geometric filters.
+
+    Attributes:
+        gms_matcher_custom: An internal extension of the GMS library 
+            optimized for the pipeline's keypoint format.
+    """
     class gms_matcher_custom(gms.GmsMatcher):
         def __init__(self, kp1, kp2, m12):
             self.kp1 = kp1
@@ -4228,6 +4925,24 @@ class gms_module:
 import adalam.adalam.adalam as adalam
 
 class adalam_module:
+    """
+    A geometric outlier rejection module using Adaptive Local Affine Matching.
+
+    AdaLAM filters matches by ensuring they are locally consistent with a 
+    smooth affine transformation. It specifically checks:
+    1. Orientation Consistency: Do the keypoints rotate by a similar amount?
+    2. Scale Consistency: Is the zooming factor between images consistent?
+    3. Spatial Coherence: Are neighboring points moving in a similar pattern?
+
+    This module is highly effective for 'hand-crafted' features (like SIFT) 
+    where local affine information (LAF) is available.
+
+    Attributes:
+        adalam_params (dict): Configuration for the filter, including:
+            - orientation_difference_threshold: Max allowed rotation variance.
+            - scale_rate_threshold: Max allowed scale change variance.
+            - min_inliers: Minimum points required to validate a local region.
+    """
     class adalamfilter_custom(adalam.AdalamFilter):
         def __init__(self, custom_config=None):         
             super().__init__(custom_config=custom_config)
@@ -4339,6 +5054,24 @@ class adalam_module:
 
 
 def download_fcgnn(weight_path='../weights/fcgnn'):
+    """
+    Downloads the pre-trained FCGNN model weights for sub-pixel refinement.
+
+    This function facilitates the setup of the refinement stage by:
+    1. Ensuring the local directory structure exists for weight storage.
+    2. Downloading the 'fcgnn.model' binary file directly from the 
+       official GitHub release assets.
+    3. Using 'wget' for a reliable stream-based download.
+    4. Skipping the process if the model file is already detected locally 
+       to minimize network overhead.
+
+    Args:
+        weight_path (str): The destination directory for the model file.
+            Defaults to '../weights/fcgnn'.
+
+    Returns:
+        None: Performs a network download and file-system write.
+    """
     file = 'fcgnn.model'    
     url = "https://github.com/xuy123456/fcgnn/releases/download/v0/fcgnn.model"
 
@@ -4352,6 +5085,23 @@ def download_fcgnn(weight_path='../weights/fcgnn'):
 import fcgnn.fcgnn as fcgnn
 
 class fcgnn_module:
+    """
+    A refinement module using Graph Neural Networks for sub-pixel accuracy.
+
+    FCGNN treats a set of matches as a graph and uses local image patches 
+    around each keypoint to predict an 'offset' (dx, dy). This corrects 
+    slight misalignments caused by the initial detector or noise. It 
+    simultaneously outputs a confidence score to perform final outlier 
+    filtering.
+
+    Attributes:
+        thd (float): Confidence threshold (0.0 to 1.0) for keeping a match. 
+            Default is very strict (0.999).
+        min_matches (int): Minimum number of matches to return; if scores 
+            are low, it will force-pick the top-K best matches.
+        fcgnn_refiner (fcgnn_custom): The internal GNN architecture with 
+            attention layers.
+    """
     class fcgnn_custom(fcgnn.GNN):
         def __init__(self, depth=9):
             torch.nn.Module.__init__(self)
@@ -4459,6 +5209,25 @@ class fcgnn_module:
 
 
 def download_oanet(weight_path='../weights/oanet'):
+    """
+    Downloads and extracts the pre-trained weights for the OANet matcher.
+
+    This function automates the environment setup for OANet by:
+    1. Downloading a 'tar.gz' archive containing models trained on the 
+       GL3D dataset (a large-scale 3D reconstruction dataset).
+    2. Extracting the specific 'model_best.pth' file from a nested 
+       directory structure within the archive.
+    3. Flattening the file structure by moving the weights to the root 
+       'oanet' weight directory for easier access by the module.
+    4. Cleaning up temporary extraction folders to save disk space.
+
+    Args:
+        weight_path (str): The local directory where OANet weights 
+            should be stored.
+
+    Returns:
+        None: Operates via side-effects on the file system.
+    """
     url = "https://drive.google.com/file/d/1Yuk_ZBlY_xgUUGXCNQX-eh8BO2ni_qhm/view?usp=sharing"
 
     os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
@@ -4479,6 +5248,21 @@ def download_oanet(weight_path='../weights/oanet'):
 import oanet.learnedmatcher_custom as oanet
 
 class oanet_module:
+    """
+    A deep-learning outlier rejection module using Order-Aware Networks.
+
+    OANet is designed to capture the local and global context of image matches. 
+    It focuses on the 'order' and spatial distribution of keypoints to 
+    distinguish between true inliers (correct matches) and outliers. 
+    Unlike standard RANSAC, it is fully differentiable and can be 
+    trained to be much more robust in scenes with repetitive patterns.
+
+    Attributes:
+        weights (str): Path to the pre-trained PyTorch model (.pth).
+        inlier_threshold (int/float): The geometric threshold used during 
+            inference to determine if a match is valid.
+        lm (oanet.LearnedMatcher): The core OANet inference engine.
+    """
     def __init__(self, **args):  
 
         self.single_image = False    
@@ -4546,6 +5330,24 @@ tf.disable_v2_behavior()
 
 
 def download_acne(weight_path='../weights/acne'):
+    """
+    Downloads and extracts the pre-trained neural network weights for ACNe.
+
+    This utility handles the setup of the ACNe inference environment by:
+    1. Creating a directory structure to house weights and temporary downloads.
+    2. Downloading a compressed archive from a Google Drive share link using 'gdown'.
+    3. Extracting the 'logs' folder, which contains the .ckpt (checkpoint) 
+       and .meta files necessary for restoring the TensorFlow session.
+    4. Ensuring that the multi-hundred megabyte download only occurs if the 
+       files are missing locally.
+
+    Args:
+        weight_path (str): The base directory for storing model weights. 
+            Defaults to '../weights/acne'.
+
+    Returns:
+        None: The function performs file system operations and status checks.
+    """
     os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
 
     file_to_download = os.path.join(weight_path, 'download', 'acne_weights.zip')    
@@ -4561,6 +5363,20 @@ def download_acne(weight_path='../weights/acne'):
 
 
 class acne_module:
+    """
+    A deep-learning outlier rejection module using Attentitive Context Networks.
+
+    This module acts as a 'filter' for keypoint matches. It takes 2D-2D 
+    correspondences and estimates a Fundamental (F) or Essential (E) matrix 
+    while simultaneously predicting a weight for each match. Matches with weights 
+    below a threshold are marked as outliers.
+
+    Attributes:
+        outdoor (bool): Whether to use weights trained on outdoor (e.g., Yahoo/YFCC) 
+            or indoor (e.g., SUN3D) datasets.
+        what (str): The specific model variant (ACNe_F for Fundamental matrix 
+            estimation is the default).
+    """
     current_net = None
     current_obj_id = None
     
@@ -4707,7 +5523,33 @@ class acne_module:
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
-    sampling_scale=1, sampling_offset=0, focal_cf=1.2):                    
+    sampling_scale=1, sampling_offset=0, focal_cf=1.2):              
+    """
+    Merges multiple COLMAP SQLite databases into a single unified database.
+
+    This function iterates through a list of source databases and performs:
+    1. Image/Camera Synchronization: Ensures that if an image appears in 
+       multiple databases, it is only created once in the merged database 
+       with a consistent Camera ID.
+    2. Keypoint Union: Uses `pipe_union` to combine keypoints from different 
+       sources. It can handle duplicates, average positions, or filter by 
+       sampling modes (e.g., keeping only points with high inlier counts).
+    3. Match Consolidation: Merges 2D-2D match indices and Two-View 
+       Geometries (Fundamental/Essential matrices).
+    4. Advanced Filtering: Supports including or excluding specific image 
+       pairs during the merge process.
+
+    Args:
+        db_names (list): List of paths to source .db files.
+        db_merged_name (str): Path where the final merged database will be saved.
+        sampling_mode (str): How to handle overlapping keypoints 
+            ('raw', 'avg_all_matches', etc.).
+        include_two_view_geometry (bool): Whether to preserve the calculated 
+            geometric verification (F, E, H matrices).
+
+    Returns:
+        None: Side-effect is the creation of a merged COLMAP database.
+    """      
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')
@@ -5024,6 +5866,30 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
         
 
 def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_path=None, db_path=None, output_model_path='../aux/colmap/output_model', to_filter=None, how_filter='exclude', only_cameras=True, add_3D_points=False, add_as_possible=True):
+    """
+    Subsets a COLMAP reconstruction by including or excluding specific images.
+
+    This function modifies a sparse 3D model by deregistering images based on 
+    a filter list. It can either simply save the updated camera poses or 
+    perform a full re-triangulation of 3D points to ensure the point cloud 
+    matches the new subset of cameras.
+
+    Args:
+        input_model_path (str): Path to the source COLMAP sparse model.
+        img_path (str, optional): Path to the original image folder (required 
+            for point triangulation or color extraction).
+        db_path (str, optional): Path to the COLMAP SQLite database.
+        output_model_path (str): Directory where the filtered model will be saved.
+        to_filter (list): A list of image filenames to act upon.
+        how_filter (str): 'exclude' (removes images in the list) or 
+            'include' (keeps only images in the list).
+        only_cameras (bool): If True, deletes all 3D points and keeps only poses.
+        add_3D_points (bool): If True, triggers `pycolmap.triangulate_points` 
+            to reconstruct the scene geometry for the remaining images.
+
+    Returns:
+        None: Saves the processed model to the output path.
+    """
     model = pycolmap.Reconstruction(input_model_path)
 
     os.makedirs(output_model_path, exist_ok=True)
@@ -5355,6 +6221,28 @@ def evaluate_rec(gt_df, user_df, inl_cf = 0.8, strict_cf=0.5, thresholds=[0.05])
 def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/colmap/model1', imgs_path=None, db_path0=None, db_path1=None,
                         output_db='../aux/colmap/merged_database.db', output_model='../aux/colmap/merged_model', th=None,
                         only_cameras=False, add_as_possible=True, no_force_db_fusion=True):
+    """
+        Aligns and merges two separate COLMAP reconstruction models into one.
+
+        The function performs three main steps:
+        1. Database Fusion: Combines the SQL databases containing image matches.
+        2. Similarity Transformation (Sim3): Uses shared camera locations to 
+        calculate the rotation, translation, and scale needed to move Model 2 
+        into Model 1's coordinate space.
+        3. Incremental Triangulation: Re-computes 3D points in the shared space 
+        to create a single, dense point cloud from the merged camera poses.
+
+        Args:
+            model_path1/2 (str): Paths to the input COLMAP sparse models.
+            output_db (str): Path to the new merged SQLite database.
+            output_model (str): Directory where the final aligned model is saved.
+            th (float): Distance threshold for alignment; if None, it is 
+                automatically calculated based on average camera distance.
+            only_cameras (bool): If True, only camera poses are merged (no 3D points).
+
+        Returns:
+            None: Saves the resulting merged model and database to disk.
+        """
 
     model1 = pycolmap.Reconstruction(model_path1)
     model2 = pycolmap.Reconstruction(model_path2)
@@ -5475,6 +6363,25 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
 
   
 class image_pairs:
+    """
+    An intelligent iterator for generating image pairs from a dataset.
+
+    This class supports two primary modes:
+    1. Exhaustive (Base): Generates every possible pair from a folder of images 
+       (N images result in N*(N-1)/2 pairs).
+    2. Explicit: Processes a specific list of image-to-image matches provided by the user.
+
+    The class features a robust filtering system to 'include' or 'exclude' 
+    specific images or pairs based on:
+    - Direct filename lists.
+    - Pre-existing COLMAP databases (checking for prior matches or keypoints).
+    - Image validity (verifying that files are not corrupt).
+
+    Attributes:
+        imgs (list): List of image paths or pair tuples.
+        mode (str): Filtering behavior, either 'include' (only process listed) 
+            or 'exclude' (process everything except listed).
+    """
     def init_additional_image_pair_check(self, colmap_db_or_list, mode, colmap_req, colmap_min_matches):
 
         self.additional_colmap_db = None     
@@ -5702,6 +6609,23 @@ class image_pairs:
 
 
 class show_homography_module:
+    """
+    A visualization module for verifying homography-based image alignment.
+
+    This module takes two images and a homography matrix, warps them into a 
+    common coordinate system, and generates diagnostic images. It specifically 
+    creates a 'checkerboard' overlay where alternating squares come from 
+    different images, making it easy to see if features (like edges or lines) 
+    align perfectly across the boundary.
+
+    Attributes:
+        args (dict): Configuration including:
+            - chessboard_size (int): The width/height of the checkerboard tiles.
+            - alpha (float): Blending factor between the two images.
+            - reference_image (int): Which image (0 or 1) defines the base canvas.
+            - img_max_size (int): Rescales the output to fit this maximum dimension.
+            - show_merged (bool): If True, generates the checkerboard blend file.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -5739,7 +6663,22 @@ class show_homography_module:
         return
 
     
-    def run(self, **args):                 
+    def run(self, **args): 
+        """
+        Processes the images and saves the visualizations.
+
+        Logic:
+        1. Coordinate Transformation: Determines the shared bounding box 
+           required to fit both the reference and the warped secondary image.
+        2. Scaling: Applies a global scale factor to prevent massive output 
+           files if the homography has a large translation component.
+        3. Warping: Uses `cv2.warpPerspective` with high-quality Lanczos 
+           interpolation to transform the images.
+        4. Checkerboard Masking: Generates an alternating 2D grid to assign 
+           pixels from either Image A or Image B.
+        5. Saving: Writes the aligned individual images and the combined 
+           checkerboard blend to the cache path.
+        """                
         H = args['H']
         
         if H is None: return {}
@@ -5855,7 +6794,25 @@ class show_homography_module:
         return {}
 
 
-def download_planar(bench_path ='bench_data'):   
+def download_planar(bench_path ='bench_data'):  
+    """
+    Downloads and extracts the planar homography benchmark dataset.
+
+    This function automates the data acquisition process by:
+    1. Creating a 'downloads' directory to keep the workspace clean.
+    2. Downloading a compressed ZIP file from a Google Drive share link 
+       using the 'gdown' library.
+    3. Extracting the contents into a structured 'planar' directory.
+    4. Skipping the download/extraction if the files already exist 
+       locally (idempotency).
+
+    Args:
+        bench_path (str): The root directory where benchmark data and 
+            downloads should be stored.
+
+    Returns:
+        None: Operates by side-effects (file system modifications).
+    """ 
     os.makedirs(os.path.join(bench_path, 'downloads'), exist_ok=True)   
 
     file_to_download = os.path.join(bench_path, 'downloads', 'planar_data.zip')    
@@ -5872,6 +6829,27 @@ def download_planar(bench_path ='bench_data'):
 
 
 def planar_setup(bench_path='bench_data', bench_imgs='imgs', bench_plot='aux_images', dataset='planar', upright=False, max_imgs=6, to_exclude=['graf'], debug_pairs=None, force=False, img_ext='.png', save_ext='.png', check_data=True):        
+    """
+    Sets up a planar homography dataset for benchmarking.
+
+    This function prepares a pair-wise evaluation environment by:
+    1. Downloading the raw dataset if not present.
+    2. Parsing scene directories to find image pairs and their H matrices.
+    3. Handling 'upright' vs 'rotated' versions of the images.
+    4. Generating 'Full Masks': Identifying the intersection of valid pixels 
+       between two images after warping them via the homography.
+    5. Saving debugging visualizations (warped overlays) to verify alignment.
+
+    Args:
+        bench_path (str): Root directory for all benchmark data.
+        dataset (str): Name of the dataset subfolder.
+        upright (bool): If True, ignores rotated versions of images.
+        max_imgs (int): Maximum number of secondary images to pair with Image 1.
+        check_data (bool): If True, saves warped 'check' images to disk.
+
+    Returns:
+        tuple: (image_pairs_list, ground_truth_dict, final_image_path)
+    """
     os.makedirs(bench_path, exist_ok=True)    
     db_file = os.path.join(bench_path, dataset + '.hdf5')    
     db = pickled_hdf5.pickled_hdf5(db_file, mode='a')    
@@ -6023,6 +7001,24 @@ def planar_setup(bench_path='bench_data', bench_imgs='imgs', bench_plot='aux_ima
 
 
 class pairwise_benchmark_module:
+    """
+    A comprehensive evaluation module for benchmarking pairwise 3D reconstruction.
+
+    This module computes various error metrics (AUC, Accuracy, Precision) by 
+    comparing estimated matrices and keypoints against ground truth data. 
+    It supports multiple geometric modes and logs results into a persistent 
+    HDF5 cache for large-dataset analysis.
+
+    Attributes:
+        args (dict): Configuration including:
+            - mode (str): 'fundamental', 'essential', 'epipolar', or 'homography'.
+            - metric (bool): If True, computes errors in physical units (meters) 
+              rather than angular degrees.
+            - err_th_list (list): Thresholds (pixels) for inlier counting.
+            - angular_thresholds (list): Thresholds (degrees) for AUC/Acc calculation.
+            - aux_hdf5 (str): Path to the storage file for stats.
+        gt (dict): The ground truth data structure containing K, R, T, and H.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
@@ -6068,6 +7064,12 @@ class pairwise_benchmark_module:
                 
 
     def finalize(self, **args):
+        """
+        Aggregates stats from all processed pairs and prints/saves final metrics:
+        - AUC (Area Under the Curve): Measures overall robustness.
+        - Acc@X: Percentage of pairs with error below X degrees/meters.
+        - Precision: Ratio of valid matches (inliers) to total matches.
+        """
         if self.args['mode'] == 'homography':
             return self.finalize_planar(**args)
         elif self.args['mode'] == 'epipolar':
@@ -6322,6 +7324,13 @@ class pairwise_benchmark_module:
 
 
     def run(self, **args):
+        """
+        Executes the benchmark for a single image pair.
+        Calculates:
+        - Reprojection errors for keypoints.
+        - Matrix errors (Angular or Metric) for R and t.
+        - Heat maps for spatial error visualization (via 'epipolar' or 'homography' modes).
+        """
         if self.args['mode'] == 'fundamental':
             return self.run_fundamental(**args)
         elif self.args['mode'] == 'essential':
@@ -6810,6 +7819,27 @@ class pairwise_benchmark_module:
 
    
 def invalid_matches(mask1, mask2, pts1, pts2, rad):
+    """
+    Identifies matches that are outside valid image boundaries or mask regions.
+
+    This function checks two conditions for every match:
+    1. Boundary Check: Are the keypoints located within the actual pixel 
+       dimensions of the images?
+    2. Mask Check: Do the keypoints fall on 'False' regions of the provided masks? 
+       To be robust, the second mask is dilated by a specified radius to allow 
+       a small margin of error near the edges.
+
+    Args:
+        mask1 (np.ndarray): Boolean mask for the first image (H, W).
+        mask2 (np.ndarray): Boolean mask for the second image (H, W).
+        pts1 (torch.Tensor): Keypoints in the first image (N, 2).
+        pts2 (torch.Tensor): Keypoints in the second image (N, 2).
+        rad (int): The radius for dilation of the second mask.
+
+    Returns:
+        torch.Tensor: A boolean tensor of shape (N,) where 'True' indicates 
+            an invalid match that should be discarded.
+    """
     dmask2 = cv2.dilate(mask2.astype(np.ubyte), np.ones((rad*2 + 1, rad*2 + 1)))
     
     pt1 = pts1.round().permute(1, 0)
@@ -6832,6 +7862,24 @@ def invalid_matches(mask1, mask2, pts1, pts2, rad):
 
 
 def homography_error_heat_map(H12_gt, H12, mask1):
+    """
+    Generates a 2D heat map of the reprojection error between two homographies.
+
+    For every pixel marked as True in 'mask1', the function projects the 
+    coordinate into the second image plane using both the ground truth ($H12_{gt}$) 
+    and the estimated ($H12$) homography. The error is the Euclidean distance 
+    between these two projected points.
+
+    Args:
+        H12_gt (torch.Tensor): The $3 \times 3$ ground truth Homography matrix.
+        H12 (torch.Tensor): The $3 \times 3$ estimated Homography matrix.
+        mask1 (torch.Tensor): A boolean mask of shape (H, W) defining the 
+            region of interest (e.g., a specific plane or the whole image).
+
+    Returns:
+        torch.Tensor: A 2D tensor of shape (H, W). Valid pixels contain the 
+            pixel distance error; background/masked pixels are set to -1.
+    """
     pt1 = mask1.argwhere()
     
     pt1 = torch.cat((pt1, torch.ones(pt1.shape[0], 1, device=device)), dim=1).permute(1,0)   
@@ -6852,6 +7900,24 @@ def homography_error_heat_map(H12_gt, H12, mask1):
 
 
 def epipolar_error_heat_map(F_gt, F, sz):
+    """
+    Computes a 2D heat map of the angular error between two Fundamental matrices.
+
+    For every pixel in an image of size 'sz', the function calculates the 
+    corresponding epipolar line in the second view using both the ground truth 
+    matrix ($F_{gt}$) and the estimated matrix ($F$). The error is defined as 
+    the angle (in degrees) between these two lines.
+
+    Args:
+        F_gt (torch.Tensor): The ground truth $3 \times 3$ Fundamental matrix.
+        F (torch.Tensor): The estimated $3 \times 3$ Fundamental matrix.
+        sz (tuple): The (height, width) of the image grid to evaluate.
+
+    Returns:
+        torch.Tensor: A 2D tensor of shape (height, width) containing the 
+            angular error in degrees for each pixel. Values range from 0 
+            to 180 (or 360 for invalid results).
+    """
     y, x = torch.meshgrid(torch.arange(sz[0], device=device), torch.arange(sz[1], device=device))
     pt = torch.stack((y.flatten(), x.flatten(), torch.ones(sz[0] * sz[1], device=device))).type(torch.float)
 
@@ -6871,6 +7937,33 @@ def epipolar_error_heat_map(F_gt, F, sz):
 
 
 def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='plane_acc.png'):
+    """
+    Applies a colored heatmap overlay to a grayscale image to visualize planar regions.
+
+    This function takes a 2D 'heat' tensor (where values typically represent 
+    plane IDs or confidence scores) and maps them to colors using a specified 
+    colormap. The resulting heatmap is then blended with a grayscale version 
+    of the original image.
+
+    Args:
+        ims (str): Path to the source background image file.
+        heat (torch.Tensor): A 2D tensor of shape (H, W). Values should be 
+            integers where -1 represents the background (no plane) and 
+            non-negative values represent specific regions/planes.
+        cmap_name (str): The name of the Matplotlib colormap to use 
+            (default: 'viridis').
+        max_val (int): The maximum value used to normalize the colormap scale.
+        cf (float): The transparency/alpha factor (0.0 to 1.0). Higher values 
+            make the heatmap more opaque.
+        save_to (str): The file path where the final blended image will be saved.
+
+    Returns:
+        None: The function writes the output image directly to disk.
+
+    Note:
+        The function handles the conversion from standard RGB colormaps to BGR 
+        to ensure compatibility with OpenCV's `imwrite` format.
+    """
     im_gray = cv2.imread(ims, cv2.IMREAD_GRAYSCALE)
     im_gray = torch.tensor(im_gray, device=device).unsqueeze(0).repeat(3,1,1).permute(1,2,0)
     heat_mask = heat != -1
@@ -6887,6 +7980,30 @@ def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='
  
 
 class mop_miho_ncc_module:
+    """
+    A high-level refinement module combining planar clustering and radiometric optimization.
+
+    This module performs three primary tasks:
+    1. Planar Clustering (MOP/MIHO): Grouping matches into spatially coherent planes 
+       using homography-based motion partitioning.
+    2. Local Affine/Projective Adjustment: Handling Local Affine Frames (LAF) to 
+       account for perspective distortion.
+    3. NCC Refinement: Fine-tuning keypoint positions and homographies by maximizing 
+       the Normalized Cross Correlation between local image patches.
+
+    Attributes:
+        args (dict): Configuration dictionary including:
+            - mop (bool): Enable Motion Partitioning (planar clustering).
+            - miho (bool): Enable Multiple Image Homography Optimization.
+            - ncc (bool): Enable Normalized Cross Correlation refinement.
+            - ncc_todo (set): Types of NCC to perform ('eye', 'laf', 'mop_miho').
+            - patch_radius (int): Scale used for patch extraction and kH construction.
+            - affine_laf_miho (bool): Apply specific affine normalization to frames.
+        mop (mop_miho.miho or mop.miho): The underlying clustering engine.
+
+    Args:
+        **args: Keyword arguments to override default configuration.
+    """
     def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
@@ -6958,7 +8075,32 @@ class mop_miho_ncc_module:
         return
 
         
-    def run(self, **args):        
+    def run(self, **args):   
+        """
+        Executes the clustering and refinement pipeline.
+
+        Processing Flow:
+        1. Planar Clustering: If MOP is enabled, matches are clustered into planes. 
+           Matches not belonging to a valid plane are masked out.
+        2. Initial Warping: If NCC is disabled but 'mop_miho_patches' is enabled, 
+           local homographies (kH) are updated based on the detected planes.
+        3. NCC Refinement: 
+           - 'eye': Refines based on a simple identity translation.
+           - 'laf': Refines using the Local Affine Frames from keypoint detectors.
+           - 'mop_miho': Refines using the homographies derived from planar clustering.
+        4. Selection: For each match, the refinement method yielding the highest 
+           NCC score (val_) is selected as the winner.
+        5. Output Reconstruction: Merges refined matches with original unchanged 
+           data into a unified pipeline format.
+
+        Args:
+            **args: Pipeline dictionary containing 'kp', 'kH', 'm_idx', 'm_mask', 
+                    'kr', and 'img' paths.
+
+        Returns:
+            dict: Updated pipeline dictionary containing refined keypoints, 
+                  homographies, and updated validity masks.
+        """     
         if not (self.mop is None):
             mi = args['m_idx']                     
             mm = args['m_mask']
@@ -7178,6 +8320,28 @@ class mop_miho_ncc_module:
 
 
 class show_patches_module:
+    """
+    A visualization module for extracting and saving matched image patches.
+
+    This module takes matched keypoints and their associated local homographies 
+    to extract 'rectified' patches from both images. These patches are normalized 
+    to account for lighting and perspective differences, then saved as grids 
+    to help users visually assess if the matches are correct.
+
+    Attributes:
+        args (dict): Configuration parameters including:
+            - patch_radius (int): Scaling factor for the patch extraction.
+            - w (int): Half-width of the resulting patch (total size = 2w + 1).
+            - show_mode (set): Determines visualization style ('overlay', 'separated', or 'both').
+            - cache_path (str): Directory where patch grid images are saved.
+            - only_valid (bool): If True, only extracts patches for matches marked as valid.
+            - affine_laf_miho (bool): If True, applies an affine normalization 
+              based on Local Affine Frames.
+
+    Methods:
+        go_save_diff_patches: Static method that creates a two-channel 'diff' 
+            image (Red/Green) to show the overlay/alignment of two patches.
+    """
     @staticmethod
     def go_save_diff_patches(im1, im2, pt1, pt2, Hs, w, save_prefix='patch_diff_', stretch=False, grid=[40, 50], save_suffix='.png'):        
         # warning image must be grayscale and not rgb!
@@ -7259,7 +8423,33 @@ class show_patches_module:
         return
 
     
-    def run(self, **args):     
+    def run(self, **args):   
+        """
+        Executes the patch extraction and saving pipeline.
+
+        The process follows these steps:
+        1. Filters matches based on validity and confidence scores.
+        2. Computes the final warping matrices (Hs) by combining keypoint 
+           locations with local patch homographies (kH).
+        3. Optional: Normalizes the Local Affine Frames (LAF) to ensure 
+           patches from both images have a consistent scale.
+        4. Warps the images using Normalized Cross Correlation (ncc) utilities 
+           to produce square patches.
+        5. Saves 'separated' grids (Image 0 patches and Image 1 patches separately) 
+           or 'overlay' grids (Image 0 and 1 combined in color channels).
+
+        Args:
+            **args: Dictionary containing input data:
+                - img (list[str]): Paths to the source images.
+                - kp (list[Tensor]): Keypoint coordinates.
+                - kH (list[Tensor]): Local homography matrices.
+                - m_idx (Tensor): Match indices.
+                - m_mask (Tensor): Validity mask for matches.
+                - m_val (Tensor): Confidence values used for sorting/ranking.
+
+        Returns:
+            dict: An empty dictionary (this module is used for side-effects/saving files).
+        """  
         img0 = args['img'][0]
         img1 = args['img'][1]
             
@@ -7379,6 +8569,24 @@ from dust3r.inference import inference as mast3r_inference
 from dust3r.utils.image import load_images as mast3r_load_images
   
 class mast3r_module:
+    """
+    A pipeline module using the MASt3R model for fast, 3D-aware feature matching.
+
+    MASt3R extends DUSt3R by outputting dense local descriptors for each pixel. 
+    This module performs inference to obtain these descriptors and uses a 
+    Fast Reciprocal Nearest Neighbor search to establish matches, skipping 
+    the expensive global point cloud alignment used in standard DUSt3R.
+
+    Attributes:
+        args (dict): Configuration parameters including:
+            - model (str): HuggingFace model path (default: MASt3R ViT Large).
+            - max_matches (int): Maximum number of matches to subsample.
+            - resize (int): Image resolution for inference (default: 512).
+            - patch_radius (int): Scale factor for the local patch homographies (kH).
+        model (AsymmetricMASt3R): The loaded MASt3R neural network.
+
+    Args:**args: Keyword arguments to override default settings.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -7414,7 +8622,32 @@ class mast3r_module:
         return
 
 
-    def run(self, **args):        
+    def run(self, **args):   
+        """
+        Executes the MASt3R matching pipeline on a pair of images.
+
+        The process follows these steps:
+        1. Load and resize the image pair to the model's native resolution.
+        2. Perform inference to extract view-specific descriptors.
+        3. Use `fast_reciprocal_NNs` to find matches based on descriptor dot-product similarity.
+        4. Apply a border-rejection filter to remove matches too close to image edges.
+        5. Subsample matches if they exceed 'max_matches'.
+        6. Rescale 2D keypoints back to the original image dimensions.
+        7. Compute local patch homographies (kH) centered at each keypoint.
+
+        Args:
+            **args: Dictionary containing the input data:
+                - img (list[str]): Paths to the two images to be matched.
+
+        Returns:
+            dict: A dictionary containing:
+                - kp (list[Tensor]): Keypoint coordinates for both images.
+                - kH (list[Tensor]): Patch-based homography matrices ($3 \times 3$).
+                - kr (list[Tensor]): Placeholders for rotation values (NaN).
+                - m_idx (Tensor): Identity mapping (0->0, 1->1) for established matches.
+                - m_val (Tensor): Confidence values (all True).
+                - m_mask (Tensor): Boolean validity mask (all True).
+        """     
         warnings.simplefilter(action='ignore', category=FutureWarning)        
         
         image0 = args['img'][0]
@@ -7531,13 +8764,68 @@ from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
 
 def dust3r_add_cameras(viz, poses, focals=None, images=None, imsizes=None, colors=None, **kw):
+    """
+    Batch processes and adds multiple camera frustums to a 3D scene.
+
+    This utility iterates through a sequence of camera poses and associated 
+    metadata (focals, images, colors), calling `dust3r_add_camera` for each 
+    instance. It uses a safe indexing helper to handle cases where some 
+    attribute lists might be None.
+
+    Args:
+        viz (SceneViz): The visualization object containing the 3D scene.
+        poses (Iterable[Tensor/Array]): A collection of 4x4 Camera-to-World 
+            transformation matrices.
+        focals (Iterable, optional): A collection of focal lengths or 
+            3x3 intrinsic matrices corresponding to each pose.
+        images (Iterable, optional): A collection of images captured by 
+            each camera.
+        imsizes (Iterable, optional): A collection of (Width, Height) tuples 
+            for each camera.
+        colors (Iterable, optional): A collection of RGB tuples for 
+            each camera frustum's edges.
+        **kw: Additional keyword arguments passed down to the 
+            `dust3r_add_camera` and `dust3r_add_scene_cam` functions 
+            (e.g., cam_size).
+
+    Returns:
+        None: The function updates the 'viz' object in-place.
+    """
     get = lambda arr,idx: None if arr is None else arr[idx]
     for i, pose_c2w in enumerate(poses):
         dust3r_add_camera(viz, pose_c2w, get(focals,i), image=get(images,i), color=get(colors,i), imsize=get(imsizes,i), **kw)
 
 
 def dust3r_add_camera(viz, pose_c2w, focal=None, color=(0, 0, 0), image=None, imsize=None, cam_size=0.03):
+    """
+    Higher-level wrapper to add a single camera frustum to a 3D visualizer.
 
+    This function prepares data for visualization by converting PyTorch tensors 
+    to NumPy arrays and automatically extracting focal length and image 
+    dimensions from an intrinsic matrix if provided.
+
+    Args:
+        viz (SceneViz): The visualization object containing the 3D scene.
+        pose_c2w (Tensor/Array): 4x4 Camera-to-World transformation matrix.
+        focal (float/Tensor/Array, optional): The camera focal length. Can be 
+            a single value or a 3x3 intrinsic matrix.
+        color (tuple, optional): RGB color for the camera wireframe (0-255). 
+            Defaults to black (0, 0, 0).
+        image (Tensor/Array, optional): The image captured by the camera.
+        imsize (tuple, optional): (Width, Height) of the image. If None and 
+            an intrinsic matrix is provided, it is estimated from the 
+            principal point.
+        cam_size (float): The scale/width of the camera frustum in 3D units.
+
+    Returns:
+        SceneViz: The updated visualizer instance.
+
+    Note:
+        If a 3x3 intrinsic matrix is passed as 'focal', the function calculates 
+        the geometric mean of the focal lengths ($f = \sqrt{f_x \cdot f_y}$) and 
+        estimates the image size by doubling the principal point coordinates 
+        ($c_x, c_y$).
+    """
     from dust3r.utils.device import to_numpy
     from dust3r.utils.image import img_to_arr
 
@@ -7555,6 +8843,37 @@ def dust3r_add_camera(viz, pose_c2w, focal=None, color=(0, 0, 0), image=None, im
 
 def dust3r_add_scene_cam(scene, pose_c2w, edge_color, image=None, focal=None, imsize=None, 
                   screen_width=0.03, marker=None):
+    """
+    Adds a 3D mesh representation of a camera to a trimesh scene.
+
+    This function constructs a visual camera frustum based on camera intrinsics 
+    (focal length, image size) and extrinsics (pose_c2w). It can also map the 
+    actual captured image onto the 3D "screen" of the camera frustum.
+
+    Args:
+        scene (trimesh.Scene): The scene object to which the camera geometry is added.
+        pose_c2w (np.ndarray): A 4x4 Camera-to-World transformation matrix.
+        edge_color (list/tuple): RGB color for the camera wireframe/edges.
+        image (np.ndarray, optional): The RGB image captured by the camera to be 
+            textured onto the frustum face.
+        focal (float, optional): The focal length of the camera. If None, it is 
+            estimated based on image dimensions.
+        imsize (tuple, optional): (Width, Height) of the image.
+        screen_width (float): The physical size of the camera representation 
+            in the 3D world coordinates.
+        marker (str, optional): If set to 'o', adds a small sphere at the 
+            optical center of the camera.
+
+    Returns:
+        None: The function modifies the input 'scene' object in-place.
+
+    Notes:
+        - The function uses an 'OPENGL' coordinate system conversion (flipping 
+          Y and Z axes) to align typical computer vision camera conventions 
+          with the 3D renderer.
+        - The camera body is generated as a 4-section cone (pyramid) rotated 
+          45 degrees to align with the image axes.
+    """
 
     from dust3r.utils.geometry import geotrf
 
@@ -7646,7 +8965,34 @@ def dust3r_add_scene_cam(scene, pose_c2w, edge_color, image=None, focal=None, im
 
 
 def dust3r_show(scene, show_pw_cams=False, show_pw_pts3d=False, cam_size=None, **kw):
+    """
+    Visualizes the 3D reconstruction scene, including point clouds and camera poses.
 
+    This function populates a 3D visualizer with the geometric data stored in a 
+    DUSt3R 'scene' object. It renders the dense point clouds (colored by image 
+    pixels) and represents the cameras as 3D frustums.
+
+    Args:
+        scene (GlobalAligner): An aligned DUSt3R scene object containing images, 
+            3D points, confidence masks, and camera poses.
+        show_pw_cams (bool, optional): If True, visualizes "Pair-Wise" camera 
+            poses (raw predictions before global alignment). Defaults to False.
+        show_pw_pts3d (bool, optional): If True, visualizes the raw pair-wise 
+            3D point clouds alongside the aligned ones. Defaults to False.
+        cam_size (float, optional): The scale/size of the camera frustums in 
+            the 3D plot. If None, it is calculated automatically.
+        **kw: Additional keyword arguments passed to the visualizer's `show()` method 
+            (e.g., window title, background color).
+
+    Returns:
+        SceneViz: The visualizer object instance containing the rendered scene.
+
+    Note:
+        The function handles two scenarios for point cloud coloring:
+        1. If 'scene.imgs' is available, points are colored using the actual 
+           image textures.
+        2. If 'scene.imgs' is None, each view is assigned a random solid color.
+    """
     from dust3r.viz import SceneViz, auto_cam_size
     from dust3r.utils.device import to_numpy
     from dust3r.cloud_opt.commons import edge_str
@@ -7682,6 +9028,26 @@ def dust3r_show(scene, show_pw_cams=False, show_pw_pts3d=False, cam_size=None, *
 
   
 class dust3r_module:
+    """
+    A pipeline module that leverages the DUSt3R model for 3D-informed feature matching.
+
+    Instead of traditional descriptor matching, this module performs a dense 3D 
+    reconstruction of the image pair, aligns them in a global coordinate space, 
+    and extracts reciprocal 2D matches based on 3D point proximity. It can 
+    optionally perform 3D pose refinement (Point Cloud Optimization).
+
+    Attributes:
+        args (dict): Configuration parameters including:
+            - model (str): Pretrained model path or HuggingFace ID.
+            - max_matches (int): Upper limit of matches to return.
+            - resize (int): Image resolution for inference (default: 512).
+            - patch_radius (int): Radius used for patch-based homography (kH).
+            - 3D_pose_refinement (bool): If True, runs global point cloud optimization.
+        model (AsymmetricCroCo3DStereo): The loaded DUSt3R/MASt3R neural network.
+
+    Args:
+        **args: Keyword arguments to override default settings.
+    """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False   
@@ -7718,7 +9084,31 @@ class dust3r_module:
         return
 
 
-    def run(self, **args):        
+    def run(self, **args):  
+        """
+        Executes the DUSt3R inference and matching pipeline.
+
+        The process follows these steps:
+        1. Load and resize image pairs.
+        2. Run DUSt3R inference to get raw 3D point predictions and confidence maps.
+        3. Align views using a Global Aligner (PairViewer or PointCloudOptimizer).
+        4. Extract reciprocal matches by finding 3D points that correspond in both views.
+        5. Scale 2D keypoints back to original image dimensions.
+        6. Compute local patch homographies (kH) for downstream tasks.
+
+        Args:
+            **args: Dictionary containing the input data:
+                - img (list[str]): Paths to the two images to be matched.
+
+        Returns:
+            dict: A dictionary containing:
+                - kp (list[Tensor]): Keypoint coordinates for both images.
+                - kH (list[Tensor]): Patch-based homography matrices for each keypoint.
+                - kr (list[Tensor]): Rotation values (currently placeholders).
+                - m_idx (Tensor): Indices mapping matches between image 0 and 1.
+                - m_val (Tensor): Confidence values (initially set to 1/True).
+                - m_mask (Tensor): Boolean mask indicating valid matches.
+        """      
         warnings.simplefilter(action='ignore', category=FutureWarning)        
         
         image0 = args['img'][0]
@@ -7841,6 +9231,29 @@ class dust3r_module:
 
 
 def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, force=False):
+    """
+    Decomposes an image into a multi-scale pyramid of overlapping tiles.
+
+    This function divides an image into grids of increasing density (from 1xN to 
+    split_max x M). It handles padding, calculates overlap (shared area) between 
+    adjacent tiles, and resizes tiles to fit a maximum block size. Each tile is 
+    saved to disk, and its corresponding coordinate transformation matrix is computed.
+
+    Args:
+        in_image (str): Path to the input image file.
+        cache_path (str): Directory where the generated tile images will be stored.
+        split_max (int): Number of pyramid levels (granularity levels).
+        block_sz_max (int): Maximum allowable dimension (width or height) for a tile.
+        shared (float): Fraction of the tile size that overlaps with its neighbor.
+        interpolation (int): OpenCV interpolation flag for resizing.
+        force (bool): If True, overwrites existing cached tiles.
+
+    Returns:
+        tuple: 
+            - im_list (list of str): Paths to the generated tile images.
+            - im_warp (list of torch.Tensor): 3x3 transformation matrices (Affine) 
+              mapping original image coordinates to the tile's local coordinate system.
+    """
     img = cv2.imread(in_image)
     sz = img.shape[:2]
     sz_min = min(sz)
@@ -7913,6 +9326,24 @@ def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=2
 
 
 def pair_pyramid(pair, cache_path='tmp_imgs', force=False, split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, **dummy_args):
+    """
+    A generator that yields all possible combinations of tiles from a pair of images.
+
+    This is used for "coarse-to-fine" matching. By tiling both images in a pair, 
+    it allows a matcher to compare every sub-region of Image A with every 
+    sub-region of Image B at multiple scales.
+
+    Args:
+        pair (tuple): A tuple of two image paths (path1, path2).
+        ... (Other args same as to_pyramid)
+
+    Yields:
+        tuple: 
+            - (im1, im2) (tuple): Paths to a pair of tiles (one from each image).
+            - [warp1_inv, warp2_inv] (list): Inverse transformation matrices 
+              to map coordinates found in the tiles back to the original image space.
+            - {} (dict): Empty dictionary for pipeline compatibility.
+    """
     im_list1, im_warp1 = to_pyramid(pair[0], cache_path=cache_path, split_max=split_max, block_sz_max=block_sz_max, shared=shared, interpolation=interpolation, force=force)
     im_list2, im_warp2 = to_pyramid(pair[1], cache_path=cache_path, split_max=split_max, block_sz_max=block_sz_max, shared=shared, interpolation=interpolation, force=force)
 
@@ -7923,7 +9354,33 @@ def pair_pyramid(pair, cache_path='tmp_imgs', force=False, split_max=3, block_sz
 
 import dtm.src.dtm as dtm
 
-class blob_matching_module:    
+class blob_matching_module:
+    """
+    A pipeline module for performing blob-based feature matching between two sets of descriptors.
+
+    This module wraps the `dtm.blob_matching` function, facilitating the comparison 
+    of keypoints and descriptors from two different images. It handles configuration 
+    management, device placement, and ensures the output is compatible with 
+    downstream filtering or geometry estimation modules.
+
+    Attributes:
+        single_image (bool): Flag indicating if the module operates on a single image.
+        pipeliner (bool): Flag for integration within a sequential processing pipeline.
+        pass_through (bool): If True, allows data to pass without modification.
+        add_to_cache (bool): If True, enables result caching for the current configuration.
+        args (dict): Dictionary of matching parameters including:
+            - pf (int): Threshold/parameter for union matching logic (default: -10).
+            - pn (int): Neighbor/proximity parameter (default: 5).
+            - ps (int): Search space or offset parameter (default: 16).
+            - use_stats (bool): Whether to utilize statistical data during matching.
+            - distance (str): Metric for descriptor distance (e.g., 'L2').
+            - split_sz (int): Block size for memory-efficient processing (chunking).
+            - device (str): Computational device ('cpu' or 'cuda').
+        id_string (str): Unique identifier based on the specific parameter configuration.
+
+    Args:
+        **args: Arbitrary keyword arguments used to override default matching settings.
+    """    
     def __init__(self, **args):
         self.single_image = False    
         self.pipeliner = False      
@@ -7983,7 +9440,27 @@ class blob_matching_module:
         return {'m_idx': midx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=device, dtype=torch.bool)}
 
 
-class dtm_module:    
+class dtm_module:
+    """
+    Interface module for the Dynamic Token Matching (DTM) algorithm.
+    
+    This class acts as a wrapper to manage the filtering and validation of 
+    feature matches between image pairs. It utilizes the DTM algorithm to 
+    identify spatially consistent matches and filter out geometric outliers.
+
+    Attributes:
+        single_image (bool): Flag indicating if the module operates on a single image context.
+        pipeliner (bool): Flag for integration within a sequential processing pipeline.
+        pass_through (bool): If True, the module allows data to pass without transformation.
+        add_to_cache (bool): If True, enables caching of the computed results.
+        args (dict): Configuration dictionary for DTM parameters (e.g., 'full_dtm', 'st').
+        id_string (str): A unique identifier generated based on the specific configuration.
+
+    Args:
+        **args: Arbitrary keyword arguments used to configure the module. 
+            Expected keys include 'full_dtm' (bool), 'show_progress' (bool), 
+            'st' (list/tuple), and 'prepare_data' (callable).
+    """    
     def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
@@ -8034,6 +9511,44 @@ class dtm_module:
 
 
 def decompose_H(H, ret_err=False):
+    """
+    Decomposes a batch of homography matrices into elementary geometric components.
+
+    The function factors the homography matrix $H$ such that:
+    $H = H_t \cdot H_s \cdot H_m \cdot H_r \cdot H_a \cdot H_p$
+    
+    Where:
+    - $H_t$: Translation
+    - $H_s$: Uniform Scaling
+    - $H_m$: Reflection (Mirroring)
+    - $H_r$: Pure Rotation
+    - $H_a$: Affine (Shear/Stretch)
+    - $H_p$: Projective (Perspective) components
+
+    The decomposition uses QR factorization on the upper-left $2 \times 2$ block 
+    after removing projective and translative effects. It handles determinant 
+    signs to ensure valid rotation and affine matrices.
+
+    Args:
+        H (torch.Tensor): A batch of homography matrices of shape (N, 3, 3).
+        ret_err (bool, optional): If True, calculates and returns the 
+            reconstruction error. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - H_t (torch.Tensor): Translation matrices (N, 3, 3).
+            - H_s (torch.Tensor): Scale matrices (N, 3, 3).
+            - H_m (torch.Tensor): Reflection matrices (N, 3, 3).
+            - H_r (torch.Tensor): Rotation matrices (N, 3, 3).
+            - H_a (torch.Tensor): Affine/Shear matrices (N, 3, 3).
+            - H_p (torch.Tensor): Projective matrices (N, 3, 3).
+            - err (torch.Tensor or None): The L1 reconstruction error per 
+              matrix if ret_err is True, else None.
+
+    Note:
+        The decomposition assumes the input matrices are defined in a 
+        coordinate system where the transformation is applied as $H \cdot x$.
+    """
     # H = torch.rand((5, 3, 3), device=device)
     
     v = H[:, -1, -1]
@@ -8100,6 +9615,40 @@ def decompose_H(H, ret_err=False):
 
 
 def decompose_H_other(H, ret_err=False):
+    """
+    Alternative decomposition of homography matrices using RQ-based factorization.
+
+    This function decomposes a batch of $3 \times 3$ homography matrices $H$ into 
+    geometric components using a permutation-based RQ decomposition on the 
+    affine block. This approach typically isolates intrinsic and extrinsic 
+    parameters differently than a standard QR decomposition.
+
+    The decomposition follows the reconstruction order:
+    $H = H_p \cdot H_a \cdot H_t \cdot H_s \cdot H_m \cdot H_r$
+
+    Args:
+        H (torch.Tensor): Batch of homography matrices of shape (N, 3, 3).
+        ret_err (bool, optional): If True, calculates the L1 reconstruction 
+            error between the original $H$ and the product of its components. 
+            Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - H_p (torch.Tensor): Projective (perspective) matrices.
+            - H_a (torch.Tensor): Affine (shear) matrices.
+            - H_t (torch.Tensor): Translation matrices.
+            - H_s (torch.Tensor): Uniform scale matrices.
+            - H_m (torch.Tensor): Reflection (mirroring) matrices.
+            - H_r (torch.Tensor): Pure rotation matrices.
+            - err (torch.Tensor or None): The reconstruction error if 
+              ret_err is True, otherwise None.
+
+    Note:
+        Unlike `decompose_H`, this function performs an RQ decomposition by 
+        applying a permutation matrix $P$ before and after a standard QR 
+        factorization. It also handles coordinate shifts for the translation 
+        and projective vectors to maintain consistency with the new chain order.
+    """
     # H = torch.rand((5, 3, 3), device=device)
     
     A_ = H[:, :2, :2]

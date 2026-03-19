@@ -173,3 +173,17 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+adalam
+aspanformer
+dtm
+fcgnn
+gms
+hz
+lpm
+mast3r
+matchformer
+miho
+pickled_hdf5
+quadtreeattention
+r2d2
+show_imgs
