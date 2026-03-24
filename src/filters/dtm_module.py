@@ -1,0 +1,113 @@
+
+import dtm.src.dtm as dtm
+
+import os
+import warnings
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
+import time
+from tqdm import tqdm
+import torchvision.transforms as transforms
+
+import torch
+import kornia as K
+from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
+import cv2
+import numpy as np
+from PIL import Image
+import poselib
+import gdown
+import zipfile
+import tarfile
+import csv
+import shutil
+import bz2
+import _pickle as cPickle
+import argparse
+import math
+import copy
+import wget
+import pycolmap
+import scipy
+import miho.src.miho as mop_miho
+import miho.src.miho_other as mop
+import miho.src.ncc as ncc
+
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+import plot.viz2d as viz
+import plot.utils as viz_utils
+import sys
+from pathlib import Path
+
+from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
+
+
+
+class dtm_module:
+    """
+    Interface module for the Dynamic Token Matching (DTM) algorithm.
+    
+    This class acts as a wrapper to manage the filtering and validation of 
+    feature matches between image pairs. It utilizes the DTM algorithm to 
+    identify spatially consistent matches and filter out geometric outliers.
+
+    Attributes:
+        single_image (bool): Flag indicating if the module operates on a single image context.
+        pipeliner (bool): Flag for integration within a sequential processing pipeline.
+        pass_through (bool): If True, the module allows data to pass without transformation.
+        add_to_cache (bool): If True, enables caching of the computed results.
+        args (dict): Configuration dictionary for DTM parameters (e.g., 'full_dtm', 'st').
+        id_string (str): A unique identifier generated based on the specific configuration.
+
+    Args:
+        **args: Arbitrary keyword arguments used to configure the module. 
+            Expected keys include 'full_dtm' (bool), 'show_progress' (bool), 
+            'st' (list/tuple), and 'prepare_data' (callable).
+    """    
+    def __init__(self, **args):       
+        self.single_image = False    
+        self.pipeliner = False     
+        self.pass_through = False
+        self.add_to_cache = True
+                        
+        self.args = {
+            'id_more': '',
+            'full_dtm': True,
+            'show_progress': False,
+            'st': [1., 0.],
+            'prepare_data': dtm.prepare_data_shaped,
+            'only_spatial': False,
+            'guided_matching': False,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        self.id_string, self.args = set_args('dtm', args, self.args)        
+
+
+    def get_id(self): 
+        return self.id_string
+
+    
+    def finalize(self):
+        return
+
+        
+    def run(self, **args):                
+        match_data = {
+            'img': args['img'],
+            'kp': args['kp'],
+            'm_idx': args['m_idx'],
+            'm_val': args['m_val'].clone(),
+            'm_mask': args['m_mask'].clone(),
+            }
+
+        if self.args['only_spatial']: match_data['m_val'][:] = 1.
+
+        if self.args['guided_matching']: 
+            match_data['m_val'][match_data['m_mask']] = 0.
+            match_data['m_mask'][:] = True
+
+        dtm_mask = dtm.dtm(match_data, show_in_progress=self.args['show_progress'], full_dtm=self.args['full_dtm'], st=self.args['st'], prepare_data=self.args['prepare_data'])
+   
+        return {'m_mask': torch.tensor(dtm_mask <= 0, dtype=torch.bool, device=device)}        

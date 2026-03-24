@@ -1,0 +1,164 @@
+import os
+import warnings
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
+import time
+from tqdm import tqdm
+import torchvision.transforms as transforms
+
+import torch
+import kornia as K
+from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
+import cv2
+import numpy as np
+from PIL import Image
+import poselib
+import gdown
+import zipfile
+import tarfile
+import csv
+import shutil
+import bz2
+import _pickle as cPickle
+import argparse
+import math
+import copy
+import wget
+import pycolmap
+import scipy
+import miho.src.miho as mop_miho
+import miho.src.miho_other as mop
+import miho.src.ncc as ncc
+
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+import plot.viz2d as viz
+import plot.utils as viz_utils
+import sys
+from pathlib import Path
+
+from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
+
+from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
+
+class roma_module:
+    """
+    A robust dense matching module using a warping-based transformer.
+
+    RoMa is designed to provide high-quality correspondences by combining 
+    a coarse global matching stage with a fine-grained refinement stage. 
+    It estimates a dense 'warp' field and a 'certainty' map, allowing it 
+    to find matches even in challenging scenarios like large viewpoint 
+    changes or extreme lighting conditions.
+
+    Attributes:
+        use_tiny (bool): If True, uses the lightweight 'TinyRoMa' variant 
+            for faster processing on lower-end hardware.
+        coarse_resolution (int): Resolution for the initial global match.
+        upsample_resolution (int): Resolution for the final pixel-accurate refinement.
+        max_keypoints (int): The number of points to sample from the dense warp field.
+    """
+    def __init__(self, **args):
+        self.single_image = False
+        self.pipeliner = False   
+        self.pass_through = False
+        self.add_to_cache = True
+                                
+        self.args = {
+            'id_more': '',
+            'outdoor': True,
+            'use_tiny': False,
+            'coarse_resolution': 280,
+            'upsample_resolution': 432,
+            'max_keypoints': 2000,
+            'patch_radius': 16,
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        
+        self.id_string, self.args = set_args('roma', args, self.args)        
+
+        roma_args = {}
+        if not (self.args['coarse_resolution'] is None):
+            roma_args['coarse_res'] = self.args['coarse_resolution']
+        if not (self.args['upsample_resolution'] is None):
+            roma_args['upsample_res'] = self.args['upsample_resolution']
+
+        if self.args['use_tiny']:
+            self.roma_model = tiny_roma_v1_outdoor(device=device)            
+        else:
+            if self.args['outdoor'] == True:
+                self.roma_model = roma_outdoor(device=device, **roma_args)
+            else:
+                self.roma_model = roma_indoor(device=device, **roma_args)
+
+
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        H, W = self.roma_model.get_output_resolution()
+
+        im1 = Image.open(args['img'][0])
+        im1 = im1.convert("RGB")
+
+        im2 = Image.open(args['img'][1])
+        im2 = im2.convert("RGB")
+
+        W_A, H_A = im1.size
+        W_B, H_B = im2.size
+
+        im1 = im1.resize((W, H))
+        im2 = im2.resize((W, H))
+    
+        # Match
+        if self.args['use_tiny']:
+            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1])
+        else:
+            warp, certainty = self.roma_model.match(args['img'][0], args['img'][1])
+        # Sample matches for estimation
+        
+        sampling_args = {}
+        if not (self.args['max_keypoints'] is None):
+            sampling_args['num'] = self.args['max_keypoints']
+        
+        matches, certainty = self.roma_model.sample(warp, certainty, **sampling_args)
+        kpts1, kpts2 = self.roma_model.to_pixel_coordinates(matches, H, W, H, W)    
+
+        kps1 = kpts1.detach().to(device)
+        kps2 = kpts2.detach().to(device)
+
+        kps1 = kps1 / torch.tensor([W/float(W_A), H/float(H_A)], device=device).unsqueeze(0)
+        kps2 = kps2 / torch.tensor([W/float(W_B), H/float(H_B)], device=device).unsqueeze(0)
+        
+        kp = [kps1, kps2]
+        kH = [
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            ]
+        
+        kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
+        kH[0][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[0][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[0][:, 2, 2] = 1
+
+        kH[1][:, [0, 1], 2] = -kp[1] / self.args['patch_radius']
+        kH[1][:, 0, 0] = 1 / self.args['patch_radius']
+        kH[1][:, 1, 1] = 1 / self.args['patch_radius']
+        kH[1][:, 2, 2] = 1
+
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx[:, 0] = torch.arange(kp[0].shape[0])
+        m_idx[:, 1] = torch.arange(kp[0].shape[0])
+
+        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+
+        m_val = certainty.detach().to(device)        
+
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}
