@@ -4,7 +4,7 @@ from core import enable_quadtree
 
 from .aspanformer_module import aspanformer_module
 from .matchformer_module import matchformer_module
-from .lightglue_module import lightglue_module
+from .lightglue_module import lightglue_module, deep_joined_module
 from .loftr_module import loftr_module
 from .smnn_module import smnn_module
 from .roma_module import roma_module

@@ -148,3 +148,91 @@ class lightglue_module:
                     
         return {'m_idx': idxs, 'm_val': m_val, 'm_mask': m_mask}
     
+
+
+
+
+
+from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
+from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
+
+class deep_joined_module:
+    """
+    A unified extractor for deep-learning-based keypoints and descriptors.
+
+    This module acts as a factory, allowing you to switch between different 
+    neural feature extractors (SuperPoint, DISK, ALIKED, etc.) using a 
+    single interface. It handles image loading, resizing, and the 
+    transformation of raw network outputs into the pipeline's standard 
+    Local Affine Frame (LAF) format.
+
+    Attributes:
+        what (str): The specific extractor to use. Options include 
+            'superpoint', 'disk', 'aliked', 'sift', or 'doghardnet'.
+        num_features (int): The maximum number of keypoints to extract.
+        resize (int): The maximum dimension for image scaling before 
+            extraction (helps maintain VRAM and speed).
+    """
+    def __init__(self, **args):
+        self.single_image = True
+        self.pipeliner = False
+        self.pass_through = False
+        self.add_to_cache = True
+                                
+        self.what = 'superpoint'
+        self.args = { 
+            'id_more': '',
+            'patch_radius': 16,            
+            'num_features': 8000,
+            'resize': 1024,           # this is default, set to None to disable
+            'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
+            }
+        
+        if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+                
+        if 'what' in args:
+            self.what = args['what']
+            del args['what']
+        
+        self.id_string, self.args = set_args(self.what, args, self.args)        
+
+        if self.what == 'disk':            
+            self.extractor = lg_disk(max_num_keypoints=self.args['num_features']).eval().to(device)
+        elif self.what == 'aliked':            
+            self.extractor = lg_aliked(max_num_keypoints=self.args['num_features'], model_name=self.args['aliked_model']).eval().to(device)
+        elif self.what == 'sift':            
+            self.extractor = lg_sift(max_num_keypoints=self.args['num_features']).eval().to(device)
+        elif self.what == 'doghardnet':            
+            self.extractor = lg_doghardnet(max_num_keypoints=self.args['num_features']).eval().to(device)
+        else:   
+            self.what = 'superpoint'
+            self.extractor = lg_superpoint(max_num_keypoints=self.args['num_features']).eval().to(device)
+
+
+    def get_id(self): 
+        return self.id_string
+    
+    
+    def finalize(self):
+        return
+
+
+    def run(self, **args):
+        # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])         
+        img = lg_load_image(args['img'][args['idx']]).to(device)
+        
+        feats = self.extractor.extract(img, resize=self.args['resize'])
+        kp = feats['keypoints'].squeeze(0)       
+        desc = feats['descriptors'].squeeze(0)       
+
+        kH = torch.zeros((kp.shape[0], 3, 3), device=device)        
+        kH[:, [0, 1], 2] = -kp / self.args['patch_radius']
+        kH[:, 0, 0] = 1 / self.args['patch_radius']
+        kH[:, 1, 1] = 1 / self.args['patch_radius']
+        kH[:, 2, 2] = 1
+
+        kr = torch.full((kp.shape[0], ), torch.nan, device=device)        
+        
+        # todo: add feats['keypoint_scores'] as kr        
+        return {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
+

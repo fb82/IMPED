@@ -45,6 +45,30 @@ from matchformer.model.matchformer import Matchformer
 from matchformer.model.utils.misc import lower_config as mf_lower_config
 from matchformer.config.defaultmf import get_cfg_defaults as mf_get_cfg_defaults 
   
+
+def download_matchformer(weight_path='../weights/matchformer'):    
+    file_list = [
+        'indoor-large-SEA.ckpt',
+        'indoor-lite-LA.ckpt',
+        'outdoor-large-LA.ckpt',
+        'outdoor-lite-SEA.ckpt',
+    ]
+    
+    url_list = [
+        'https://drive.google.com/file/d/1EjeSvU3ARZg5mn2PlqNDWMu9iwS7Zf_m/view?usp=drive_link',
+        'https://drive.google.com/file/d/11ClOQ_VrlsT7PxK6jQr5AW1Fd0YMbB3R/view?usp=drive_link',
+        'https://drive.google.com/file/d/1Ii-z3dwNwGaxoeFVSE44DqHdMhubYbQf/view?usp=drive_link',
+        'https://drive.google.com/file/d/1etaU9mM8bGT2AKT56ph6iqUdpV1daFBz/view?usp=drive_link',
+    ]
+
+    os.makedirs(weight_path, exist_ok=True)   
+
+    for file, url in zip(file_list, url_list):
+
+        file_to_download = os.path.join(weight_path, file)    
+        if not os.path.isfile(file_to_download):    
+            gdown.download(url, file_to_download, fuzzy=True)
+
 class matchformer_module:
     """
     A dense matching module using MatchFormer (Interleaving Attention).

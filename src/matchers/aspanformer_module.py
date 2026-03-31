@@ -46,6 +46,27 @@ from aspanformer.src.ASpanFormer.aspanformer import ASpanFormer
 from aspanformer.src.config.default import get_cfg_defaults as as_get_cfg_defaults
 from aspanformer.src.utils.misc import lower_config as as_lower_config
   
+
+
+
+def download_aspanformer(weight_path='../weights/aspanformer'):    
+    file = 'weights_aspanformer.tar'    
+    url = 'https://drive.google.com/file/d/1eavM9dTkw9nbc-JqlVVfGPU5UvTTfc6k/view?usp=share_link'
+
+    os.makedirs(os.path.join(weight_path, 'download'), exist_ok=True)   
+
+    file_to_download = os.path.join(weight_path, 'download', file)    
+    if not os.path.isfile(file_to_download):    
+        gdown.download(url, file_to_download, fuzzy=True)
+        
+        with tarfile.open(file_to_download, "r") as tar_ref:
+            tar_ref.extractall(weight_path)
+            
+        shutil.move(os.path.join(weight_path, 'weights', 'indoor.ckpt'), os.path.join(weight_path, 'indoor.ckpt'))
+        shutil.move(os.path.join(weight_path, 'weights', 'outdoor.ckpt'), os.path.join(weight_path, 'outdoor.ckpt'))
+        os.rmdir(os.path.join(weight_path, 'weights'))
+         
+
 class aspanformer_module:
     """
     A detector-free matching module using Asymmetric-Sampling Transformers.

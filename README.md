@@ -8,7 +8,7 @@
 | Test all existing pipelines | ✅ | |
 | Fix broken pipelines | ✅ | |
 | Move test pipelines to test files |  |📝 |
-| Split codebase |  |📝 |
+| Split codebase | ✅ | |
 | Comment codebase | ✅ | |
 | Add contracts to methods |  | 📝 |
 | Optimize code |  | 📝 |

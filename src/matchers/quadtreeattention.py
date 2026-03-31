@@ -46,6 +46,30 @@ from FeatureMatching.src.config.default import get_cfg_defaults as qta_get_cfg_d
 from FeatureMatching.src.utils.misc import lower_config as qta_lower_config
 from FeatureMatching.src.loftr import LoFTR as qta_LoFTR
 
+
+
+
+def download_quadtreeattention(weight_path='../weights/quadtreeattention'):    
+    file_list = [
+        'indoor.ckpt',
+        'outdoor.ckpt',
+    ]
+    
+    url_list = [
+        'https://drive.google.com/file/d/1pSK_8GP1WkqKL5m7J4aHvhFixdLP6Yfa/view?usp=sharing',
+        'https://drive.google.com/file/d/1UOYdzbrXHU9kvVy9tscCCO7BB3G4rWK4/view?usp=sharing',
+    ]
+
+    os.makedirs(weight_path, exist_ok=True)   
+
+    for file, url in zip(file_list, url_list):
+
+        file_to_download = os.path.join(weight_path, file)    
+        if not os.path.isfile(file_to_download):    
+            gdown.download(url, file_to_download, fuzzy=True)
+
+
+    
 class quadtreeattention_module:
     """
 A dense matching module using QuadTree Attention (hierarchical LoFTR).
