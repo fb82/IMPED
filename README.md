@@ -7,10 +7,9 @@
 | Create requirements file | ✅ | |
 | Test all existing pipelines | ✅ | |
 | Fix broken pipelines | ✅ | |
-| Move test pipelines to test files |  |📝 |
+| Move test pipelines to test files | ✅ | |
 | Split codebase | ✅ | |
 | Comment codebase | ✅ | |
-| Add contracts to methods |  | 📝 |
 | Optimize code |  | 📝 |
 
 
@@ -104,7 +103,8 @@ src/
 │   ├── show_patches.py        # show_patches_module
 │   └── colorize.py            # colorize_plane
 │
-└── image_pairs.py             # image_pairs class (iterator)
+└────── image_pairs.py         # image_pairs class (iterator)
+
 ```
 ## Environment setup
 

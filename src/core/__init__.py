@@ -26,6 +26,6 @@ from .utils import (
     affine_matrix_from_points
 )
 
-from .image_pairs import image_pairs
+#from ..image_pairs import image_pairs
 
 #__all__ = ["main_function", "helper1", "helper2"]

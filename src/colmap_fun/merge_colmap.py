@@ -36,10 +36,12 @@ import plot.utils as viz_utils
 import sys
 from pathlib import Path
 
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
+from core import device
+from .colmap_ext import coldb_ext
+from ensemble import pipe_union
 
 
-
+    
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
@@ -70,6 +72,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     Returns:
         None: Side-effect is the creation of a merged COLMAP database.
     """      
+    from core import go_iter
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')

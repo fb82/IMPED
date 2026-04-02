@@ -35,7 +35,8 @@ import plot.viz2d as viz
 import plot.utils as viz_utils
 import sys
 
-from .device import device, pipe_color, show_progress
+from core import device, pipe_color, show_progress
+from colmap_fun import coldb_ext
 
 class image_pairs:
     """

@@ -6,7 +6,7 @@ import torch
 
 
 from .device import device, pipe_color, show_progress
-from .image_pairs import image_pairs
+from image_pairs import image_pairs
 
 def go_iter(to_iter, msg='', active=True, params=None):
     if params is None: params = {}
