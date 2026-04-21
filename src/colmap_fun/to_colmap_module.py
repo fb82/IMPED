@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 from core import device
-from .colmap_ext import coldb_ext
+from .colmap_ext import coldb_ext, SIMPLE_RADIAL
 from ensemble import pipe_union
 
 class to_colmap_module:

@@ -123,7 +123,9 @@ class pairwise_benchmark_module:
 
 
     def finalize_epipolar(self):
-        keys = self.aux_hdf5.get_keys()
+        all_keys = self.aux_hdf5.get_keys()
+        keys = [k for k in all_keys if k.endswith('/epipolar')]  # ← only epipolar entries
+
 
         fe = 'F*'
             
@@ -186,7 +188,10 @@ class pairwise_benchmark_module:
 
 
     def finalize_planar(self):
-        keys = self.aux_hdf5.get_keys()
+        all_keys = self.aux_hdf5.get_keys()
+        keys = [k for k in all_keys if k.endswith('/homography')]  # ← only homography entries
+    
+
 
         fe = 'H'
             
@@ -203,6 +208,7 @@ class pairwise_benchmark_module:
 
         for key in keys:      
             val, is_found = self.aux_hdf5.get(key)
+ 
 
             H_error_1.append(val['H_error_1'])
             H_error_2.append(val['H_error_2'])
@@ -255,6 +261,7 @@ class pairwise_benchmark_module:
 
     def finalize_non_planar(self):
         keys = self.aux_hdf5.get_keys()
+
 
         if self.args['mode'] == 'fundamental':
             fe = 'F'

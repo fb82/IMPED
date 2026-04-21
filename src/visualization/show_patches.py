@@ -74,6 +74,8 @@ class show_patches_module:
         for k in range(pt1.shape[0]):
             pp = patch1[k]
             pm = torch.isfinite(pp)
+            if pp[pm].numel() == 0:
+                continue  # or handle the empty case however makes sense (e.g., m_ = 0)
             m_ = pp[pm].min()
             M_ = pp[pm].max()
             pp[pm] = (pp[pm] - m_) / (M_ - m_)            
@@ -81,6 +83,8 @@ class show_patches_module:
         
             pp = patch2[k]
             pm = torch.isfinite(pp)
+            if pp[pm].numel() == 0:
+                continue  # or handle the empty case however makes sense (e.g., m_ = 0)
             m_ = pp[pm].min()
             M_ = pp[pm].max()
             pp[pm] = (pp[pm] - m_) / (M_ - m_)            

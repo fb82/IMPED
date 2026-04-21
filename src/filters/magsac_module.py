@@ -71,10 +71,11 @@ class magsac_module:
             'px_th': 3,
             'max_try': 3
             }
+        
                 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         
-        self.id_string, self.args = set_args('magsac', args, self.args)        
+        self.id_string, self.args = set_args('magsac', args, self.args)      
 
 
     def get_id(self): 
@@ -86,6 +87,9 @@ class magsac_module:
 
         
     def run(self, **args):  
+        print(100*'-')
+        print(self.args['mode'])
+        print(100*'-')
         pt1_ = args['kp'][0]
         pt2_ = args['kp'][1]
         mi = args['m_idx']

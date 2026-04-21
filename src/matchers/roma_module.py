@@ -41,6 +41,9 @@ from image_pairs import image_pairs
 
 from romatch import roma_outdoor, roma_indoor, tiny_roma_v1_outdoor
 
+torch.set_float32_matmul_precision('highest')
+
+
 class roma_module:
     """
     A robust dense matching module using a warping-based transformer.

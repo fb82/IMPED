@@ -176,7 +176,8 @@ class image_muxer_module:
         return
 
 
-    def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):        
+    def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):       
+        from core import run_pipeline, apply_homo, change_patch_homo
         if pipe_data is None: pipe_data = {}
         pair = pipe_data['img']
         warp = pipe_data['warp']
