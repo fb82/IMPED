@@ -341,6 +341,7 @@ def pipeline20():
 
 def pipeline21():
 # Not working
+    
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
@@ -351,12 +352,21 @@ def pipeline21():
     imgs = '../data/ET'
     run_pairs(pipeline, imgs)
     os.makedirs('aliked_colmap_models', exist_ok=True)          
-    pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    pycolmap.incremental_mapping(database_path='aliked_superpoint.db', image_path=imgs, output_path='aliked_colmap_models')            
+    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked_superpoint.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
 
-from pathlib import Path
 
 def pipeline21bis():
+    from pathlib import Path
+    import os
+    
+    base_dir = Path(__file__).parent
+    print(f"__file__: {__file__}")
+    print(f"base_dir: {base_dir}")
+    print(f"CWD: {os.getcwd()}")
+    print(f"aliked_colmap_models exists: {(base_dir / 'aliked_colmap_models').exists()}")
+    print(f"aliked_colmap_models/0 exists: {(base_dir / 'aliked_colmap_models' / '0').exists()}")
+    print(f"Contents of aliked_colmap_models: {list((base_dir / 'aliked_colmap_models').iterdir()) if (base_dir / 'aliked_colmap_models').exists() else 'DIR NOT FOUND'}")
     base_dir = Path(__file__).parent
 
     pipeline = [
@@ -367,13 +377,16 @@ def pipeline21bis():
         to_colmap_module(db=str(base_dir / 'aliked.db')),            
     ]         
     imgs = str(base_dir.parent / 'data' / 'ET')
+    
     run_pairs(pipeline, imgs)
-    os.makedirs(base_dir / 'aliked_colmap_models', exist_ok=True)          
+    os.makedirs(base_dir / 'aliked_colmap_models', exist_ok=True)    
+      
     pycolmap.incremental_mapping(
         database_path=str(base_dir / 'aliked.db'),
         image_path=imgs,
         output_path=str(base_dir / 'aliked_colmap_models')
     )            
+    
     filter_colmap_reconstruction(
         input_model_path=str(base_dir / 'aliked_colmap_models' / '0'),
         db_path=str(base_dir / 'aliked.db'),
@@ -497,113 +510,15 @@ def pipeline26():
 def pipeline27():
 ## Working
     imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
-    
-
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
-        magsac_module(),
+        magsac_module(mode='homography', id_more='H_mode'),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
     ]         
     imgs = [imgs_planar[i] for i in range(20)]
-    run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
-
-
-def debug_module(name="debug"):
-    class DebugModule:
-        def __init__(self, name="debug"):
-            self.name = name
-            self.add_to_cache = False   # ← important, prevents cache errors
-
-        def get_id(self):
-            return self.name
-
-        def run(self, **kwargs):
-            # Try to extract the pair object - the framework seems to pass it in different ways
-            pair = None
-            if 'pair' in kwargs:
-                pair = kwargs['pair']
-            elif 'data' in kwargs and hasattr(kwargs['data'], 'results'):
-                pair = kwargs['data']
-            elif len(kwargs) == 1:
-                # last resort: take the only value if it looks like a pair
-                val = next(iter(kwargs.values()))
-                if hasattr(val, 'results'):
-                    pair = val
-
-            if pair is None:
-                print(f"[{self.name}] Warning: could not find pair in kwargs. Keys: {list(kwargs.keys())}")
-                return kwargs  # return input unchanged
-
-            print(f"\n=== DEBUG {self.name} - Pair {getattr(pair, 'idx', 'unknown')} ===")
-            
-            if hasattr(pair, 'results') and pair.results:
-                last = pair.results[-1]
-                keys = list(last.keys())
-                print(f"  Keys ({len(keys)}): {sorted(keys)}")
-                print(f"  Inliers / matches: {last.get('inliers', last.get('num_inliers', last.get('matches', 'N/A')))}")
-                print(f"  'H_error_1' present? → { 'H_error_1' in last }")
-                print(f"  'H' present? → { 'H' in last }")
-                print(f"  Epipolar/F keys: {[k for k in keys if any(x in k.lower() for x in ['epipolar', 'fundamental', 'f_error', 'f_matrix'])]}")
-            else:
-                print("  No results stored yet on this pair.")
-
-            # Return exactly what was passed in (safest for the pipeline)
-            return kwargs
-
-        def finalize(self, **kwargs):
-            return kwargs   # dummy
-
-    return DebugModule(name)
-
-def safe_debug_module(name="after_magsac"):
-    class SafeDebug:
-        def __init__(self, name="debug"):
-            self.name = name
-            self.add_to_cache = False
-
-        def get_id(self):
-            return self.name
-
-        def run(self, **kwargs):
-            print(f"\n=== {self.name} ===")
-            print("  Keys received:", list(kwargs.keys()))
-            
-            # Look for the last result on the pair (common pattern)
-            if 'pair' in kwargs and hasattr(kwargs['pair'], 'results') and kwargs['pair'].results:
-                last = kwargs['pair'].results[-1]
-                print("  Last result keys:", sorted(last.keys()))
-                print("  'H' present?", 'H' in last)
-                print("  'F' present?", 'F' in last)
-                print("  Inliers / mask sum:", last.get('m_mask', torch.tensor([])).sum().item() if 'm_mask' in last else 'N/A')
-            elif kwargs:
-                # fallback: print top-level keys
-                for k, v in list(kwargs.items())[:10]:   # limit output
-                    print(f"    {k}: {type(v)}")
-            
-            return kwargs   # pass through unchanged
-
-        def finalize(self, **kwargs):
-            return kwargs
-
-    return SafeDebug(name)
-
-def pipeline27bis():
-## Working
-    imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
-
-    pipeline = [
-        deep_joined_module(what='aliked'),
-        lightglue_module(what='aliked'),
-        magsac_module(mode='homography'),
-        #debug_module(name="debug"),
-        #safe_debug_module(name="after_magsac"),
-        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
-    ]         
-    imgs = [imgs_planar[i] for i in range(20)]
-    run_pairs(pipeline, imgs, add_path=to_add_path_planar)   
+    run_pairs(pipeline, imgs, add_path=to_add_path_planar, force=True)   
 
 def pipeline28():
 ## Working

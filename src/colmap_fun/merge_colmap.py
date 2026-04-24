@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 from core import device
-from .colmap_ext import coldb_ext, SIMPLE_RADIAL
+from .colmap_ext import coldb_ext
 from ensemble import pipe_union
 
 
@@ -73,6 +73,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
         None: Side-effect is the creation of a merged COLMAP database.
     """      
     from core import go_iter
+    from .colmap_ext import SIMPLE_RADIAL
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')
@@ -425,7 +426,11 @@ def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_pat
 
     for image_id, image in model_imgs:
         if ((image in to_filter_dict) and (how_filter == 'exclude')) or ((not (image in to_filter_dict)) and (how_filter == 'include')):
-            model.deregister_image(image_id)
+            #model.deregister_image(image_id)
+            image = model.image(image_id)
+            frame_id = image.frame_id
+            if model.exists_frame(frame_id):
+                model.deregister_frame(frame_id)
         
     if only_cameras:
         for pts3D in model.point3D_ids(): model.delete_point3D(pts3D)
@@ -473,6 +478,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         Returns:
             None: Saves the resulting merged model and database to disk.
         """
+    from benchmark import evaluate_rec
 
     model1 = pycolmap.Reconstruction(model_path1)
     model2 = pycolmap.Reconstruction(model_path2)
@@ -536,16 +542,15 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         new_camera.width = camera.width
         new_camera.height = camera.height
         new_camera.params = camera.params
-        fused_model.add_camera(new_camera)
-
+        fused_model.add_camera_with_trivial_rig(new_camera)
         new_image = pycolmap.Image()
-        new_image.name = image.name        
+        new_image.name = image.name
         new_image.image_id = img_id
         new_image.camera_id = cam_id
-        new_image.cam_from_world = image.cam_from_world        
-        fused_model.add_image(new_image)
-
-        count = count + 1        
+        fused_model.add_image_with_trivial_frame(new_image)
+        fused_model.image(img_id).frame.set_cam_from_world(cam_id, image.cam_from_world())
+        fused_model.register_frame(fused_model.image(img_id).frame_id)
+        count = count + 1
 
     for image_id in model2.images:
         if not (model1.find_image_with_name(model2.image(image_id).name) is None): continue
@@ -566,16 +571,15 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         new_camera.width = camera.width
         new_camera.height = camera.height
         new_camera.params = camera.params
-        fused_model.add_camera(new_camera)
-
+        fused_model.add_camera_with_trivial_rig(new_camera)
         new_image = pycolmap.Image()
         new_image.name = image.name
         new_image.image_id = img_id
         new_image.camera_id = cam_id
-        new_image.cam_from_world = image.cam_from_world        
-        fused_model.add_image(new_image)
-
-        count = count + 1 
+        fused_model.add_image_with_trivial_frame(new_image)
+        fused_model.image(img_id).frame.set_cam_from_world(cam_id, image.cam_from_world())
+        fused_model.register_frame(fused_model.image(img_id).frame_id)
+        count = count + 1
         
     if not only_cameras:
         fused_db.close()

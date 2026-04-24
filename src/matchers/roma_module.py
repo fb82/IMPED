@@ -62,6 +62,9 @@ class roma_module:
         max_keypoints (int): The number of points to sample from the dense warp field.
     """
     def __init__(self, **args):
+        torch.set_float32_matmul_precision('highest')
+
+        self.roma_model = roma_outdoor(device=device, **args)
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
@@ -82,6 +85,7 @@ class roma_module:
         self.id_string, self.args = set_args('roma', args, self.args)        
 
         roma_args = {}
+        roma_args['use_custom_corr'] = False
         if not (self.args['coarse_resolution'] is None):
             roma_args['coarse_res'] = self.args['coarse_resolution']
         if not (self.args['upsample_resolution'] is None):

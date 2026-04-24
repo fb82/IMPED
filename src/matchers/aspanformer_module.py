@@ -1,4 +1,5 @@
 
+
 import os
 import warnings
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
@@ -86,6 +87,7 @@ class aspanformer_module:
             metadata associated with each match.
     """
     def __init__(self, **args):
+
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
@@ -118,9 +120,54 @@ class aspanformer_module:
 
         as_args = parser.parse_args()
 
+        import glob
+        # Find the aspanformer directory
+        matches = glob.glob(os.path.join(conf_path, '**', 'aspanformer*'), recursive=True)
+        print("aspanformer:", matches)
+
+        # Also print conf_path so we know the base
+        print("conf_path:", conf_path)
+        print("contents:", os.listdir(conf_path))
+        print(100*'-')
+
+        
+        import yacs.config as yacs_config
+        import importlib.util
+        import types
+
+        aspanformer_dir = os.path.join(conf_path, '..', 'aspanformer')
+
+        def register_aspanformer_src():
+            src_path = os.path.join(aspanformer_dir, 'src')
+            config_path = os.path.join(src_path, 'config')
+
+            # Register 'src' namespace package
+            src_module = types.ModuleType('src')
+            src_module.__path__ = [src_path]
+            src_module.__package__ = 'src'
+            sys.modules['src'] = src_module
+
+            # Register 'src.config' namespace package
+            config_module = types.ModuleType('src.config')
+            config_module.__path__ = [config_path]
+            config_module.__package__ = 'src.config'
+            sys.modules['src.config'] = config_module
+
+            # Load and register 'src.config.default' from actual file
+            default_file = os.path.join(config_path, 'default.py')
+            spec = importlib.util.spec_from_file_location('src.config.default', default_file)
+            default_module = importlib.util.module_from_spec(spec)
+            sys.modules['src.config.default'] = default_module
+            spec.loader.exec_module(default_module)
+
+        if 'src.config.default' not in sys.modules:
+            register_aspanformer_src()
+
         config = as_get_cfg_defaults()
         config.merge_from_file(as_args.config_path)
         _config = as_lower_config(config)
+
+
         self.matcher = ASpanFormer(config=_config['aspan'])
         state_dict = torch.load(as_args.weights_path, map_location='cpu', weights_only=False)['state_dict']
         self.matcher.load_state_dict(state_dict,strict=False)

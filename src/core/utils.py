@@ -38,6 +38,8 @@ import sys
 from .device import device, pipe_color, show_progress
 from .pipeline import run_pipeline, run_pairs, finalize_pipeline, go_iter
 
+from imc import _EPS
+
 def set_args(id_string, args, args_):
         
     if args:

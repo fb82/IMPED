@@ -166,6 +166,12 @@ class mop_miho_ncc_module:
         if not (self.mop is None):
             mi = args['m_idx']                     
             mm = args['m_mask']
+
+            # pad mm to match mi if sizes differ
+            if mm.shape[0] < mi.shape[0]:
+                mm_padded = torch.zeros(mi.shape[0], device=mm.device, dtype=torch.bool)
+                mm_padded[:mm.shape[0]] = mm
+                mm = mm_padded
         
             pt1 = args['kp'][0][mi[mm][:, 0]]
             pt2 = args['kp'][1][mi[mm][:, 1]]

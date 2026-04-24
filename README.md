@@ -10,7 +10,14 @@
 | Move test pipelines to test files | ✅ | |
 | Split codebase | ✅ | |
 | Comment codebase | ✅ | |
-| Optimize code |  | 📝 |
+| Add latest updates | ✅ | |
+| Delete & refactor repetitions  |  | 📝 |
+| Add contracts |  | 📝 |
+| Add Roma v2 |  | 📝 |
+| Add LoMa |  | 📝 |
+| Optimize code* |  | 📝 |
+
+*for example merge database very slow with colmap
 
 
 ## File structure 
@@ -113,3 +120,5 @@ python -m venv imped
 source imped/bin/activate
 pip install -r src/requirements. txt
 ```
+
+

@@ -143,15 +143,19 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 counter1.append(pipe_data['k_counter'][1].to(device))
             
             if 'm_idx' in pipe_data:
+                print(f"m_idx shape: {pipe_data['m_idx'].shape}, m_mask shape: {pipe_data['m_mask'].shape}, m_val shape: {pipe_data['m_val'].shape}")
+
+                print(f"only_matched={only_matched}")
 
                 if only_matched:
-                    to_retain = pipe_data['m_mask'].clone().to(device)
+                    to_retain = torch.zeros(pipe_data['m_idx'].shape[0], device=device, dtype=torch.bool)
+                    to_retain[:pipe_data['m_mask'].shape[0]] = pipe_data['m_mask'].clone().to(device)
                 else:
-                    to_retain = torch.full((pipe_data['m_mask'].shape[0], ), 1, device=device, dtype=torch.bool)
+                    to_retain = torch.full((pipe_data['m_idx'].shape[0], ), 1, device=device, dtype=torch.bool)
                           
                 m_idx.append(pipe_data['m_idx'].to(device)[to_retain] + torch.tensor([m0_offset, m1_offset], device=device).unsqueeze(0))
                 m_val.append(pipe_data['m_val'].to(device)[to_retain])
-                m_mask.append(pipe_data['m_mask'].to(device)[to_retain])
+                m_mask.append(pipe_data['m_mask'].to(device)[to_retain[:pipe_data['m_mask'].shape[0]]])
                     
                 m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
                 m1_offset = m1_offset + pipe_data['kp'][1].shape[0]

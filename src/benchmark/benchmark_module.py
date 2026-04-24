@@ -261,8 +261,9 @@ class pairwise_benchmark_module:
 
     def finalize_non_planar(self):
         keys = self.aux_hdf5.get_keys()
+        
 
-
+ 
         if self.args['mode'] == 'fundamental':
             fe = 'F'
         else:
