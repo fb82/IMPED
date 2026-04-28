@@ -102,10 +102,17 @@ def run_once(db_names, output_db, mode):
     t0 = time.perf_counter()
     if mode == "legacy":
         with legacy_like_mode():
-            merge_colmap_db(db_names, output_db)
+            merge_colmap_db(db_names, output_db, profile=False)
     else:
-        merge_colmap_db(db_names, output_db)
+        merge_colmap_db(db_names, output_db, profile=False)
     return time.perf_counter() - t0
+
+
+def profile_once(db_names, output_db):
+    from colmap_fun import merge_colmap_db
+    if os.path.exists(output_db):
+        os.remove(output_db)
+    return merge_colmap_db(db_names, output_db, profile=True, return_profile=True)
 
 
 def main():
@@ -113,6 +120,7 @@ def main():
     parser.add_argument("--db", nargs="+", required=True, help="Input COLMAP DB files")
     parser.add_argument("--out-dir", default="test_merge/out", help="Output directory")
     parser.add_argument("--repeats", type=int, default=3, help="Repeats per mode")
+    parser.add_argument("--profile", action="store_true", help="Run one profiled optimized merge and print timing breakdown")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -141,6 +149,12 @@ def main():
     print(f"  legacy avg:    {legacy_avg:.3f}s")
     print(f"  optimized avg: {opt_avg:.3f}s")
     print(f"  speedup:       {speedup:.2f}x")
+
+    if args.profile:
+        print("\nRunning profiled optimized merge")
+        prof_db = out_dir / "merged_profiled.db"
+        prof = profile_once(db_names, str(prof_db))
+        print("Profile dictionary keys:", ", ".join(sorted(prof.keys())))
 
 
 if __name__ == "__main__":
