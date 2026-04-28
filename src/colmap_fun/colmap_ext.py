@@ -78,20 +78,16 @@ class coldb_ext(coldb.COLMAPDatabase):
 
         keypoints = np.asarray(keypoints, np.float32)
         
-        if self.get_keypoints(image_id) is None:
-            if keypoints.shape[0] > 0:
-                self.add_keypoints(image_id, keypoints)
+        if keypoints.shape[0] > 0:
+            self.execute(
+                "INSERT OR REPLACE INTO keypoints(image_id, rows, cols, data) VALUES (?, ?, ?, ?)",
+                (image_id, keypoints.shape[0], keypoints.shape[1], coldb.array_to_blob(keypoints)),
+            )
         else:
-            if keypoints.shape[0] > 0:
-                self.execute(
-                    "UPDATE keypoints SET rows=?, cols=?, data=? WHERE image_id=?",
-                    keypoints.shape + (coldb.array_to_blob(keypoints), ) + (image_id, ),
-                    )
-            else:
-                self.execute(
-                    "DELETE FROM keypoints WHERE image_id=?",
-                    (image_id, ),
-                    )
+            self.execute(
+                "DELETE FROM keypoints WHERE image_id=?",
+                (image_id, ),
+                )
 
     def get_matches(self, image_id1, image_id2):
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
@@ -149,25 +145,21 @@ class coldb_ext(coldb.COLMAPDatabase):
 
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
 
-        if self.get_matches(image_id1, image_id2) is None:
-            if matches.shape[0] > 0:
-                self.add_matches(image_id1, image_id2, matches)
+        matches = np.asarray(matches, np.uint32)
+
+        if image_id1 > image_id2:
+            matches = matches[:, ::-1]
+
+        if matches.shape[0] > 0:
+            self.execute(
+                "INSERT OR REPLACE INTO matches(pair_id, rows, cols, data) VALUES (?, ?, ?, ?)",
+                (pair_id, matches.shape[0], matches.shape[1], coldb.array_to_blob(matches)),
+            )
         else:
-            matches = np.asarray(matches, np.uint32)
-
-            if image_id1 > image_id2:
-                matches = matches[:, ::-1]
-
-            if matches.shape[0] > 0:
-                self.execute(
-                    "UPDATE matches SET rows=?, cols=?, data=? WHERE pair_id=?",
-                    matches.shape + (coldb.array_to_blob(matches), ) + (pair_id, ),
-                    )
-            else:
-                self.execute(
-                    "DELETE FROM matches WHERE pair_id=?",
-                    (pair_id, ),
-                    )
+            self.execute(
+                "DELETE FROM matches WHERE pair_id=?",
+                (pair_id, ),
+                )
 
 
     def get_images(self):
@@ -175,6 +167,20 @@ class coldb_ext(coldb.COLMAPDatabase):
         m = cursor.fetchall()        
         
         return m
+
+
+    def get_match_image_pairs(self, include_two_view_geometry=True):
+        cursor = self.execute("SELECT pair_id FROM matches")
+        pair_ids = {row[0] for row in cursor.fetchall()}
+        if include_two_view_geometry:
+            cursor = self.execute("SELECT pair_id FROM two_view_geometries")
+            pair_ids.update(row[0] for row in cursor.fetchall())
+
+        out = []
+        for pair_id in pair_ids:
+            image_id1, image_id2 = coldb.pair_id_to_image_ids(pair_id)
+            out.append((int(image_id1), int(image_id2)))
+        return out
     
 
     def update_two_view_geometry(self, image_id1, image_id2, matches, model=None):
@@ -185,66 +191,51 @@ class coldb_ext(coldb.COLMAPDatabase):
 
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
 
-        if self.get_two_view_geometry(image_id1, image_id2)[0] is None:
-            if matches.shape[0] > 0:
-                how_many_models = 0
-                
-                if 'H' in model:
-                    config = PLANAR_OR_PANORAMIC
-                    if image_id1 > image_id2: model['H'] = np.linalg.inv(model['H'])                    
-                    how_many_models = how_many_models + 1
-                if 'F' in model:
-                    config = UNCALIBRATED
-                    if image_id1 > image_id2: model['F'] = np.transpose(model['F'])                    
-                    how_many_models = how_many_models + 1
-                if 'E' in model:
-                    config = CALIBRATED
-                    if image_id1 > image_id2: model['E'] = np.transpose(model['E'])                    
-                    how_many_models = how_many_models + 1
-                if how_many_models != 1:
-                    config = MULTIPLE
-                
-                self.add_two_view_geometry(image_id1, image_id2, matches, config=config, **model)
+        matches = np.asarray(matches, np.uint32)
+
+        if image_id1 > image_id2:
+            matches = matches[:, ::-1]
+            if 'H' in model: model['H'] = np.linalg.inv(model['H'])
+            if 'F' in model: model['F'] = np.transpose(model['F'])
+            if 'E' in model: model['E'] = np.transpose(model['E'])
+
+        how_many_models = 0
+        F_blob = None
+        E_blob = None
+        H_blob = None
+        if 'H' in model:
+            config = PLANAR_OR_PANORAMIC
+            how_many_models += 1
+            H_blob = coldb.array_to_blob(model['H'])
+        if 'F' in model:
+            config = UNCALIBRATED
+            how_many_models += 1
+            F_blob = coldb.array_to_blob(model['F'])
+        if 'E' in model:
+            config = CALIBRATED
+            how_many_models += 1
+            E_blob = coldb.array_to_blob(model['E'])
+        if how_many_models != 1:
+            config = MULTIPLE
+
+        if matches.shape[0] > 0:
+            self.execute(
+                "INSERT OR REPLACE INTO two_view_geometries(pair_id, rows, cols, data, config, F, E, H, qvec, tvec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    pair_id,
+                    matches.shape[0],
+                    matches.shape[1],
+                    coldb.array_to_blob(matches),
+                    config,
+                    F_blob,
+                    E_blob,
+                    H_blob,
+                    None,
+                    None,
+                ),
+            )
         else:
-            matches = np.asarray(matches, np.uint32)
-
-            if image_id1 > image_id2:
-                matches = matches[:, ::-1]
-                
-                if 'H' in model: model['H'] = np.linalg.inv(model['H'])
-                if 'F' in model: model['F'] = np.transpose(model['F'])
-                if 'E' in model: model['E'] = np.transpose(model['E'])
-
-            how_many_models = 0
-            model_str = ""
-            model_tuple =  ()
-            if 'H' in model:
-                config = PLANAR_OR_PANORAMIC
-                how_many_models = how_many_models + 1
-                model_str = model_str + "H=?, "
-                model_tuple = model_tuple + (coldb.array_to_blob(model['H']), )
-            if 'F' in model:
-                config = UNCALIBRATED
-                how_many_models = how_many_models + 1
-                model_str = model_str + "F=?, "
-                model_tuple = model_tuple + (coldb.array_to_blob(model['F']), )
-            if 'E' in model:
-                config = CALIBRATED
-                how_many_models = how_many_models + 1
-                model_str = model_str + "E=?, "                    
-                model_tuple = model_tuple + (coldb.array_to_blob(model['E']), )
-            if how_many_models != 1:
-                config = MULTIPLE
-                    
-            query_str = "UPDATE two_view_geometries SET rows=?, cols=?, data=?, " + model_str + "config=? WHERE pair_id=?"
-
-            if matches.shape[0] > 0:
-                self.execute(
-                    query_str,
-                    matches.shape + (coldb.array_to_blob(matches), ) + model_tuple + (config, pair_id, ),
-                    )
-            else:
-                self.execute(
-                    "DELETE FROM two_view_geometries WHERE pair_id=?",
-                    (pair_id, ),
-                    )
+            self.execute(
+                "DELETE FROM two_view_geometries WHERE pair_id=?",
+                (pair_id, ),
+                )

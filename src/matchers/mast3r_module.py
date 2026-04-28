@@ -11,6 +11,7 @@ from core import device, set_args
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'mast3r'))
 
+import mast3r.utils.path_to_dust3r
 from dust3r.inference import inference as mast3r_inference
 from dust3r.utils.image import load_images as mast3r_load_images
 from mast3r.fast_nn import fast_reciprocal_NNs

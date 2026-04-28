@@ -58,10 +58,13 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 
     db_merged = coldb_ext(db_merged_name)
     db_merged.create_tables()
+    merged_image_cache = {os.path.split(name)[-1]: image_id for image_id, name in db_merged.get_images()}
     
     for i, db_name in enumerate(go_iter(db_names, msg='         merging progress')):
         db = coldb_ext(db_name)
         imgs = db.get_images()
+        img_name_by_id = {image_id: os.path.split(name)[-1] for image_id, name in imgs}
+        match_pairs = db.get_match_image_pairs(include_two_view_geometry=include_two_view_geometry)
     
         if (to_filter is None) or (how_filter is None):
             current_how = None
@@ -86,20 +89,14 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                     pair_dict[v[0]][v[1]] = 1
             
             
-        pbar = tqdm(total=len(imgs) * (len(imgs) - 1) / 2, desc='current database progress', leave=False)
-        for in0a, in0b  in enumerate(imgs):
-            for in1a, in1b in enumerate(imgs):
-                
-                im0_id, im0_ = in0b
-                im1_id, im1_ = in1b
-                                
-                if im0_id == im1_id: continue
-                if in1a <= in0a: continue
-            
+        pbar = tqdm(total=len(match_pairs), desc='current database progress', leave=False)
+        for im0_id, im1_id in match_pairs:
                 pbar.update()
-            
-                im0 = os.path.split(im0_)[-1]
-                im1 = os.path.split(im1_)[-1]
+
+                im0 = img_name_by_id.get(im0_id)
+                im1 = img_name_by_id.get(im1_id)
+                if (im0 is None) or (im1 is None):
+                    continue
                 
                 if current_how == 'exclude':
                     cond0 = (im0 in img_dict) or (im1 in img_dict) 
@@ -113,7 +110,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
 
                 # print((im0, im1))
 
-                im0_id_prev = db_merged.get_image_id(im0)
+                im0_id_prev = merged_image_cache.get(im0)
                 if  im0_id_prev is None:
                     im0_name, cam0_id = db.get_image(im0_id)
                     
@@ -125,9 +122,9 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         cam0_id_prev = db_merged.add_camera(SIMPLE_RADIAL, w, h, np.array([focal_cf * max(w, h), w / 2, h / 2, 0]))
                        
                     im0_id_prev = db_merged.add_image(im0_name, cam0_id_prev)
-                    db_merged.commit()
+                    merged_image_cache[im0] = im0_id_prev
 
-                im1_id_prev = db_merged.get_image_id(im1)
+                im1_id_prev = merged_image_cache.get(im1)
                 if  im1_id_prev is None:
                     im1_name, cam1_id = db.get_image(im1_id)
                     
@@ -139,7 +136,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         cam1_id_prev = db_merged.add_camera(SIMPLE_RADIAL, w, h, np.array([focal_cf * max(w, h), w / 2, h / 2, 0]))
                                         
                     im1_id_prev = db_merged.add_image(im1_name, cam1_id_prev)
-                    db_merged.commit()
+                    merged_image_cache[im1] = im1_id_prev
          
                 kp0 = db.get_keypoints(im0_id)
                 kp1 = db.get_keypoints(im1_id)
@@ -271,7 +268,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 pipe['m_val'] = m_val
                 pipe['m_mask'] = m_mask
                 
-                if ('sampling_mode' == 'avg_all_matches') or ('sampling_mode' == 'avg_inlier_matches'):        
+                if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
                     pipe['k_counter'] = [k0_count, k1_count]
         
                 matches_prev = None
@@ -279,7 +276,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 if no_matches == False:
                     matches_prev = db_merged.get_matches(im0_id_prev, im1_id_prev)
                     if matches_prev is not None and include_two_view_geometry:
-                        two_view_matches_prev, models_prev = db.get_two_view_geometry(im0_id_prev, im1_id_prev)
+                        two_view_matches_prev, models_prev = db_merged.get_two_view_geometry(im0_id_prev, im1_id_prev)
 
                 if matches_prev is None:
                     m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
@@ -327,7 +324,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 pipe_prev['m_val'] = m_val
                 pipe_prev['m_mask'] = m_mask
                 
-                if ('sampling_mode' == 'avg_all_matches') or ('sampling_mode' == 'avg_inlier_matches'):        
+                if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
                     pipe_prev['k_counter'] = [k0_count_prev, k1_count_prev]
         
                 counter = (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches')

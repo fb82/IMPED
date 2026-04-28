@@ -202,3 +202,5 @@ src/lpm
 src/matchformer
 src/pickled_hdf5
 src/r2d2
+
+.codex
