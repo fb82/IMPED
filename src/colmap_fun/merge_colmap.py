@@ -1,47 +1,20 @@
 import os
 import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
 import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
 import pycolmap
 import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
+import torch
+from PIL import Image
+from tqdm import tqdm
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
-
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import device
-from .colmap_ext import coldb_ext
 from ensemble import pipe_union
 
+from .colmap_ext import coldb_ext
 
-    
+
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
@@ -73,6 +46,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
         None: Side-effect is the creation of a merged COLMAP database.
     """      
     from core import go_iter
+
     from .colmap_ext import SIMPLE_RADIAL
 
     if device.type != 'cpu':
@@ -96,19 +70,19 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
             current_how = how_filter[i]
             current_filter = to_filter[i]
             
-        if not(current_filter is None):
+        if current_filter is not None:
             if len(current_filter) == 0:
                 current_how = None
                 current_filter = None
 
         img_dict = {}
         pair_dict = {}
-        if not (current_filter is None):
+        if current_filter is not None:
             for v in current_filter:
                 if not(isinstance(v, list) or isinstance(v, tuple)):
                     img_dict[v] = 1
                 else:                    
-                    if not (v[0] in pair_dict): pair_dict[v[0]] = {}                    
+                    if v[0] not in pair_dict: pair_dict[v[0]] = {}                    
                     pair_dict[v[0]][v[1]] = 1
             
             
@@ -248,7 +222,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 two_view_matches = None
                 if no_matches == False:
                     matches = db.get_matches(im0_id, im1_id)
-                    if not (matches is None) and include_two_view_geometry:
+                    if matches is not None and include_two_view_geometry:
                         two_view_matches, models = db.get_two_view_geometry(im0_id, im1_id)
 
                 if matches is None:
@@ -304,7 +278,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 two_view_matches_prev = None
                 if no_matches == False:
                     matches_prev = db_merged.get_matches(im0_id_prev, im1_id_prev)
-                    if not (matches_prev is None) and include_two_view_geometry:
+                    if matches_prev is not None and include_two_view_geometry:
                         two_view_matches_prev, models_prev = db.get_two_view_geometry(im0_id_prev, im1_id_prev)
 
                 if matches_prev is None:
@@ -425,7 +399,7 @@ def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_pat
     model_imgs = [(image_id, model.image(image_id).name) for image_id in model.images]
 
     for image_id, image in model_imgs:
-        if ((image in to_filter_dict) and (how_filter == 'exclude')) or ((not (image in to_filter_dict)) and (how_filter == 'include')):
+        if ((image in to_filter_dict) and (how_filter == 'exclude')) or ((image not in to_filter_dict) and (how_filter == 'include')):
             #model.deregister_image(image_id)
             image = model.image(image_id)
             frame_id = image.frame_id
@@ -435,7 +409,7 @@ def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_pat
     if only_cameras:
         for pts3D in model.point3D_ids(): model.delete_point3D(pts3D)
 
-    if (not only_cameras) and add_3D_points and (not (img_path is None)) and (not (db_path is None)):
+    if (not only_cameras) and add_3D_points and (img_path is not None) and (db_path is not None):
         incr_map_opt = pycolmap.IncrementalPipelineOptions()
         if add_as_possible:
             tri_opt = incr_map_opt.triangulation
@@ -443,7 +417,7 @@ def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_pat
         model = pycolmap.triangulate_points(model, db_path, img_path, output_model_path, True, incr_map_opt, False)
         return
 
-    if not (img_path is None):
+    if img_path is not None:
         model.extract_colors_for_all_images(img_path)
 
     model.write_binary(output_model_path)
@@ -483,7 +457,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
     model1 = pycolmap.Reconstruction(model_path1)
     model2 = pycolmap.Reconstruction(model_path2)
 
-    if (not only_cameras) and (not (db_path0 is None)) and (not (db_path1 is None)) and (not (imgs_path is None)):
+    if (not only_cameras) and (db_path0 is not None) and (db_path1 is not None) and (imgs_path is not None):
         if (not (os.path.isfile(output_db))) or (not no_force_db_fusion):
             
             db_path = os.path.split(output_db)[0]
@@ -553,7 +527,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         count = count + 1
 
     for image_id in model2.images:
-        if not (model1.find_image_with_name(model2.image(image_id).name) is None): continue
+        if model1.find_image_with_name(model2.image(image_id).name) is not None: continue
 
         image = model2.image(image_id)
         camera = model2.camera(image.camera_id)

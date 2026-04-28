@@ -1,9 +1,9 @@
 
 import torch
+
 import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
-
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'

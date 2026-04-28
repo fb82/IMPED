@@ -1,42 +1,6 @@
+import torch
+
 from .device import device
-import torch
-
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
-
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
 
 
 def laf2homo(kps, with_scale=False):
@@ -72,7 +36,7 @@ def homo2laf(c, H, s=None):
 #   Hi = torch.linalg.inv(H)
 #   kp = Hi[:, :2, :]
     
-    if not (s is None):
+    if s is not None:
         kp = kp * s.reshape(-1, 1, 1)
 
     return kp.unsqueeze(0)

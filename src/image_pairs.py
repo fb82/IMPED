@@ -1,42 +1,10 @@
 import os
 import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-
-from core import device, pipe_color, show_progress
 from colmap_fun import coldb_ext
+
 
 class image_pairs:
     """
@@ -87,7 +55,7 @@ class image_pairs:
                     i = os.path.split(k[0])[-1]
                     j = os.path.split(k[1])[-1]
 
-                    if not (i in self.additional_pair_list.keys()):
+                    if i not in self.additional_pair_list.keys():
                         self.additional_pair_list[i] = {}
 
                     self.additional_pair_list[i][j] = True
@@ -106,7 +74,7 @@ class image_pairs:
         i = os.path.split(ii)[-1]
         j = os.path.split(jj)[-1]        
 
-        if (not must_skip) and (not self.additional_img_list is None):
+        if (not must_skip) and (self.additional_img_list is not None):
             in_img_list = False
             
             if (i in self.additional_img_list.keys()) or (j in self.additional_img_list.keys()):
@@ -114,7 +82,7 @@ class image_pairs:
             
             must_skip = (in_img_list and self.mode == 'exclude') or ((not in_img_list) and self.mode == 'include') 
 
-        if (not must_skip) and (not self.additional_pair_list is None):
+        if (not must_skip) and (self.additional_pair_list is not None):
             in_pair_list = False
             
             if (i in self.additional_pair_list.keys() and j in self.additional_pair_list[i].keys()) or (j in self.additional_pair_list.keys() and i in self.additional_pair_list[j].keys()):
@@ -122,10 +90,10 @@ class image_pairs:
             
             must_skip = (in_pair_list and self.mode == 'exclude') or ((not in_pair_list) and self.mode == 'include') 
 
-        if (not must_skip) and (not self.additional_colmap_db is None):
+        if (not must_skip) and (self.additional_colmap_db is not None):
             in_colmap_db = True
             
-            if not (self.additional_colmap_db is None):
+            if self.additional_colmap_db is not None:
                 im0_id = self.additional_colmap_db.get_image_id(i)
                 im1_id = self.additional_colmap_db.get_image_id(j)
                 
@@ -255,7 +223,7 @@ class image_pairs:
                                                        
                         return ii, jj
                 else:
-                    if not (self.additional_colmap_db is None): self.additional_colmap_db.close()
+                    if self.additional_colmap_db is not None: self.additional_colmap_db.close()
                     raise StopIteration
 
         else:
@@ -280,5 +248,5 @@ class image_pairs:
     
                 return ii, jj            
 
-            if not (self.additional_colmap_db is None): self.additional_colmap_db.close()
+            if self.additional_colmap_db is not None: self.additional_colmap_db.close()
             raise StopIteration

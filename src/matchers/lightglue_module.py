@@ -1,48 +1,17 @@
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
 import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
+from kornia_moons.feature import opencv_kpts_from_laf
+from lightglue import ALIKED as lg_aliked
+from lightglue import DISK as lg_disk
+from lightglue import SIFT as lg_sift
+from lightglue import DoGHardNet as lg_doghardnet
+from lightglue import LightGlue as lg_lightglue
+from lightglue import SuperPoint as lg_superpoint
+from lightglue.utils import load_image as lg_load_image
+from lightglue.utils import rbd as lg_rbd
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
-
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
-
-
-from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
-from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
-
+from core import device, homo2laf, set_args
 
 
 class lightglue_module:
@@ -154,8 +123,6 @@ class lightglue_module:
 
 
 
-from lightglue import LightGlue as lg_lightglue, SuperPoint as lg_superpoint, DISK as lg_disk, SIFT as lg_sift, ALIKED as lg_aliked, DoGHardNet as lg_doghardnet
-from lightglue.utils import load_image as lg_load_image, rbd as lg_rbd
 
 class deep_joined_module:
     """

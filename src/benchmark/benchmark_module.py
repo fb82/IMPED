@@ -1,47 +1,24 @@
 import os
 import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
 import cv2
 import numpy as np
+import torch
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
+from core import apply_homo, device, set_args
+from visualization import colorize_plane
 
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
-from .metrics import relative_pose_error_angular, relative_pose_error_metric, estimate_pose, error_auc, invalid_matches, homography_error_heat_map, epipolar_error_heat_map, register_by_Horn, evaluate_rec
-from visualization import show_kpts_module, visualize_LAF, show_matches_module, show_homography_module, show_patches_module, colorize_plane
-
-
+from .metrics import (
+    epipolar_error_heat_map,
+    error_auc,
+    estimate_pose,
+    homography_error_heat_map,
+    invalid_matches,
+    relative_pose_error_angular,
+    relative_pose_error_metric,
+)
 
 
 class pairwise_benchmark_module:
@@ -129,7 +106,7 @@ class pairwise_benchmark_module:
 
         fe = 'F*'
             
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f = open(self.args['save_to'], 'w')
 
         F_error_1 = []
@@ -183,7 +160,7 @@ class pairwise_benchmark_module:
 
         self.aux_hdf5.close()
 
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f.close()
 
 
@@ -195,7 +172,7 @@ class pairwise_benchmark_module:
 
         fe = 'H'
             
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f = open(self.args['save_to'], 'w')
 
         H_error_1 = []
@@ -255,7 +232,7 @@ class pairwise_benchmark_module:
 
         self.aux_hdf5.close()
 
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f.close()
 
 
@@ -269,7 +246,7 @@ class pairwise_benchmark_module:
         else:
             fe = 'E'
             
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f = open(self.args['save_to'], 'w')
 
         R_error = []
@@ -367,7 +344,7 @@ class pairwise_benchmark_module:
 
         self.aux_hdf5.close()
 
-        if not (self.args['save_to'] is None):
+        if self.args['save_to'] is not None:
             f.close()
 
 
@@ -410,10 +387,10 @@ class pairwise_benchmark_module:
         img1_key = img1[self.args['to_add_path_size'] + 1:]
         img2_key = img2[self.args['to_add_path_size'] + 1:]
         
-        if cannot_do or (not (img1_key in self.args['gt'])):
+        if cannot_do or (img1_key not in self.args['gt']):
             cannot_do = True
                         
-        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+        if cannot_do or (img2_key not in self.args['gt'][img1_key]):
             cannot_do = None
         
         use_scale = self.args['gt']['use_scale']
@@ -423,7 +400,7 @@ class pairwise_benchmark_module:
         else:
             gt = None
 
-        if not (gt is None):
+        if gt is not None:
             K1 = gt['K1']
             K2 = gt['K2']    
             R_gt = gt['R']
@@ -464,7 +441,7 @@ class pairwise_benchmark_module:
                     F = F / F[2, 2]
                 else:
                     F = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
-                    if not (F is None): F = torch.tensor(F, device=device)
+                    if F is not None: F = torch.tensor(F, device=device)
         
             if nn > 0:
                 F_gt = torch.tensor(K2.T, device=device, dtype=torch.float64).inverse() @ \
@@ -500,7 +477,7 @@ class pairwise_benchmark_module:
                 F_error_1 = heat1.mean().detach().cpu().numpy() 
                 F_error_2 = heat2.mean().detach().cpu().numpy()                  
         
-                if not (self.args['cache_path'] is None):
+                if self.args['cache_path'] is not None:
                     im1 = os.path.splitext(os.path.split(img1)[1])[0]
                     im2 = os.path.splitext(os.path.split(img2)[1])[0]                
                     
@@ -548,10 +525,10 @@ class pairwise_benchmark_module:
         img1_key = img1[self.args['to_add_path_size'] + 1:]
         img2_key = img2[self.args['to_add_path_size'] + 1:]
         
-        if cannot_do or (not (img1_key in self.args['gt'])):
+        if cannot_do or (img1_key not in self.args['gt']):
             cannot_do = True
                         
-        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+        if cannot_do or (img2_key not in self.args['gt'][img1_key]):
             cannot_do = None
 
         use_scale = self.args['gt']['use_scale']
@@ -561,7 +538,7 @@ class pairwise_benchmark_module:
         else:
             gt = None
 
-        if not (gt is None):
+        if gt is not None:
             K1 = gt['K1']
             K2 = gt['K2']    
             R_gt = gt['R']
@@ -684,10 +661,10 @@ class pairwise_benchmark_module:
         img1_key = img1[self.args['to_add_path_size'] + 1:]
         img2_key = img2[self.args['to_add_path_size'] + 1:]
         
-        if cannot_do or (not (img1_key in self.args['gt'])):
+        if cannot_do or (img1_key not in self.args['gt']):
             cannot_do = True
                         
-        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+        if cannot_do or (img2_key not in self.args['gt'][img1_key]):
             cannot_do = None
         
         if not cannot_do:
@@ -697,7 +674,7 @@ class pairwise_benchmark_module:
             
         use_scale = self.args['gt']['use_scale']
             
-        if not (gt is None):
+        if gt is not None:
             K1 = gt['K1']
             K2 = gt['K2']    
             R_gt = gt['R']
@@ -769,10 +746,10 @@ class pairwise_benchmark_module:
         img1_key = img1[self.args['to_add_path_size'] + 1:]
         img2_key = img2[self.args['to_add_path_size'] + 1:]
         
-        if cannot_do or (not (img1_key in self.args['gt'])):
+        if cannot_do or (img1_key not in self.args['gt']):
             cannot_do = True
                         
-        if cannot_do or (not (img2_key in self.args['gt'][img1_key])):
+        if cannot_do or (img2_key not in self.args['gt'][img1_key]):
             cannot_do = None
         
         if not cannot_do:
@@ -782,7 +759,7 @@ class pairwise_benchmark_module:
 
         use_scale = self.args['gt']['use_scale']
         
-        if not (gt is None):
+        if gt is not None:
             H_gt = torch.tensor(gt['H'], device=device)
               
             mm = args['m_idx'][args['m_mask']]
@@ -804,7 +781,7 @@ class pairwise_benchmark_module:
             if (nn < 4):
                 H = None
             else:
-                if not ('H' in args):                
+                if 'H' not in args:                
                     H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=device)
                 else:
                     H = args['H']
@@ -834,14 +811,14 @@ class pairwise_benchmark_module:
                 inl_sum = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
                 valid_sum = 0
 
-            if not (H is None):
+            if H is not None:
                 heat1 = homography_error_heat_map(H_gt, H, torch.tensor(gt['full_mask1'], device=device))
                 heat2 = homography_error_heat_map(H_gt_inv, H.inverse(), torch.tensor(gt['full_mask2'], device=device))
 
                 H_error_1 = heat1[heat1 != -1].mean().detach().cpu().numpy() 
                 H_error_2 = heat2[heat2 != -1].mean().detach().cpu().numpy()                  
         
-                if not (self.args['cache_path'] is None):
+                if self.args['cache_path'] is not None:
                     im1 = os.path.splitext(os.path.split(img1)[1])[0]
                     im2 = os.path.splitext(os.path.split(img2)[1])[0]                
                     

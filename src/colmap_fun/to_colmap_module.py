@@ -1,44 +1,15 @@
 import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
 import numpy as np
+import torch
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
-
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import device
-from .colmap_ext import coldb_ext, SIMPLE_RADIAL
 from ensemble import pipe_union
+
+from .colmap_ext import SIMPLE_RADIAL, coldb_ext
+
 
 class to_colmap_module:
     """
@@ -221,7 +192,7 @@ class to_colmap_module:
                 models = {}
                 for m in ['H', 'E', 'F']:
                     if (m in args):
-                        if not (args[m] is None):
+                        if args[m] is not None:
                             models[m] = args[m].to('cpu').numpy()
                                 
                 self.db.update_two_view_geometry(im_ids[0], im_ids[1], m_idx, model=models)

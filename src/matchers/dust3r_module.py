@@ -1,53 +1,21 @@
 import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
-
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
 import sys
-from pathlib import Path
+import warnings
 
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
+import numpy as np
+import torch
+from PIL import Image
 
+from core import device, set_args
 
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'mast3r/dust3r'))
 
+from dust3r.cloud_opt import GlobalAlignerMode, global_aligner
+from dust3r.image_pairs import make_pairs as dust3r_make_pairs
 from dust3r.inference import inference as dust3r_inference
 from dust3r.model import AsymmetricCroCo3DStereo
 from dust3r.utils.image import load_images as dust3r_load_images
-from dust3r.image_pairs import make_pairs as dust3r_make_pairs
-from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
 
 def dust3r_add_cameras(viz, poses, focals=None, images=None, imsizes=None, colors=None, **kw):
@@ -162,9 +130,8 @@ def dust3r_add_scene_cam(scene, pose_c2w, edge_color, image=None, focal=None, im
           45 degrees to align with the image axes.
     """
 
-    from dust3r.utils.geometry import geotrf
-
     import PIL.Image
+    from dust3r.utils.geometry import geotrf
     from scipy.spatial.transform import Rotation
 
     try:
@@ -280,11 +247,11 @@ def dust3r_show(scene, show_pw_cams=False, show_pw_pts3d=False, cam_size=None, *
            image textures.
         2. If 'scene.imgs' is None, each view is assigned a random solid color.
     """
-    from dust3r.viz import SceneViz, auto_cam_size
-    from dust3r.utils.device import to_numpy
-    from dust3r.cloud_opt.commons import edge_str
-    from dust3r.utils.geometry import geotrf
     import numpy as np
+    from dust3r.cloud_opt.commons import edge_str
+    from dust3r.utils.device import to_numpy
+    from dust3r.utils.geometry import geotrf
+    from dust3r.viz import SceneViz, auto_cam_size
 
     viz = SceneViz()
     if scene.imgs is None:

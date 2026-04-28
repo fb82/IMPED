@@ -1,12 +1,14 @@
 import os
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 import time
-from tqdm import tqdm
+
 import torch
+from tqdm import tqdm
 
-
-from .device import device, pipe_color, show_progress
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from image_pairs import image_pairs
+
+from .device import device, show_progress
+
 
 def go_iter(to_iter, msg='', active=True, params=None):
     if params is None: params = {}

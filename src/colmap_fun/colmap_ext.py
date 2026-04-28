@@ -1,44 +1,7 @@
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
 import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
 
 #from core import device, pipe_color, show_progress, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
-
-
 import colmap_db.database as coldb
 
 SIMPLE_RADIAL = 2
@@ -75,7 +38,7 @@ class coldb_ext(coldb.COLMAPDatabase):
             (image, ),
         )
         image_id = cursor.fetchone()
-        if not (image_id is None): image_id = image_id[0]
+        if image_id is not None: image_id = image_id[0]
         return image_id
 
 

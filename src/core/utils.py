@@ -1,44 +1,12 @@
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
 import _pickle as cPickle
-import argparse
+import bz2
 import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-
-from .device import device, pipe_color, show_progress
-from .pipeline import run_pipeline, run_pairs, finalize_pipeline, go_iter
+import numpy as np
 
 from imc import _EPS
+
 
 def set_args(id_string, args, args_):
         

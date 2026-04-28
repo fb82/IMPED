@@ -1,49 +1,18 @@
 import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
-
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
-import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
 import sys
 
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
+import torch
+from PIL import Image
+
+from core import device, set_args
 
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'r2d2'))
 
+import r2d2.nets.patchnet as r2d2_patchnet
 from r2d2.tools import common as r2d2_common
 from r2d2.tools.dataloader import norm_RGB as r2d2_norm_RGB
-import r2d2.nets.patchnet as r2d2_patchnet 
+
 
 class r2d2_module:
     """

@@ -1,43 +1,10 @@
 import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
 import cv2
-import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
+import kornia as K
 import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
 
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
+from core import homo2laf, set_args
 
 
 class show_kpts_module:
@@ -80,7 +47,7 @@ class show_kpts_module:
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
         self.id_string, self.args = set_args('show_kpts' , args, self.args)
-        if not (self.args['mask_idx'] is None): self.single_image = False
+        if self.args['mask_idx'] is not None: self.single_image = False
 
                 
     def get_id(self): 
@@ -114,7 +81,7 @@ class show_kpts_module:
                 img = cv2.cvtColor(cv2.imread(args['img'][idx]), cv2.COLOR_BGR2RGB)    
                 lafs = homo2laf(args['kp'][idx], args['kH'][idx])
     
-                if (self.args['mask_idx'] is None) or (self.args['mask_idx'] == -1) or (not 'm_idx' in args):
+                if (self.args['mask_idx'] is None) or (self.args['mask_idx'] == -1) or ('m_idx' not in args):
                     mask_idx = -1
                     params = self.args['params'][-1]
                 else:
@@ -179,7 +146,7 @@ def visualize_LAF(img, LAF, img_idx = 0, color='r', linewidth=1, draw_ori = True
     if (fig is not None and ax is None):
         ax = fig.add_axes([0, 0, 1, 1])
     
-    if not (img is None):
+    if img is not None:
         ax.imshow(to_numpy_image(img[img_idx]))
 
     ax.plot(x, y, color, linewidth=linewidth)

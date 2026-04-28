@@ -1,40 +1,6 @@
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
 import numpy as np
-from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
+import torch
 
 #from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
 
@@ -195,7 +161,7 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             if (kp0.shape[0] != dd0.shape[0]) or (kp1.shape[0] != dd1.shape[0]):
                 bring_desc = False
             
-    if not (sampling_mode is None):
+    if sampling_mode is not None:
         kp0_unsampled = kp0.clone()
         kp1_unsampled = kp1.clone()
         
@@ -563,11 +529,11 @@ def sortrows(kp, idx_prev=None, rank=None, device=None):
 
     idx = torch.arange(kp.shape[0], device=device)
 
-    if not (idx_prev is None):
+    if idx_prev is not None:
         idx = idx[idx_prev]
         kp = kp[idx_prev]
         
-        if not (rank is None):
+        if rank is not None:
             rank = rank[idx_prev]
         
     for i in range(kp.shape[1] - 1, -1, -1):            
@@ -575,7 +541,7 @@ def sortrows(kp, idx_prev=None, rank=None, device=None):
         idx = idx[sidx]
         kp = kp[sidx]
 
-        if not (rank is None):
+        if rank is not None:
             rank = rank[sidx]
 
     idxa = torch.zeros(kp.shape[0], device=device, dtype=torch.int)
@@ -589,10 +555,10 @@ def sortrows(kp, idx_prev=None, rank=None, device=None):
             idxa[k] = idx[i]                                        
             k = k + 1
             
-            if not (rank is None):
+            if rank is not None:
                 cur_rank = rank[i]
 
-        if not (rank is None):
+        if rank is not None:
             if cur_rank > rank[i]:
                 cur_rank = rank[i]
                 idxa[k - 1] = idx[i]

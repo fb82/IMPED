@@ -1,43 +1,12 @@
-import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
-
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
-import cv2
 import numpy as np
+import torch
+import torchvision.transforms as transforms
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
+
 import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
-
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
-
-from core import device, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args
-from image_pairs import image_pairs
+from core import device, set_args
 
 
 class mop_miho_ncc_module:
@@ -102,7 +71,7 @@ class mop_miho_ncc_module:
         
             mop_miho_cfg = self.mop.get_current()
         
-            if not (self.args['mop_miho_cfg'] is None) and isinstance(self.args['mop_miho_cfg'], dict):
+            if self.args['mop_miho_cfg'] is not None and isinstance(self.args['mop_miho_cfg'], dict):
                 for k in self.args['mop_miho_cfg']:
                     mop_miho_cfg[k] = self.args['mop_miho_cfg'][k]
 
@@ -163,7 +132,7 @@ class mop_miho_ncc_module:
                   homographies, and updated validity masks.
         """     
         from ensemble import pipe_union
-        if not (self.mop is None):
+        if self.mop is not None:
             mi = args['m_idx']                     
             mm = args['m_mask']
 
@@ -325,7 +294,7 @@ class mop_miho_ncc_module:
             val_[replace_idx] = val_laf[replace_idx]
             T_[replace_idx] = T_laf.reshape(T_laf.shape[0] // 2, 2, 3, 3)[replace_idx]
             
-        if (not (self.mop is None)) and ('mop_miho' in self.args['ncc_todo']) and mm.sum():                        
+        if (self.mop is not None) and ('mop_miho' in self.args['ncc_todo']) and mm.sum():                        
             Hs_in = torch.zeros((l, 2, 3, 3), device=device)
                         
             Hidx_ = Hidx[Hidx > -1]

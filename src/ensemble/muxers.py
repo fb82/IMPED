@@ -1,43 +1,16 @@
 import os
-import warnings
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-import time
-from tqdm import tqdm
-import torchvision.transforms as transforms
 
-import torch
-import kornia as K
-from kornia_moons.feature import opencv_kpts_from_laf, laf_from_opencv_kpts
 import cv2
 import numpy as np
+import torch
 from PIL import Image
-import poselib
-import gdown
-import zipfile
-import tarfile
-import csv
-import shutil
-import bz2
-import _pickle as cPickle
-import argparse
-import math
-import copy
-import wget
-import pycolmap
-import scipy
-import miho.src.miho as mop_miho
-import miho.src.miho_other as mop
-import miho.src.ncc as ncc
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import plot.viz2d as viz
-import plot.utils as viz_utils
-import sys
-from pathlib import Path
+from core import (
+    device,  #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
+)
 
-from core import device #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
 from .sampling import pipe_union
+
 
 def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
     """
@@ -177,7 +150,7 @@ class image_muxer_module:
 
 
     def run(self, db=None, force=False, pipe_data=None, pipe_name='/'):       
-        from core import run_pipeline, apply_homo, change_patch_homo
+        from core import apply_homo, change_patch_homo, run_pipeline
         if pipe_data is None: pipe_data = {}
         pair = pipe_data['img']
         warp = pipe_data['warp']
@@ -229,10 +202,10 @@ class image_muxer_module:
                     pipe_data_in['m_val'] = pipe_data_in['m_val'][bmask01]
                     pipe_data_in['m_mask'] = pipe_data_in['m_mask'][bmask01]
                                 
-            if ('H' in pipe_data_in) and (not pipe_data_in['H'] is None):
+            if ('H' in pipe_data_in) and (pipe_data_in['H'] is not None):
                 pipe_data_in['H'] = warp_[1].to(torch.double) @ pipe_data_in['H'] @ warp_[0].to(torch.double)
 
-            if ('F' in pipe_data_in) and (not pipe_data_in['F'] is None):
+            if ('F' in pipe_data_in) and (pipe_data_in['F'] is not None):
                 pipe_data_in['F'] = warp_[1].permute((1, 0)).to(torch.double) @ pipe_data_in['F'] @ warp_[0].to(torch.double)
 
             pipe_data_out, pipe_name_out = run_pipeline(pair_, self.pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
@@ -252,10 +225,10 @@ class image_muxer_module:
                     change_patch_homo(pipe_data_out['kH'][1], warp_[1].inverse()),
                     ]
                 
-            if ('H' in pipe_data_out) and (not pipe_data_out['H'] is None):
+            if ('H' in pipe_data_out) and (pipe_data_out['H'] is not None):
                 pipe_data_out['H'] = warp_[1].to(torch.double).inverse() @ pipe_data_out['H'] @ warp_[0].to(torch.double).inverse()
 
-            if ('F' in pipe_data_out) and (not pipe_data_out['F'] is None):
+            if ('F' in pipe_data_out) and (pipe_data_out['F'] is not None):
                 pipe_data_out['F'] = warp_[1].to(torch.double).inverse().permute((1, 0)) @ pipe_data_out['F'] @ warp_[0].to(torch.double).inverse()
                         
             pipe_data_block.append(pipe_data_out)
