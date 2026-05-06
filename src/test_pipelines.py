@@ -40,6 +40,7 @@ from matchers import (
     loftr_module,
     mast3r_module,
     roma_module,
+    romav2_module,
     smnn_module,
 )
 
@@ -762,6 +763,16 @@ def pipeline38():
     imgs = '../data/ET'
     run_pairs(pipeline, imgs) 
 
+def pipeline39():
+## Not working: manca modulo local_corr probabilmente errore mancanza scheda nvidia
+    pipeline = [
+        romav2_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(),
+    ]    
+    imgs = '../data/ET'
+    run_pairs(pipeline, imgs)  
 
 
 def pipeline40(imgs='../data/ET'):
