@@ -23,6 +23,7 @@ class romav2_module:
     """
     def __init__(self, **args):
         torch.set_float32_matmul_precision('highest')
+        from romav2.romav2 import RoMaV2
 
         self.romav2_model = None
         self.single_image = False
@@ -42,7 +43,8 @@ class romav2_module:
         self.id_string, self.args = set_args('romav2', args, self.args)        
 
         # Load pretrained RoMaV2 model
-        self.romav2_model = RoMaV2(device=device)
+        self.romav2_model = RoMaV2()
+        self.romav2_model = self.romav2_model.to(device)
 
 
     def get_id(self): 

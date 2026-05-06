@@ -13,7 +13,7 @@
 | Add latest updates | ✅ | |
 | Delete & refactor repetitions  |  | 📝 |
 | Add contracts |  | 📝 |
-| Add Roma v2 |  | 📝 |
+| Add Roma v2 | ✅ |  |
 | Add LoMa |  | 📝 |
 | Optimize code* |  | 📝 |
 

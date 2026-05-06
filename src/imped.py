@@ -14,6 +14,7 @@ extra_paths = [
     project_root / "matchformer",
     project_root / "aspanformer" / "src",
     project_root / "miho" / "src",
+    project_root / "romav2" / "src",
     project_root / "gsm" 
 ]
 
