@@ -51,6 +51,7 @@ class to_colmap_module:
             'overlapping_cells' : False,
             'sampling_scale': 1,
             'sampling_offset': 0,
+            'commit_every_pairs': 100,
         }
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -59,6 +60,8 @@ class to_colmap_module:
 
         self.db = coldb_ext(self.args['db'])
         self.db.create_tables()
+        self._pending_writes = 0
+        self._image_id_cache = {name: image_id for image_id, name in self.db.get_images()}
         self.aux_hdf5 = None
         if (self.args['sampling_mode'] == 'avg_all_matches') or (self.args['sampling_mode'] == 'avg_inlier_matches'):         
             self.aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['aux_hdf5'], mode='a', label_prefix='pickled/' + self.id_string)
@@ -85,12 +88,12 @@ class to_colmap_module:
             im = args['img'][idx]            
             _, img = os.path.split(im)
             
-            im_id = self.db.get_image_id(img)
+            im_id = self._image_id_cache.get(img)
             if  im_id is None:
                 w, h = Image.open(im).size
                 cam_id = self.db.add_camera(SIMPLE_RADIAL, w, h, np.array([self.args['focal_cf'] * max(w, h), w / 2, h / 2, 0]))
                 im_id = self.db.add_image(img, cam_id)
-                self.db.commit()
+                self._image_id_cache[img] = im_id
 
             imgs.append(img)
             im_ids.append(im_id)
@@ -197,7 +200,13 @@ class to_colmap_module:
                                 
                 self.db.update_two_view_geometry(im_ids[0], im_ids[1], m_idx, model=models)
 
-        self.db.commit()
+        self._pending_writes += 1
+        commit_every = int(self.args['commit_every_pairs'])
+        if commit_every <= 0:
+            commit_every = 1
+        if self._pending_writes >= commit_every:
+            self.db.commit()
+            self._pending_writes = 0
         
         return {}
 

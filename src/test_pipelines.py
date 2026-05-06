@@ -1,5 +1,8 @@
 import os
 import sys
+import time
+import shutil
+import subprocess
 from pathlib import Path
 
 import pycolmap
@@ -758,3 +761,62 @@ def pipeline38():
     ]
     imgs = '../data/ET'
     run_pairs(pipeline, imgs) 
+
+
+
+def pipeline40(imgs='../data/ET'):
+
+    start_time = time.time()
+
+    file_path = 'database.hdf5'
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    imgs='../data/ET'
+    pipeline = [
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='ET_full.db'),            
+    ]         
+    run_pairs(pipeline, imgs)
+
+    end_time = time.time()
+
+
+    file_path = 'database.hdf5'
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    imgs='../data/ET_pt1'
+    pipeline = [
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='ET_pt1.db'),            
+    ]         
+    run_pairs(pipeline, imgs)
+    
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    start_time2 = time.time()
+    
+    imgs='../data/ET_pt2'
+    pipeline = [
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='ET_pt2.db'),            
+    ]         
+    run_pairs(pipeline, imgs)
+    
+
+    merge_colmap_db(['ET_pt1.db', 'ET_pt2.db'], 'Merged_ET.db', img_folder='../data/ET')
+
+    end_time2 = time.time()
+
+
+    print(f"Execution time full dataset: {end_time - start_time} seconds")
+    print(f"Execution time incremental dataset: {end_time2 - start_time2} seconds")

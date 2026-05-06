@@ -1,5 +1,4 @@
 import os
-import time
 import warnings
 
 import numpy as np
@@ -19,7 +18,7 @@ from .colmap_ext import coldb_ext
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
-    sampling_scale=1, sampling_offset=0, focal_cf=1.2, profile=False, return_profile=False):              
+    sampling_scale=1, sampling_offset=0, focal_cf=1.2):              
     """
     Merges multiple COLMAP SQLite databases into a single unified database.
 
@@ -44,8 +43,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
             geometric verification (F, E, H matrices).
 
     Returns:
-        None or dict: Side-effect is the creation of a merged COLMAP database.
-        If return_profile=True, returns a timing dictionary.
+        None: Side-effect is the creation of a merged COLMAP database.
     """      
     from core import go_iter
 
@@ -53,89 +51,20 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')
-
-    t_all_start = time.perf_counter()
-    profile_data = {
-        'total_s': 0.0,
-        'db_open_s': 0.0,
-        'pair_loop_s': 0.0,
-        'filter_s': 0.0,
-        'image_sync_s': 0.0,
-        'keypoint_read_s': 0.0,
-        'match_read_s': 0.0,
-        'pipe_union_s': 0.0,
-        'db_write_match_s': 0.0,
-        'db_write_kp_flush_s': 0.0,
-        'db_commit_s': 0.0,
-        'pairs_total': 0,
-        'pairs_processed': 0,
-        'pairs_skipped_filter': 0,
-        'pairs_missing_name': 0,
-        'per_db': [],
-    }
     
     aux_hdf5 = None
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         
         aux_hdf5 = pickled_hdf5.pickled_hdf5('tmp.hdf5', mode='a')
                 
-    counter = (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches')
-
-    def _init_image_state(kp_np, image_name):
-        if kp_np is None:
-            state = {
-                'w': torch.zeros((0, 6), device=device),
-                'kp': torch.zeros((0, 2), device=device),
-                'kH': torch.zeros((0, 3, 3), device=device),
-                'kr': torch.full((0,), torch.inf, device=device),
-            }
-            if counter:
-                state['k_counter'] = torch.zeros(0, device=device)
-            return state
-
-        w = torch.tensor(kp_np, device=device)
-        kp = torch.tensor(kp_np[:, :2], device=device)
-        state = {
-            'w': w,
-            'kp': kp,
-            'kH': torch.zeros((kp.shape[0], 3, 3), device=device),
-            'kr': torch.full((kp.shape[0],), torch.inf, device=device),
-        }
-        if counter:
-            k_count, _ = aux_hdf5.get(image_name)
-            state['k_counter'] = k_count
-        return state
-
     db_merged = coldb_ext(db_merged_name)
     db_merged.create_tables()
     merged_image_cache = {os.path.split(name)[-1]: image_id for image_id, name in db_merged.get_images()}
     
     for i, db_name in enumerate(go_iter(db_names, msg='         merging progress')):
-        t_db0 = time.perf_counter()
-        db_stats = {
-            'db_name': db_name,
-            'pairs_total': 0,
-            'pairs_processed': 0,
-            'pairs_skipped_filter': 0,
-            'pairs_missing_name': 0,
-            'open_s': 0.0,
-            'pair_loop_s': 0.0,
-            'filter_s': 0.0,
-            'image_sync_s': 0.0,
-            'keypoint_read_s': 0.0,
-            'match_read_s': 0.0,
-            'pipe_union_s': 0.0,
-            'db_write_match_s': 0.0,
-            'db_write_kp_flush_s': 0.0,
-            'db_commit_s': 0.0,
-        }
-        t_open0 = time.perf_counter()
         db = coldb_ext(db_name)
         imgs = db.get_images()
         img_name_by_id = {image_id: os.path.split(name)[-1] for image_id, name in imgs}
         match_pairs = db.get_match_image_pairs(include_two_view_geometry=include_two_view_geometry)
-        db_stats['open_s'] += time.perf_counter() - t_open0
-        db_stats['pairs_total'] = len(match_pairs)
-        profile_data['pairs_total'] += len(match_pairs)
     
         if (to_filter is None) or (how_filter is None):
             current_how = None
@@ -160,44 +89,27 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                     pair_dict[v[0]][v[1]] = 1
             
             
-        src_state_cache = {}
-        merged_state_cache = {}
-        dirty_merged_ids = set()
-
         pbar = tqdm(total=len(match_pairs), desc='current database progress', leave=False)
-        t_pair_loop0 = time.perf_counter()
         for im0_id, im1_id in match_pairs:
                 pbar.update()
 
                 im0 = img_name_by_id.get(im0_id)
                 im1 = img_name_by_id.get(im1_id)
                 if (im0 is None) or (im1 is None):
-                    db_stats['pairs_missing_name'] += 1
-                    profile_data['pairs_missing_name'] += 1
                     continue
                 
-                t_filter0 = time.perf_counter()
-                skipped = False
                 if current_how == 'exclude':
                     cond0 = (im0 in img_dict) or (im1 in img_dict) 
                     cond1 = ((im0 in pair_dict) and (im1 in pair_dict[im0])) or ((im1 in pair_dict) and (im0 in pair_dict[im1]))                    
-                    if cond0 or cond1:
-                        skipped = True
+                    if cond0 or cond1: continue                
  
                 if current_how == 'include':
                     cond0 = (im0 in img_dict) or (im1 in img_dict) 
                     cond1 = ((im0 in pair_dict) and (im1 in pair_dict[im0])) or ((im1 in pair_dict) and (im0 in pair_dict[im1]))                    
-                    if (not cond0) and (not cond1):
-                        skipped = True
-                dt_filter = time.perf_counter() - t_filter0
-                db_stats['filter_s'] += dt_filter
-                if skipped:
-                    db_stats['pairs_skipped_filter'] += 1
-                    profile_data['pairs_skipped_filter'] += 1
-                    continue
+                    if (not cond0) and (not cond1): continue                
 
                 # print((im0, im1))
-                t_img_sync0 = time.perf_counter()
+
                 im0_id_prev = merged_image_cache.get(im0)
                 if  im0_id_prev is None:
                     im0_name, cam0_id = db.get_image(im0_id)
@@ -225,37 +137,80 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                                         
                     im1_id_prev = db_merged.add_image(im1_name, cam1_id_prev)
                     merged_image_cache[im1] = im1_id_prev
-                db_stats['image_sync_s'] += time.perf_counter() - t_img_sync0
          
-                t_kp_read0 = time.perf_counter()
-                if im0_id not in src_state_cache:
-                    src_state_cache[im0_id] = _init_image_state(db.get_keypoints(im0_id), im0)
-                if im1_id not in src_state_cache:
-                    src_state_cache[im1_id] = _init_image_state(db.get_keypoints(im1_id), im1)
-                src0 = src_state_cache[im0_id]
-                src1 = src_state_cache[im1_id]
+                kp0 = db.get_keypoints(im0_id)
+                kp1 = db.get_keypoints(im1_id)
 
-                if im0_id_prev not in merged_state_cache:
-                    merged_state_cache[im0_id_prev] = _init_image_state(db_merged.get_keypoints(im0_id_prev), im0)
-                if im1_id_prev not in merged_state_cache:
-                    merged_state_cache[im1_id_prev] = _init_image_state(db_merged.get_keypoints(im1_id_prev), im1)
-                prev0 = merged_state_cache[im0_id_prev]
-                prev1 = merged_state_cache[im1_id_prev]
-                db_stats['keypoint_read_s'] += time.perf_counter() - t_kp_read0
+                if kp0 is None:
+                    w0 = torch.zeros((0, 6), device=device)
+                    kp0 = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count = torch.zeros(0, device=device)
+                else:
+                    w0 = torch.tensor(kp0, device=device)
+                    kp0 = torch.tensor(kp0[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count, _ = aux_hdf5.get(im0)
+                    
+                kH0 = torch.zeros((kp0.shape[0], 3, 3), device=device)
+                kr0 = torch.full((kp0.shape[0], ), torch.inf, device=device)
+        
+                if kp1 is None:
+                    w1 = torch.zeros((0, 6), device=device)
+                    kp1 = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count = torch.zeros(0, device=device)
+                else:
+                    w1 = torch.tensor(kp1, device=device)
+                    kp1 = torch.tensor(kp1[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count, _ = aux_hdf5.get(im1)
+                    
+                kH1 = torch.zeros((kp1.shape[0], 3, 3), device=device)
+                kr1 = torch.full((kp1.shape[0], ), torch.inf, device=device)
 
-                pipe = {
-                    'kp': [src0['kp'], src1['kp']],
-                    'kH': [src0['kH'], src1['kH']],
-                    'kr': [src0['kr'], src1['kr']],
-                    'w': [src0['w'], src1['w']],
-                }
+                pipe = {}
+                pipe['kp'] = [kp0, kp1]
+                pipe['kH'] = [kH0, kH1]
+                pipe['kr'] = [kr0, kr1]
+                pipe['w'] = [w0, w1]
 
-                pipe_prev = {
-                    'kp': [prev0['kp'], prev1['kp']],
-                    'kH': [prev0['kH'], prev1['kH']],
-                    'kr': [prev0['kr'], prev1['kr']],
-                    'w': [prev0['w'], prev1['w']],
-                }
+                kp0_prev = db_merged.get_keypoints(im0_id_prev)
+                kp1_prev = db_merged.get_keypoints(im1_id_prev)
+                
+                if kp0_prev is None:
+                    w0_prev = torch.zeros((0, 6), device=device)
+                    kp0_prev = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count_prev = torch.zeros(0, device=device)
+                else:
+                    w0_prev = torch.tensor(kp0_prev, device=device)
+                    kp0_prev = torch.tensor(kp0_prev[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k0_count_prev, _ = aux_hdf5.get(im0)
+                    
+                kH0_prev = torch.zeros((kp0_prev.shape[0], 3, 3), device=device)
+                kr0_prev = torch.full((kp0_prev.shape[0], ), torch.inf, device=device)
+        
+                if kp1_prev is None:
+                    w1_prev = torch.zeros((0, 6), device=device)
+                    kp1_prev = torch.zeros((0, 2), device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count_prev = torch.zeros(0, device=device)
+                else:
+                    w1_prev = torch.tensor(kp1_prev, device=device)
+                    kp1_prev = torch.tensor(kp1_prev[:, :2], device=device)
+                    if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):            
+                        k1_count_prev, _ = aux_hdf5.get(im1)
+                    
+                kH1_prev = torch.zeros((kp1_prev.shape[0], 3, 3), device=device)
+                kr1_prev = torch.full((kp1_prev.shape[0], ), torch.inf, device=device)
+
+                pipe_prev = {}
+                pipe_prev['kp'] = [kp0_prev, kp1_prev]
+                pipe_prev['kH'] = [kH0_prev, kH1_prev]
+                pipe_prev['kr'] = [kr0_prev, kr1_prev]
+                pipe_prev['w'] = [w0_prev, w1_prev]
 
                 no_matches = False
                 if only_keypoints: no_matches = True
@@ -263,11 +218,9 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 matches = None
                 two_view_matches = None
                 if no_matches == False:
-                    t_match_read0 = time.perf_counter()
                     matches = db.get_matches(im0_id, im1_id)
                     if matches is not None and include_two_view_geometry:
                         two_view_matches, models = db.get_two_view_geometry(im0_id, im1_id)
-                    db_stats['match_read_s'] += time.perf_counter() - t_match_read0
 
                 if matches is None:
                     m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
@@ -315,17 +268,15 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 pipe['m_val'] = m_val
                 pipe['m_mask'] = m_mask
                 
-                if counter:
-                    pipe['k_counter'] = [src0['k_counter'], src1['k_counter']]
+                if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
+                    pipe['k_counter'] = [k0_count, k1_count]
         
                 matches_prev = None
                 two_view_matches_prev = None
                 if no_matches == False:
-                    t_match_read1 = time.perf_counter()
                     matches_prev = db_merged.get_matches(im0_id_prev, im1_id_prev)
                     if matches_prev is not None and include_two_view_geometry:
                         two_view_matches_prev, models_prev = db_merged.get_two_view_geometry(im0_id_prev, im1_id_prev)
-                    db_stats['match_read_s'] += time.perf_counter() - t_match_read1
 
                 if matches_prev is None:
                     m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
@@ -373,32 +324,23 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                 pipe_prev['m_val'] = m_val
                 pipe_prev['m_mask'] = m_mask
                 
-                if counter:
-                    pipe_prev['k_counter'] = [prev0['k_counter'], prev1['k_counter']]
-
-                t_union0 = time.perf_counter()
+                if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
+                    pipe_prev['k_counter'] = [k0_count_prev, k1_count_prev]
+        
+                counter = (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches')
                 pipe_out = pipe_union([pipe_prev, pipe], unique=unique, no_unmatched=no_unmatched, only_matched=only_matched, sampling_mode=sampling_mode, sampling_scale=sampling_scale, sampling_offset=sampling_offset, overlapping_cells=overlapping_cells, preserve_order=True, counter=counter)
-                db_stats['pipe_union_s'] += time.perf_counter() - t_union0
 
+                pts0 = pipe_out['w'][0].to('cpu').numpy()
+                pts1 = pipe_out['w'][1].to('cpu').numpy()
+                
                 if counter:
                     aux_hdf5.add(im0, pipe_out['k_counter'][0])
                     aux_hdf5.add(im1, pipe_out['k_counter'][1])
-                    prev0['k_counter'] = pipe_out['k_counter'][0]
-                    prev1['k_counter'] = pipe_out['k_counter'][1]
-
-                prev0['w'] = pipe_out['w'][0]
-                prev1['w'] = pipe_out['w'][1]
-                prev0['kp'] = pipe_out['kp'][0]
-                prev1['kp'] = pipe_out['kp'][1]
-                prev0['kH'] = pipe_out['kH'][0]
-                prev1['kH'] = pipe_out['kH'][1]
-                prev0['kr'] = pipe_out['kr'][0]
-                prev1['kr'] = pipe_out['kr'][1]
-                dirty_merged_ids.add(im0_id_prev)
-                dirty_merged_ids.add(im1_id_prev)
+                
+                db_merged.update_keypoints(im0_id_prev, pts0)
+                db_merged.update_keypoints(im1_id_prev, pts1)
 
                 if not only_keypoints:
-                    t_write_match0 = time.perf_counter()
                     m_idx = pipe_out['m_idx'].to('cpu').numpy()
                     db_merged.update_matches(im0_id_prev, im1_id_prev, m_idx)
         
@@ -406,56 +348,16 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
                         m_idx = pipe_out['m_idx'][pipe_out['m_mask']].to('cpu').numpy()
                         models = {}                                        
                         db_merged.update_two_view_geometry(im0_id_prev, im1_id_prev, m_idx, model=models)
-                    db_stats['db_write_match_s'] += time.perf_counter() - t_write_match0
 
-                t_commit0 = time.perf_counter()
                 db_merged.commit()
-                db_stats['db_commit_s'] += time.perf_counter() - t_commit0
-                db_stats['pairs_processed'] += 1
-                profile_data['pairs_processed'] += 1
-        db_stats['pair_loop_s'] += time.perf_counter() - t_pair_loop0
-
-        t_kp_flush0 = time.perf_counter()
-        for merged_id in dirty_merged_ids:
-            pts = merged_state_cache[merged_id]['w'].to('cpu').numpy()
-            db_merged.update_keypoints(merged_id, pts)
-        db_stats['db_write_kp_flush_s'] += time.perf_counter() - t_kp_flush0
-        t_commit1 = time.perf_counter()
-        db_merged.commit()
-        db_stats['db_commit_s'] += time.perf_counter() - t_commit1
 
         db.close()
         pbar.close()
-        db_stats['pair_loop_s'] += 0.0
-        profile_data['per_db'].append(db_stats)
-        profile_data['db_open_s'] += db_stats['open_s']
-        profile_data['pair_loop_s'] += db_stats['pair_loop_s']
-        profile_data['filter_s'] += db_stats['filter_s']
-        profile_data['image_sync_s'] += db_stats['image_sync_s']
-        profile_data['keypoint_read_s'] += db_stats['keypoint_read_s']
-        profile_data['match_read_s'] += db_stats['match_read_s']
-        profile_data['pipe_union_s'] += db_stats['pipe_union_s']
-        profile_data['db_write_match_s'] += db_stats['db_write_match_s']
-        profile_data['db_write_kp_flush_s'] += db_stats['db_write_kp_flush_s']
-        profile_data['db_commit_s'] += db_stats['db_commit_s']
-        _ = time.perf_counter() - t_db0
 
     db_merged.close()
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):
         aux_hdf5.close()
         if os.path.isfile('tmp.hdf5'): os.remove('tmp.hdf5')
-
-    profile_data['total_s'] = time.perf_counter() - t_all_start
-    if profile:
-        print('merge_colmap_db profile:')
-        print(f"  total_s={profile_data['total_s']:.3f} pairs_processed={profile_data['pairs_processed']}/{profile_data['pairs_total']} skipped_filter={profile_data['pairs_skipped_filter']} missing_name={profile_data['pairs_missing_name']}")
-        print(f"  db_open_s={profile_data['db_open_s']:.3f} pair_loop_s={profile_data['pair_loop_s']:.3f} filter_s={profile_data['filter_s']:.3f}")
-        print(f"  image_sync_s={profile_data['image_sync_s']:.3f} keypoint_read_s={profile_data['keypoint_read_s']:.3f} match_read_s={profile_data['match_read_s']:.3f}")
-        print(f"  pipe_union_s={profile_data['pipe_union_s']:.3f} db_write_match_s={profile_data['db_write_match_s']:.3f} db_write_kp_flush_s={profile_data['db_write_kp_flush_s']:.3f} db_commit_s={profile_data['db_commit_s']:.3f}")
-        for dbs in profile_data['per_db']:
-            print(f"  per_db: {dbs['db_name']} processed={dbs['pairs_processed']}/{dbs['pairs_total']} pair_loop_s={dbs['pair_loop_s']:.3f} pipe_union_s={dbs['pipe_union_s']:.3f} keypoint_read_s={dbs['keypoint_read_s']:.3f} match_read_s={dbs['match_read_s']:.3f} writes_match_s={dbs['db_write_match_s']:.3f} writes_kp_s={dbs['db_write_kp_flush_s']:.3f} commit_s={dbs['db_commit_s']:.3f}")
-    if return_profile:
-        return profile_data
         
 
 def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_path=None, db_path=None, output_model_path='../aux/colmap/output_model', to_filter=None, how_filter='exclude', only_cameras=True, add_3D_points=False, add_as_possible=True):
