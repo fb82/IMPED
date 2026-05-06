@@ -37,3 +37,6 @@
 [submodule "src/dtm"]
 	path = src/dtm
 	url = https://github.com/fb82/DTM.git
+[submodule "src/romav2"]
+	path = src/romav2
+	url = https://github.com/Parskatt/RoMaV2.git
