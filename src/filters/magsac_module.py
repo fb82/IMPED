@@ -54,9 +54,6 @@ class magsac_module:
 
         
     def run(self, **args):  
-        print(100*'-')
-        print(self.args['mode'])
-        print(100*'-')
         pt1_ = args['kp'][0]
         pt2_ = args['kp'][1]
         mi = args['m_idx']

@@ -15,7 +15,7 @@
 | Add contracts |  | 📝 |
 | Add Roma v2 | ✅ |  |
 | Add LoMa |  | 📝 |
-| Optimize code* |  | 📝 |
+| Optimize code* | ✅ |  |
 
 *for example merge database very slow with colmap
 

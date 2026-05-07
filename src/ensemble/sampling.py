@@ -109,9 +109,9 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 counter1.append(pipe_data['k_counter'][1].to(device))
             
             if 'm_idx' in pipe_data:
-                print(f"m_idx shape: {pipe_data['m_idx'].shape}, m_mask shape: {pipe_data['m_mask'].shape}, m_val shape: {pipe_data['m_val'].shape}")
+                # print(f"m_idx shape: {pipe_data['m_idx'].shape}, m_mask shape: {pipe_data['m_mask'].shape}, m_val shape: {pipe_data['m_val'].shape}")
 
-                print(f"only_matched={only_matched}")
+                # print(f"only_matched={only_matched}")
 
                 if only_matched:
                     to_retain = torch.zeros(pipe_data['m_idx'].shape[0], device=device, dtype=torch.bool)

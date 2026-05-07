@@ -2,6 +2,7 @@
 import kornia as K
 
 from core import device, homo2laf, laf2homo, set_args
+import torch
 
 
 class patch_module:
@@ -75,7 +76,20 @@ class patch_module:
 
 
     def run(self, **args):    
-        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        import cv2
+        import numpy as np
+
+        try:
+            im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        except FileExistsError as e:
+            print(f"Error loading image {args['img'][args['idx']]}: {e}")
+            # Fallback: try loading with OpenCV
+            img_cv = cv2.imread(str(args['img'][args['idx']]), cv2.IMREAD_GRAYSCALE)
+            if img_cv is not None:
+                im = torch.from_numpy(img_cv).float().to(device).unsqueeze(0).unsqueeze(0) / 255.0
+            else:
+                raise RuntimeError(f"Failed to load image: {args['img'][args['idx']]}")
+
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
 

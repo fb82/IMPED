@@ -27,12 +27,90 @@ def finalize_pipeline(pipeline):
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
-    for pair in go_iter(image_pairs(imgs, add_path=add_path, colmap_db_or_list=colmap_db_or_list, mode=mode, colmap_req=colmap_req, colmap_min_matches=colmap_min_matches), msg='          processed pairs'):
+    if isinstance(imgs, str):
+        imgs = [
+            os.path.join(imgs, f)
+            for f in os.listdir(imgs)
+            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+        ]
+
+    imgs = list(imgs)
+
+    img_map = {
+        os.path.basename(p): p
+        for p in imgs
+    }
+
+    colmap_db_path = None
+    for m in pipeline:
+        if hasattr(m, 'args') and 'db' in m.args:
+            colmap_db_path = m.args['db']
+            break
+
+    existing_images = set()
+
+    if colmap_db_path is not None:
+        try:
+            from colmap_fun.colmap_ext import coldb_ext
+
+            colmap_db = coldb_ext(colmap_db_path)
+            images = colmap_db.get_images()  # (id, name)
+
+            for _, name in images:
+                existing_images.add(name)
+
+            colmap_db.close()
+
+        except Exception as e:
+            print("Warning: failed to read COLMAP DB, fallback to full pairing:", e)
+            existing_images = set()
+
+    existing = [
+        img_map[name]
+        for name in existing_images
+        if name in img_map
+    ]
+
+    new = [
+        p for p in imgs
+        if os.path.basename(p) not in existing_images
+    ]
+
+    print(f"Total imgs: {len(imgs)}")
+    print(f"Existing: {len(existing)}")
+    print(f"New: {len(new)}")
+
+
+    if colmap_db_path is None or len(existing_images) == 0:
+
+        pairs_iter = image_pairs(
+            imgs,
+            add_path=add_path,
+            colmap_db_or_list=colmap_db_or_list,
+            mode=mode,
+            colmap_req=colmap_req,
+            colmap_min_matches=colmap_min_matches
+        )
+    else:
+        # Incremental mode
+        def gen_pairs():
+            # new vs existing
+            for n in new:
+                for e in existing:
+                    yield (n, e)
+
+            # new vs new
+            for i in range(len(new)):
+                for j in range(i + 1, len(new)):
+                    yield (new[i], new[j])
+
+        pairs_iter = gen_pairs()
+
+
+    for pair in go_iter(pairs_iter, msg='          processed pairs'):
         run_pipeline(pair, pipeline, db, force=force, show_progress=True)
-        
+
     finalize_pipeline(pipeline)
-
-
 
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
     """
