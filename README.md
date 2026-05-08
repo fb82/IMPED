@@ -118,7 +118,7 @@ src/
 ```linux
 python -m venv imped
 source imped/bin/activate
-pip install -r src/requirements. txt
+pip install -r src/requirements.txt
 ```
 
 
