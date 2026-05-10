@@ -833,7 +833,7 @@ def laf2homo(kps, with_scale=False):
     if with_scale:
         s = torch.sqrt(torch.abs(kps[:, 0, 0] * kps[:, 1, 1] - kps[:, 0, 1] * kps[:, 1, 0]))   
         Hi[:, :2, :] = Hi[:, :2, :] / s.reshape(-1, 1, 1)
-        s = s.type(torch.float)
+        s = s.type(torch.float) ** 0.5
         
     H = torch.linalg.inv(Hi).type(torch.float)
 
