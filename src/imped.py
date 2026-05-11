@@ -857,7 +857,7 @@ def homo2laf(c, H, s=None):
 #   kp = Hi[:, :2, :]
     
     if not (s is None):
-        kp = kp * s.reshape(-1, 1, 1)
+        kp = kp * (s**2).reshape(-1, 1, 1)
 
     return kp.unsqueeze(0)
 
