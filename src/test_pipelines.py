@@ -239,7 +239,6 @@ def pipeline11():
 
 
 def pipeline12():
-## Not working: manca modulo local_corr probabilmente errore mancanza scheda nvidia
     pipeline = [
         roma_module(),
         magsac_module(),
@@ -276,7 +275,6 @@ def pipeline14():
     run_pairs(pipeline, imgs)  
 
 def pipeline15():
-## Not working without NVIDIA GPU
       pipeline = [
           aspanformer_module(),
           magsac_module(),
@@ -309,7 +307,6 @@ def pipeline17():
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)      
 
 def pipeline18():
-## Working
     imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -323,7 +320,6 @@ def pipeline18():
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet)
 
 def pipeline19():
-## Working
     imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -339,7 +335,6 @@ def pipeline19():
     run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
 def pipeline20():
-## Working
     imgs = '../data/ET'
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -363,7 +358,6 @@ def pipeline20():
     merge_colmap_db(['aliked.db', 'superpoint.db'], 'aliked_superpoint.db', img_folder='../data/ET')
 
 def pipeline21():
-# Not working
     
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -422,7 +416,6 @@ def pipeline21bis():
     )
 
 def pipeline22():
-# Not working
     imgs = '../data/ET'
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -452,7 +445,6 @@ def pipeline22():
     align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
 def pipeline23():
-# Working
     pipeline = [
         deep_joined_module(),
         lightglue_module(),
@@ -465,7 +457,6 @@ def pipeline23():
     run_pairs(pipeline, imgs, db_name=None)
 
 def pipeline24():
-## Working
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
@@ -489,7 +480,6 @@ def pipeline24():
     run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches')
 
 def pipeline25():
-## Working
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -518,7 +508,6 @@ def pipeline25():
     run_pairs(pipeline, imgs, db_name=None)  
 
 def pipeline26():
-# Working
     pipeline = [
         deep_joined_module(),
         lightglue_module(),
@@ -531,7 +520,6 @@ def pipeline26():
 
 
 def pipeline27():
-## Working
     imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -544,7 +532,6 @@ def pipeline27():
     run_pairs(pipeline, imgs, add_path=to_add_path_planar, force=True)   
 
 def pipeline28():
-## Working
     imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -557,7 +544,6 @@ def pipeline28():
     run_pairs(pipeline, imgs, add_path=to_add_path_imc)   
 
 def pipeline29():
-# Working
     imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -570,7 +556,6 @@ def pipeline29():
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)   
 
 def pipeline30():
-# Working
     imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -583,7 +568,6 @@ def pipeline30():
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet)   
 
 def pipeline31():
-## Working
     pipeline = [
         dog_module(),
         patch_module(),
@@ -603,7 +587,6 @@ def pipeline31():
     run_pairs(pipeline, imgs) 
 
 def pipeline32():
-# Working
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -627,7 +610,6 @@ def pipeline32():
     run_pairs(pipeline, imgs) 
 
 def pipeline33():
-# Working
     pipeline = [
         mast3r_module(),
         magsac_module(),
@@ -637,7 +619,6 @@ def pipeline33():
     run_pairs(pipeline, imgs)  
 
 def pipeline34():        
-# Working
     pipeline = [
         dust3r_module(),
         magsac_module(),
@@ -647,7 +628,7 @@ def pipeline34():
     run_pairs(pipeline, imgs)          
 
 def pipeline35():
-## Working
+
     pipeline = [
         image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
@@ -688,7 +669,7 @@ def pipeline35():
     run_pairs(pipeline, imgs) 
 
 def pipeline36():
-## Working
+
     pipeline = [
         hz_module(),
         patch_module(),
@@ -708,7 +689,6 @@ def pipeline36():
     run_pairs(pipeline, imgs) 
 
 def pipeline37():
-# Working
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
                 [
@@ -734,7 +714,7 @@ def pipeline37():
     run_pairs(pipeline, imgs) 
 
 def pipeline38():
-## Working
+
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -764,7 +744,6 @@ def pipeline38():
     run_pairs(pipeline, imgs) 
 
 def pipeline39():
-## Not working: manca modulo local_corr probabilmente errore mancanza scheda nvidia
     pipeline = [
         romav2_module(),
         magsac_module(),
@@ -779,9 +758,6 @@ def pipeline40(imgs='../data/ET'):
 
     start_time = time.time()
 
-    file_path = 'database.hdf5'
-    if os.path.exists(file_path):
-        os.remove(file_path)
     imgs='../data/ET'
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -790,14 +766,10 @@ def pipeline40(imgs='../data/ET'):
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='ET_full.db'),            
     ]         
-    run_pairs(pipeline, imgs)
+    run_pairs(pipeline, imgs, db_name='database_ET_full.hdf5')
 
     end_time = time.time()
 
-
-    file_path = 'database.hdf5'
-    if os.path.exists(file_path):
-        os.remove(file_path)
     imgs='../data/ET_pt1'
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -806,10 +778,7 @@ def pipeline40(imgs='../data/ET'):
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='ET_pt1.db'),            
     ]         
-    run_pairs(pipeline, imgs)
-    
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    run_pairs(pipeline, imgs, db_name='database_ET_pt1.hdf5')
 
     start_time2 = time.time()
     

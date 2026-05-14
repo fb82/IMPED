@@ -15,9 +15,10 @@
 | Add contracts |  | 📝 |
 | Add Roma v2 | ✅ |  |
 | Add LoMa |  | 📝 |
-| Optimize code* | ✅ |  |
+| Optimize incremental adding of images | ✅ |  |
+| Optimize hdf5 database |  | 📝 |
+| Device as optional parameter |  | 📝 |
 
-*for example merge database very slow with colmap
 
 
 ## File structure 
