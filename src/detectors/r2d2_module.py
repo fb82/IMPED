@@ -4,7 +4,8 @@ import sys
 import torch
 from PIL import Image
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'r2d2'))
@@ -132,7 +133,8 @@ class r2d2_module:
         return XYS, D, scores
 
 
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
+        self.device = device if device is not None else global_device
         self.single_image = True
         self.pipeliner = False
         self.pass_through = False
@@ -201,15 +203,15 @@ class r2d2_module:
         scores = scores.cpu().numpy()
         idxs = scores.argsort()[-self.args['top-k'] or None:]
         
-        keypoints = torch.tensor(xys[idxs], device=device) 
-        descriptors = torch.tensor(desc[idxs], device=device) 
-        scores = torch.tensor(scores[idxs], device=device)
+        keypoints = torch.tensor(xys[idxs], device=self.device) 
+        descriptors = torch.tensor(desc[idxs], device=self.device) 
+        scores = torch.tensor(scores[idxs], device=self.device)
 
         kp = keypoints[:, :2]       
         desc = descriptors
         scales = keypoints[:, 2] / 2
 
-        kH = torch.zeros((kp.shape[0], 3, 3), device=device)        
+        kH = torch.zeros((kp.shape[0], 3, 3), device=self.device)        
         kH[:, [0, 1], 2] = -kp / self.args['patch_radius']
         kH[:, 0, 0] = 1 / scales
         kH[:, 1, 1] = 1 / scales

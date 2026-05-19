@@ -9,7 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import device
+from core import device as global_device
 from ensemble import pipe_union
 
 from .colmap_ext import coldb_ext
@@ -18,7 +18,7 @@ from .colmap_ext import coldb_ext
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
-    sampling_scale=1, sampling_offset=0, focal_cf=1.2):              
+    sampling_scale=1, sampling_offset=0, focal_cf=1.2, device=None):              
     """
     Merges multiple COLMAP SQLite databases into a single unified database.
 
@@ -48,6 +48,7 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     from core import go_iter
 
     from .colmap_ext import SIMPLE_RADIAL
+    device = device if device is not None else global_device
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')

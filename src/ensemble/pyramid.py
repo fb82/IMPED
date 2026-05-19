@@ -4,12 +4,10 @@ import cv2
 import numpy as np
 import torch
 
-from core import (
-    device,  #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
-)
+from core import  device as global_device
 
 
-def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, force=False):
+def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, force=False, device=None):
     """
     Decomposes an image into a multi-scale pyramid of overlapping tiles.
 
@@ -33,6 +31,7 @@ def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=2
             - im_warp (list of torch.Tensor): 3x3 transformation matrices (Affine) 
               mapping original image coordinates to the tile's local coordinate system.
     """
+    device = device if device is not None else global_device
     img = cv2.imread(in_image)
     sz = img.shape[:2]
     sz_min = min(sz)

@@ -3,7 +3,8 @@ import torch
 from PIL import Image
 from romatch import roma_indoor, roma_outdoor, tiny_roma_v1_outdoor
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 torch.set_float32_matmul_precision('highest')
 
@@ -25,10 +26,11 @@ class roma_module:
         upsample_resolution (int): Resolution for the final pixel-accurate refinement.
         max_keypoints (int): The number of points to sample from the dense warp field.
     """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
         torch.set_float32_matmul_precision('highest')
+        self.device = device if device is not None else global_device
 
-        self.roma_model = roma_outdoor(device=device, **args)
+        self.roma_model = roma_outdoor(device=self.device, **args)
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
@@ -56,12 +58,12 @@ class roma_module:
             roma_args['upsample_res'] = self.args['upsample_resolution']
 
         if self.args['use_tiny']:
-            self.roma_model = tiny_roma_v1_outdoor(device=device)            
+            self.roma_model = tiny_roma_v1_outdoor(device=self.device)            
         else:
             if self.args['outdoor'] == True:
-                self.roma_model = roma_outdoor(device=device, **roma_args)
+                self.roma_model = roma_outdoor(device=self.device, **roma_args)
             else:
-                self.roma_model = roma_indoor(device=device, **roma_args)
+                self.roma_model = roma_indoor(device=self.device, **roma_args)
 
 
     def get_id(self): 
@@ -101,16 +103,16 @@ class roma_module:
         matches, certainty = self.roma_model.sample(warp, certainty, **sampling_args)
         kpts1, kpts2 = self.roma_model.to_pixel_coordinates(matches, H, W, H, W)    
 
-        kps1 = kpts1.detach().to(device)
-        kps2 = kpts2.detach().to(device)
+        kps1 = kpts1.detach().to(self.device)
+        kps2 = kpts2.detach().to(self.device)
 
-        kps1 = kps1 / torch.tensor([W/float(W_A), H/float(H_A)], device=device).unsqueeze(0)
-        kps2 = kps2 / torch.tensor([W/float(W_B), H/float(H_B)], device=device).unsqueeze(0)
+        kps1 = kps1 / torch.tensor([W/float(W_A), H/float(H_A)], device=self.device).unsqueeze(0)
+        kps2 = kps2 / torch.tensor([W/float(W_B), H/float(H_B)], device=self.device).unsqueeze(0)
         
         kp = [kps1, kps2]
         kH = [
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
             ]
         
         kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
@@ -123,14 +125,14 @@ class roma_module:
         kH[1][:, 1, 1] = 1 / self.args['patch_radius']
         kH[1][:, 2, 2] = 1
 
-        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=self.device), torch.full((kp[0].shape[0],), torch.nan, device=self.device)]        
 
-        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=self.device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
 
-        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+        m_mask = torch.ones(m_idx.shape[0], device=self.device, dtype=torch.bool)
 
-        m_val = certainty.detach().to(device)        
+        m_val = certainty.detach().to(self.device)        
 
         return {'kp': kp, 'kH': kH, 'kr': kr, 'm_idx': m_idx, 'm_val': m_val, 'm_mask': m_mask}

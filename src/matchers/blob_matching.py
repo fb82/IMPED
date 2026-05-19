@@ -2,7 +2,8 @@
 import torch
 
 import dtm.src.dtm as dtm
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 from filters import dtm_module as dtm
 
 
@@ -33,11 +34,12 @@ class blob_matching_module:
     Args:
         **args: Arbitrary keyword arguments used to override default matching settings.
     """    
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
         self.single_image = False    
         self.pipeliner = False      
         self.pass_through = False
         self.add_to_cache = True
+        self.device = device if device is not None else global_device
                                 
         self.args = {
             'id_more': '',
@@ -86,7 +88,7 @@ class blob_matching_module:
                   device=self.args['device'],
         )
         
-        midx = midx.to(device)
-        val = val.to(device)
+        midx = midx.to(self.device)
+        val = val.to(self.device)
     
-        return {'m_idx': midx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=device, dtype=torch.bool)}
+        return {'m_idx': midx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=self.device, dtype=torch.bool)}

@@ -1,7 +1,8 @@
 
 import kornia as K
 
-from core import device, homo2laf, set_args
+from core import device as global_device
+from core import homo2laf, set_args
 
 
 class deep_descriptor_module:
@@ -18,7 +19,8 @@ class deep_descriptor_module:
         desc_params (dict): Parameters passed to the specific network (e.g., pretrained=True).
         patch_params (dict): Parameters for patch extraction (e.g., patch_size).
     """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
+        self.device = device if device is not None else global_device
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
@@ -60,7 +62,7 @@ class deep_descriptor_module:
 
 
     def run(self, **args):    
-        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)

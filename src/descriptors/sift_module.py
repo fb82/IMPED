@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from kornia_moons.feature import opencv_kpts_from_laf
 
-from core import device, homo2laf, set_args
+from core import device as global_device
+from core import homo2laf, set_args
 
 
 class sift_module:
@@ -22,7 +23,8 @@ class sift_module:
         rootsift (bool): If True, applies L1 normalization and a 
             square root to the descriptors to improve matching robustness.
     """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
+        self.device = device if device is not None else global_device
         self.single_image = True
         self.pipeliner = False        
         self.pass_through = False
@@ -64,6 +66,6 @@ class sift_module:
             desc /= desc.sum(axis=1, keepdims=True) + 1e-8
             desc = np.sqrt(desc)
             
-        desc = torch.tensor(desc, device=device, dtype=torch.float)
+        desc = torch.tensor(desc, device=self.device, dtype=torch.float)
                     
         return {'desc': desc}

@@ -5,14 +5,12 @@ import numpy as np
 import torch
 from PIL import Image
 
-from core import (
-    device,  #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
-)
+from core import device as global_device
 
 from .sampling import pipe_union
 
 
-def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
+def pair_rot4(pair, cache_path='tmp_imgs', force=False, device=None, **dummy_args):
     """
     A generator that yields four rotated versions of an image pair.
 
@@ -29,6 +27,7 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
     Yields:
         tuple: ((img0, img_rotated), [Identity_Matrix, Warp_Matrix], extra_data)
     """
+    device = device if device is not None else global_device
     yield pair, [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)], {}
 
     rot_mat = np.eye(2)
@@ -72,7 +71,7 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
         yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix], {}
 
 
-def pipe_max_matches(pipe_block):
+def pipe_max_matches(pipe_block, device=None):
     """
     Selects the single best result from a collection of matching attempts.
 
@@ -89,6 +88,7 @@ def pipe_max_matches(pipe_block):
         dict: The single dictionary from the input list with the 
               highest number of confirmed inliers.
     """
+    device = device if device is not None else global_device
     n_matches = torch.zeros(len(pipe_block), device=device)
     for i in range(len(pipe_block)):
         if 'm_mask' in pipe_block[i]:

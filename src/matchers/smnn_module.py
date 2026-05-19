@@ -2,7 +2,8 @@
 import kornia as K
 import torch
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class smnn_module:
@@ -21,7 +22,8 @@ class smnn_module:
         th (float): The distance threshold (ratio test). Only matches 
             with a distance ratio better than this value are kept.
     """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
+        self.device = device if device is not None else global_device
         self.single_image = False    
         self.pipeliner = False      
         self.pass_through = False
@@ -48,5 +50,5 @@ class smnn_module:
     def run(self, **args):
         val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
-        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=device, dtype=torch.bool)}
+        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)}
 

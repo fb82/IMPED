@@ -112,6 +112,21 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
     finalize_pipeline(pipeline)
 
+
+def move_to_device(value, device):
+    """Move a tensor, or a list/tuple of tensors, to the target device."""
+    if isinstance(value, torch.Tensor):
+        return value.to(device)
+    elif isinstance(value, (list, tuple)):
+        moved = [move_to_device(v, device) for v in value]
+        return type(value)(moved)
+    return value 
+
+def move_data_to_device(pipe_data, device):
+    """Return a shallow copy of pipe_data with all tensors moved to device."""
+    return {k: move_to_device(v, device) for k, v in pipe_data.items()}
+
+
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
     """
     Executes a sequence of image processing modules on a pair of images.
@@ -136,6 +151,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
         pipe_data['warp'] = [torch.eye(3, device=device, dtype=torch.float), torch.eye(3, device=device, dtype=torch.float)]
         
     for pipe_module in go_iter(pipeline, msg='current pipeline progress', active=show_progress, params={'leave': False}):
+        module_device = getattr(pipe_module, 'device', None) or device
         if hasattr(pipe_module, 'pass_through') and pipe_module.pass_through:  
             pipe_id = '/'
             key_data = '/' + pipe_module.get_id()
@@ -154,14 +170,16 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
 
                 out_data, is_found = db.get(data_key)                    
                 if (not is_found) or force:
+                    localized_data = move_data_to_device(pipe_data, module_device)
                     start_time = time.time()
-                    out_data = pipe_module.run(idx=n, **pipe_data)
+                    out_data = pipe_module.run(idx=n, **localized_data)
                     stop_time = time.time()
                     out_data['running_time'] = stop_time - start_time
                     if pipe_module.add_to_cache: db.add(data_key, out_data)
                 del out_data['running_time']
 
                 for k, v in out_data.items():
+                    v = move_to_device(v, device)
                     if k in pipe_data:
                         if len(pipe_data[k]) == len(pipe_data['img']):
                             pipe_data[k][n] = v
@@ -182,7 +200,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
                     out_data = pipe_module.run(pipe_data=pipe_data, pipe_name=pipe_name_prev, db=db, force=force)
                 else:
-                    out_data = pipe_module.run(**pipe_data)
+                    localized_data = move_data_to_device(pipe_data, module_device)
+                    out_data = pipe_module.run(**localized_data)
 
                 stop_time = time.time()
                 out_data['running_time'] = stop_time - start_time
@@ -190,7 +209,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             out_data['running_time']
                 
             
-            for k, v in out_data.items(): pipe_data[k] = v
+            for k, v in out_data.items():
+                pipe_data[k] = move_to_device(v, device)
                 
     return pipe_data, pipe_name
 

@@ -7,7 +7,8 @@ import kornia as K
 import numpy as np
 import torch
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'quadtreeattention'))
@@ -56,11 +57,12 @@ Attributes:
     resize (list, optional): Processing resolution.
     patch_radius (int): Used to construct local homography metadata.
 """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
         self.add_to_cache = True
+        self.device = device if device is not None else global_device
                                     
         self.args = {
             'id_more': '',
@@ -100,7 +102,7 @@ Attributes:
 
         self.matcher.eval()
 
-        if device.type == 'cuda':        
+        if self.device.type == 'cuda':        
             self.matcher.to('cuda')
 
     def get_id(self): 
@@ -112,8 +114,8 @@ Attributes:
 
 
     def run(self, **args):
-        image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=device)
-        image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=device)
+        image0 = K.io.load_image(args['img'][0], K.io.ImageLoadType.GRAY32, device=self.device)
+        image1 = K.io.load_image(args['img'][1], K.io.ImageLoadType.GRAY32, device=self.device)
 
         hw1 = image0.shape[1:]
         hw2 = image1.shape[1:]
@@ -157,9 +159,9 @@ Attributes:
         }
 
         self.matcher(batch)
-        kps1 = batch['mkpts0_f'].detach().to(device).squeeze()
-        kps2 = batch['mkpts1_f'].detach().to(device).squeeze()
-        m_val = batch['mconf'].detach().to(device)
+        kps1 = batch['mkpts0_f'].detach().to(self.device).squeeze()
+        kps2 = batch['mkpts1_f'].detach().to(self.device).squeeze()
+        m_val = batch['mconf'].detach().to(self.device)
         m_mask = m_val > 0
 
         kps1[:, 0] = kps1[:, 0] * (hw1[1] / float(hw1_[1]))
@@ -170,8 +172,8 @@ Attributes:
         
         kp = [kps1, kps2]
         kH = [
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
             ]
         
         kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
@@ -184,9 +186,9 @@ Attributes:
         kH[1][:, 1, 1] = 1 / self.args['patch_radius']
         kH[1][:, 2, 2] = 1
 
-        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=self.device), torch.full((kp[0].shape[0],), torch.nan, device=self.device)]        
 
-        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=self.device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
 

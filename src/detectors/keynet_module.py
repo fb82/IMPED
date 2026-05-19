@@ -1,7 +1,8 @@
 
 import kornia as K
 
-from core import device, laf2homo, set_args
+from core import device as global_device
+from core import laf2homo, set_args
 
 
 class keynet_module:
@@ -19,7 +20,8 @@ class keynet_module:
         pretrained (bool): Uses weights trained on the HPatches dataset 
             for state-of-the-art repeatability.
     """
-    def __init__(self, **args):
+    def __init__(self, device=None, **args):
+        self.device = device if device is not None else global_device
         self.single_image = True        
         self.pipeliner = False   
         self.pass_through = False
@@ -48,8 +50,8 @@ class keynet_module:
 
     
     def run(self, **args):
-        img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
         kp, kr = self.detector(img)
-        kp, kH = laf2homo(kp.detach().to(device).squeeze(0))
+        kp, kH = laf2homo(kp.detach().to(self.device).squeeze(0))
 
-        return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(device).squeeze(0)}
+        return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(self.device).squeeze(0)}
