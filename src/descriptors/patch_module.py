@@ -61,7 +61,7 @@ class patch_module:
         if self.args['affnet']:
             if len(base_string): base_string = base_string  + '_' + 'affnet'
             else: base_string = 'affnet'
-            self.aff_module =  K.feature.LAFAffNetShapeEstimator(**self.args['affnet_params']).to(device)
+            self.aff_module =  K.feature.LAFAffNetShapeEstimator(**self.args['affnet_params']).to(self.device)
         else:
             self.aff_module = K.feature.PassLAF()
 

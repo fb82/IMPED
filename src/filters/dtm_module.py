@@ -2,7 +2,8 @@
 import torch
 
 import dtm.src.dtm as dtm
-from core import device, set_args
+from core import device as global_device
+from core import  set_args
 
 
 class dtm_module:
@@ -26,11 +27,12 @@ class dtm_module:
             Expected keys include 'full_dtm' (bool), 'show_progress' (bool), 
             'st' (list/tuple), and 'prepare_data' (callable).
     """    
-    def __init__(self, **args):       
+    def __init__(self, device=None, **args):       
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = device if device is not None else global_device
                         
         self.args = {
             'id_more': '',
@@ -72,4 +74,4 @@ class dtm_module:
 
         dtm_mask = dtm.dtm(match_data, show_in_progress=self.args['show_progress'], full_dtm=self.args['full_dtm'], st=self.args['st'], prepare_data=self.args['prepare_data'])
    
-        return {'m_mask': torch.tensor(dtm_mask <= 0, dtype=torch.bool, device=device)}        
+        return {'m_mask': torch.tensor(dtm_mask <= 0, dtype=torch.bool, device=self.device)}        

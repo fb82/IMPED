@@ -158,7 +158,7 @@ class r2d2_module:
                         
         self.id_string, self.args = set_args('r2d2', args, self.args)        
 
-        if device.type == 'cuda':
+        if self.device.type == 'cuda':
             cuda = 0
         else:
             cuda = -1
@@ -167,7 +167,7 @@ class r2d2_module:
     
         # load the network...
         self.net = r2d2_module.load_network(self.args['model'])
-        if self.iscuda: self.net = self.net.cuda()
+        if self.iscuda: self.net = self.net.to(self.device)
     
         # create the non-maxima detector
         self.detector = r2d2_module.NonMaxSuppression(
@@ -187,7 +187,7 @@ class r2d2_module:
         img = Image.open(args['img'][args['idx']]).convert('RGB')
         W, H = img.size
         img = r2d2_norm_RGB(img)[None] 
-        if self.iscuda: img = img.cuda()
+        if self.iscuda: img = img.to(self.device)
         
         # extract keypoints/descriptors for a single image
         xys, desc, scores = r2d2_module.extract_multiscale(self.net, img, self.detector,

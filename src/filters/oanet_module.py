@@ -6,7 +6,8 @@ import gdown
 import numpy as np
 import torch
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 def download_oanet(weight_path='../weights/oanet'):
@@ -65,8 +66,8 @@ class oanet_module:
             inference to determine if a match is valid.
         lm (oanet.LearnedMatcher): The core OANet inference engine.
     """
-    def __init__(self, **args):  
-
+    def __init__(self, device=None, **args):  
+        self.device = device if device is not None else global_device
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
@@ -114,7 +115,7 @@ class oanet_module:
         if l > 1:
             _, _, _, _, mask = self.lm.infer(pt1, pt2)
             
-            mask_aux = torch.tensor(mask, device=device)         
+            mask_aux = torch.tensor(mask, device=self.device)         
             aux = mm.clone()
             mm[aux] = mask_aux
         

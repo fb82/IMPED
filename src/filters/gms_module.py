@@ -7,7 +7,8 @@ import torch
 from PIL import Image
 
 import gms.python.gms_matcher as gms
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class gms_module:
@@ -102,11 +103,12 @@ class gms_module:
             return self.gms_matches, mask
 
 
-    def __init__(self, **args):       
+    def __init__(self, device=None, **args):       
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = device if device is not None else global_device
                         
         self.args = {
             'id_more': '',
@@ -148,7 +150,7 @@ class gms_module:
 
         _, mask = gms.compute_matches(sz1r, sz1c, sz2r, sz2c)
 
-        mask = torch.tensor(mask, device=device, dtype=torch.bool)
+        mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask
