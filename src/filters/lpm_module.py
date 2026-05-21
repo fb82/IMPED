@@ -2,8 +2,7 @@
 import torch
 
 import lpm.LPM as lpm
-from core import device as global_device
-from core import set_args
+from core import device, set_args
 
 
 class lpm_module:
@@ -21,12 +20,11 @@ class lpm_module:
     point in Image 1 map to the neighbors of the corresponding point 
     in Image 2.
     """
-    def __init__(self, device=None, **args):       
+    def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
-        self.device = device if device is not None else global_device
                         
         self.args = {
             'id_more': '',
@@ -56,7 +54,7 @@ class lpm_module:
         pt2 = pt2_[mi[mm][:, 1]]
         
         mask = lpm.LPM_filter(pt1.to('cpu').numpy(), pt2.to('cpu').numpy())        
-        mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
+        mask = torch.tensor(mask, device=device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask

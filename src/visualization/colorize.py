@@ -4,9 +4,10 @@ import numpy as np
 import torch
 from matplotlib import colormaps
 
-from core import device as global_device
+from core import device
 
-def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='plane_acc.png', device=None):
+
+def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='plane_acc.png'):
     """
     Applies a colored heatmap overlay to a grayscale image to visualize planar regions.
 
@@ -34,7 +35,6 @@ def colorize_plane(ims, heat, cmap_name='viridis', max_val=45, cf=0.7, save_to='
         The function handles the conversion from standard RGB colormaps to BGR 
         to ensure compatibility with OpenCV's `imwrite` format.
     """
-    device = device if device is not None else global_device
     im_gray = cv2.imread(ims, cv2.IMREAD_GRAYSCALE)
     im_gray = torch.tensor(im_gray, device=device).unsqueeze(0).repeat(3,1,1).permute(1,2,0)
     heat_mask = heat != -1

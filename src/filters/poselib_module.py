@@ -3,8 +3,7 @@ import numpy as np
 import poselib
 import torch
 
-from core import device as global_device
-from core import set_args
+from core import device, set_args
 
 
 class poselib_module:
@@ -24,8 +23,7 @@ class poselib_module:
         max_iters (int): Maximum number of RANSAC iterations.
         conf (float): The desired probability of finding a correct model.
     """
-    def __init__(self, device=None, **args):       
-        self.device = device if device is not None else global_device
+    def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False     
         self.pass_through = False
@@ -89,15 +87,15 @@ class poselib_module:
             mask = info['inliers']
 
         if (not isinstance(mask, list)) or (mask == []):
-            mask = torch.zeros(pt1.shape[0], device=self.device, dtype=torch.bool)
+            mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
         else:
-            mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
+            mask = torch.tensor(mask, device=device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask
         
         if F is not None:
-            F = torch.tensor(F, device=self.device)
+            F = torch.tensor(F, device=device)
         
         if self.args['mode'] == 'fundamental_matrix':
             return {'m_mask': mm, 'F': F}

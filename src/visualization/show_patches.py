@@ -6,8 +6,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 
 import miho.src.ncc as ncc
-from core import device as global_device
-from core import set_args
+from core import device, set_args
 
 
 class show_patches_module:
@@ -67,15 +66,14 @@ class show_patches_module:
         mask2 = torch.isfinite(patch2) & (~torch.isfinite(patch1))
         patch1[mask2] = 0
     
-        both_patches = torch.zeros((3, patch1.shape[0], patch1.shape[1], patch1.shape[2]), dtype=torch.float32, device=global_device)
+        both_patches = torch.zeros((3, patch1.shape[0], patch1.shape[1], patch1.shape[2]), dtype=torch.float32, device=device)
         both_patches[0] = patch1
         both_patches[1] = patch2
     
         ncc.save_patch(both_patches, save_prefix=save_prefix, save_suffix=save_suffix, stretch=stretch, grid=grid)
 
 
-    def __init__(self, device=None, **args):
-        self.device = device if device is not None else global_device
+    def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False        
         self.pass_through = True
@@ -167,7 +165,7 @@ class show_patches_module:
         mi = args['m_idx']                     
         mm = args['m_mask']
 
-        lidx = torch.arange(mm.shape[0], device=self.device)
+        lidx = torch.arange(mm.shape[0], device=device)
         if self.args['only_valid']: lidx = lidx[mm]
                 
         pt1 = args['kp'][0][mi[lidx, 0]]
@@ -197,18 +195,18 @@ class show_patches_module:
         l = len(zidx)       
 
         r = self.args['patch_radius']
-        S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=self.device).unsqueeze(0).repeat(l, 1, 1)
+        S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=device).unsqueeze(0).repeat(l, 1, 1)
 
-        p1_ = kH1.bmm(torch.cat((pt1, torch.ones((pt1.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
+        p1_ = kH1.bmm(torch.cat((pt1, torch.ones((pt1.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
         p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
 
-        p2_ = kH2.bmm(torch.cat((pt2, torch.ones((pt2.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
+        p2_ = kH2.bmm(torch.cat((pt2, torch.ones((pt2.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
         p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
 
-        T1 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+        T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
         T1[:, :2, 2] = p1_[:, :2].squeeze(-1)
 
-        T2 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+        T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
         T2[:, :2, 2] = p2_[:, :2].squeeze(-1)
 
         Z1 = T1.bmm(S).bmm(kH1)
@@ -236,8 +234,8 @@ class show_patches_module:
         if run_separated:
             pt1_, pt2_, _, Hi1, Hi2 = ncc.get_inverse(pt1, pt2, Hs) 
                     
-            ima0 = self.transform(Image.open(img0)).type(torch.float16).to(self.device)
-            ima1 = self.transform(Image.open(img1)).type(torch.float16).to(self.device)
+            ima0 = self.transform(Image.open(img0)).type(torch.float16).to(device)
+            ima1 = self.transform(Image.open(img1)).type(torch.float16).to(device)
 
             patch1 = ncc.patchify(ima0, pt1_, Hi1, self.args['w'])
             patch2 = ncc.patchify(ima1, pt2_, Hi2, self.args['w'])
@@ -246,8 +244,8 @@ class show_patches_module:
             ncc.save_patch(patch2, save_prefix=new_img1_prefix, save_suffix=new_img_suffix, grid=self.args['grid'], stretch=self.args['stretch'])
 
         if run_overlay:
-            ima0 = self.transform_gray(Image.open(img0)).type(torch.float16).to(self.device)
-            ima1 = self.transform_gray(Image.open(img1)).type(torch.float16).to(self.device)
+            ima0 = self.transform_gray(Image.open(img0)).type(torch.float16).to(device)
+            ima1 = self.transform_gray(Image.open(img1)).type(torch.float16).to(device)
 
             self.go_save_diff_patches(ima0, ima1, pt1, pt2, Hs, self.args['w'], save_prefix=new_img01_prefix, stretch=self.args['stretch'], grid=self.args['grid'], save_suffix=new_img_suffix)
 

@@ -4,8 +4,7 @@ import cv2
 import numpy as np
 import torch
 
-from core import device as global_device
-from core import set_args
+from core import device, set_args
 
 
 class magsac_module:
@@ -25,12 +24,11 @@ class magsac_module:
         max_try (int): Number of retry attempts if the solver fails 
             due to numerical instability.
     """
-    def __init__(self, device=None, **args):       
+    def __init__(self, **args):       
         self.single_image = False    
         self.pipeliner = False  
         self.pass_through = False
         self.add_to_cache = True
-        self.device = device if device is not None else global_device
                                 
         self.args = {
             'id_more': '',
@@ -93,16 +91,16 @@ class magsac_module:
                         continue
                     
         if not isinstance(mask, np.ndarray):
-            mask = torch.zeros(pt1.shape[0], device=self.device, dtype=torch.bool)
+            mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
         else:
             if len(mask.shape) > 1: mask = mask.squeeze(1) > 0
-            mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
+            mask = torch.tensor(mask, device=device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask
         
         if F is not None:
-            F = torch.tensor(F, device=self.device)
+            F = torch.tensor(F, device=device)
         
         if self.args['mode'] == 'fundamental_matrix':
             return {'m_mask': mm, 'F': F}
