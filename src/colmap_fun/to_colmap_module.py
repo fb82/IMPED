@@ -37,7 +37,6 @@ class to_colmap_module:
         self.pipeliner = False
         self.pass_through = True
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
 
 
         self.args = {
@@ -56,6 +55,8 @@ class to_colmap_module:
             'sampling_offset': 0,
             'commit_every_pairs': 10,
         }
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
 
         if 'add_to_cache' in args:
             self.add_to_cache = args['add_to_cache']

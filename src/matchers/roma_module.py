@@ -29,7 +29,6 @@ class roma_module:
     def __init__(self, **args):
         torch.set_float32_matmul_precision('highest')
 
-        self.roma_model = roma_outdoor(device=self.device, **args)
         self.single_image = False
         self.pipeliner = False   
         self.pass_through = False
@@ -45,6 +44,8 @@ class roma_module:
             'patch_radius': 16,
             }
         self.device = torch.device(self.args.get('device', str(global_device)))
+        self.roma_model = roma_outdoor(device=self.device, **args)
+
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         

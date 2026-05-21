@@ -28,7 +28,6 @@ class patch_module:
         self.pipeliner = False        
         self.pass_through = False
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
 
                 
         self.args = {
@@ -45,6 +44,8 @@ class patch_module:
                 'pretrained': True,
                 },
             }
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
 

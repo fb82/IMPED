@@ -68,7 +68,6 @@ class from_colmap_module:
         self.pass_through = True
         self.add_to_cache = True
 
-        self.device = torch.device(self.args.get('device', str(global_device)))
         
         self.args = {
             'id_more': '',
@@ -76,7 +75,8 @@ class from_colmap_module:
             'only_keypoints': False,            
             'include_two_view_geometry': True,
         }
-        
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
         self.id_string, self.args = set_args('from_colmap' , args, self.args)

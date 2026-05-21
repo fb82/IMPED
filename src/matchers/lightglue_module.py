@@ -157,6 +157,8 @@ class deep_joined_module:
             'resize': 1024,           # this is default, set to None to disable
             'aliked_model': "aliked-n16rot",          # default is "aliked-n16"
             }
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
