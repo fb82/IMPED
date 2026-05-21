@@ -39,7 +39,6 @@ class blob_matching_module:
         self.pipeliner = False      
         self.pass_through = False
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
                                 
         self.args = {
             'id_more': '',
@@ -53,7 +52,7 @@ class blob_matching_module:
             'same_order': True,
             'device': 'cpu',
             }
-        
+        self.device = torch.device(self.args.get('device', str(global_device)))
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
         self.id_string, self.args = set_args('blob_matching', args, self.args)        

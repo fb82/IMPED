@@ -25,7 +25,6 @@ class romav2_module:
     def __init__(self, **args):
         torch.set_float32_matmul_precision('highest')
         from romav2.romav2 import RoMaV2
-        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.romav2_model = None
         self.single_image = False
@@ -38,6 +37,7 @@ class romav2_module:
             'max_keypoints': 2000,
             'patch_radius': 16,
             }
+        self.device = torch.device(self.args.get('device', str(global_device)))
         
         if 'add_to_cache' in args.keys(): 
             self.add_to_cache = args['add_to_cache']

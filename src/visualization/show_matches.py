@@ -32,7 +32,6 @@ class show_matches_module:
         self.pipeliner = False        
         self.pass_through = True
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.args = {
             'id_more': '',
@@ -47,6 +46,7 @@ class show_matches_module:
             'fig_max_size': 1280, 
             'params': [{'color': [1, 0, 0]}, {'color': [0, 1, 0]}],
         }
+        self.device = torch.device(self.args.get('device', str(global_device)))
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 

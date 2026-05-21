@@ -138,7 +138,6 @@ class r2d2_module:
         self.pipeliner = False
         self.pass_through = False
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.args = { 
             'id_more': '',
@@ -153,6 +152,7 @@ class r2d2_module:
             'repeatability-thr': 0.7,
             'model': 'r2d2/models/r2d2_WAF_N16.pt',
             }
+        self.device = torch.device(self.args.get('device', str(global_device)))
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                         
