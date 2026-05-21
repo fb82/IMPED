@@ -4,7 +4,7 @@ import torch
 from PIL import Image
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import device
+from core import device as global_device
 from ensemble import pipe_union
 
 from .colmap_ext import SIMPLE_RADIAL, coldb_ext
@@ -37,6 +37,8 @@ class to_colmap_module:
         self.pipeliner = False
         self.pass_through = True
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
 
         self.args = {
             'id_more': '',
@@ -202,26 +204,26 @@ class to_colmap_module:
 
         kp_old0 = self.db.get_keypoints(im_ids[0])
         if kp_old0 is None:
-            w_old0 = torch.zeros((0, 6), device=device)
-            kp_old0 = torch.zeros((0, 2), device=device)
+            w_old0 = torch.zeros((0, 6), device=self.device)
+            kp_old0 = torch.zeros((0, 2), device=self.device)
         else:
-            w_old0 = torch.tensor(kp_old0, device=device)
-            kp_old0 = torch.tensor(kp_old0[:, :2], device=device)
+            w_old0 = torch.tensor(kp_old0, device=self.device)
+            kp_old0 = torch.tensor(kp_old0[:, :2], device=self.device)
 
         kp_old1 = self.db.get_keypoints(im_ids[1])
         if kp_old1 is None:
-            w_old1 = torch.zeros((0, 6), device=device)
-            kp_old1 = torch.zeros((0, 2), device=device)
+            w_old1 = torch.zeros((0, 6), device=self.device)
+            kp_old1 = torch.zeros((0, 2), device=self.device)
         else:
-            w_old1 = torch.tensor(kp_old1, device=device)
-            kp_old1 = torch.tensor(kp_old1[:, :2], device=device)
+            w_old1 = torch.tensor(kp_old1, device=self.device)
+            kp_old1 = torch.tensor(kp_old1[:, :2], device=self.device)
 
 
-        kH_old0 = torch.zeros((kp_old0.shape[0], 3, 3), device=device)
-        kr_old0 = torch.full((kp_old0.shape[0], ), torch.inf, device=device)
+        kH_old0 = torch.zeros((kp_old0.shape[0], 3, 3), device=self.device)
+        kr_old0 = torch.full((kp_old0.shape[0], ), torch.inf, device=self.device)
 
-        kH_old1 = torch.zeros((kp_old1.shape[0], 3, 3), device=device)
-        kr_old1 = torch.full((kp_old1.shape[0], ), torch.inf, device=device)
+        kH_old1 = torch.zeros((kp_old1.shape[0], 3, 3), device=self.device)
+        kr_old1 = torch.full((kp_old1.shape[0], ), torch.inf, device=self.device)
 
 
         pipe_old['kp'] = [kp_old0, kp_old1]
@@ -331,7 +333,7 @@ def kpts_as_colmap(idx, **args):
     kp = args['kp'][idx]
     kH = args['kH'][idx]
      
-    t = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    t = torch.zeros((kp.shape[0], 3, 3), device=global_device)        
     t[:, [0, 1], 2] = -kH[:, [0, 1], 2]
     t[:, 0, 0] = 1
     t[:, 1, 1] = 1
@@ -339,7 +341,7 @@ def kpts_as_colmap(idx, **args):
      
     h = t.bmm(kH.inverse())
      
-    v = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    v = torch.zeros((kp.shape[0], 3, 3), device=global_device)        
     v[:, 2, :] = h[:, 2, :]
     v[:, 0, 0] = 1
     v[:, 1, 1] = 1

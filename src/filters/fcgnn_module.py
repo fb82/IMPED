@@ -5,7 +5,8 @@ import cv2
 import torch
 import wget
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 def download_fcgnn(weight_path='../weights/fcgnn'):
@@ -101,6 +102,7 @@ class fcgnn_module:
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                         
         self.args = {
             'id_more': '',
@@ -111,7 +113,7 @@ class fcgnn_module:
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
         self.id_string, self.args = set_args('fcgnn', args, self.args)     
-        self.fcgnn_refiner = self.fcgnn_custom().to(device)        
+        self.fcgnn_refiner = self.fcgnn_custom().to(self.device)        
 
 
     def get_id(self): 
@@ -126,8 +128,8 @@ class fcgnn_module:
         img1 = cv2.imread(args['img'][0], cv2.IMREAD_GRAYSCALE)
         img2 = cv2.imread(args['img'][1], cv2.IMREAD_GRAYSCALE)
         
-        img1_ = torch.tensor(img1.astype('float32') / 255.)[None, None].to(device)
-        img2_ = torch.tensor(img2.astype('float32') / 255.)[None, None].to(device)        
+        img1_ = torch.tensor(img1.astype('float32') / 255.)[None, None].to(self.device)
+        img2_ = torch.tensor(img2.astype('float32') / 255.)[None, None].to(self.device)        
         
         mi = args['m_idx']
         mm = args['m_mask']

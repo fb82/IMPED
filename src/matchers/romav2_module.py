@@ -2,7 +2,8 @@ import torch
 from PIL import Image
 from romav2 import RoMaV2
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 torch.set_float32_matmul_precision('highest')
 
@@ -24,6 +25,7 @@ class romav2_module:
     def __init__(self, **args):
         torch.set_float32_matmul_precision('highest')
         from romav2.romav2 import RoMaV2
+        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.romav2_model = None
         self.single_image = False
@@ -44,7 +46,7 @@ class romav2_module:
 
         # Load pretrained RoMaV2 model
         self.romav2_model = RoMaV2()
-        self.romav2_model = self.romav2_model.to(device)
+        self.romav2_model = self.romav2_model.to(self.device)
 
 
     def get_id(self): 
@@ -87,16 +89,16 @@ class romav2_module:
         kpts1, kpts2 = self.romav2_model.to_pixel_coordinates(matches, H_A, W_A, H_B, W_B)
         
         # Move to device
-        kps1 = kpts1.detach().to(device)
-        kps2 = kpts2.detach().to(device)
+        kps1 = kpts1.detach().to(self.device)
+        kps2 = kpts2.detach().to(self.device)
         
         # Create keypoint list
         kp = [kps1, kps2]
         
         # Create homography matrices for patch extraction
         kH = [
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
         ]
         
         kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
@@ -111,20 +113,20 @@ class romav2_module:
 
         # Create rotation arrays (NaN for no rotation info)
         kr = [
-            torch.full((kp[0].shape[0],), torch.nan, device=device), 
-            torch.full((kp[0].shape[0],), torch.nan, device=device)
+            torch.full((kp[0].shape[0],), torch.nan, device=self.device), 
+            torch.full((kp[0].shape[0],), torch.nan, device=self.device)
         ]
 
         # Create match indices
-        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=self.device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
 
         # Create match mask (all valid)
-        m_mask = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+        m_mask = torch.ones(m_idx.shape[0], device=self.device, dtype=torch.bool)
 
         # Use overlaps as match confidence/certainty scores
-        m_val = overlaps.detach().to(device)
+        m_val = overlaps.detach().to(self.device)
 
         return {
             'kp': kp, 

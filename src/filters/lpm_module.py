@@ -2,7 +2,8 @@
 import torch
 
 import lpm.LPM as lpm
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class lpm_module:
@@ -54,7 +55,7 @@ class lpm_module:
         pt2 = pt2_[mi[mm][:, 1]]
         
         mask = lpm.LPM_filter(pt1.to('cpu').numpy(), pt2.to('cpu').numpy())        
-        mask = torch.tensor(mask, device=device, dtype=torch.bool)
+        mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask

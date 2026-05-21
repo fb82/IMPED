@@ -6,7 +6,8 @@ import numpy as np
 import torch
 from PIL import Image
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 conf_path = os.path.split(__file__)[0]
 sys.path.append(os.path.join(conf_path, 'mast3r/dust3r'))
@@ -307,6 +308,7 @@ class dust3r_module:
         self.pipeliner = False   
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                                 
         self.args = {
             'id_more': '',
@@ -325,7 +327,7 @@ class dust3r_module:
         self.id_string, self.args = set_args('mast3r', args, self.args)        
 
         # you can put the path to a local checkpoint in model_name if needed
-        self.model = AsymmetricCroCo3DStereo.from_pretrained(self.args['model']).to(device)
+        self.model = AsymmetricCroCo3DStereo.from_pretrained(self.args['model']).to(self.device)
         
         
     def get_id(self): 
@@ -371,7 +373,7 @@ class dust3r_module:
         with torch.inference_mode(mode=(not self.args['3D_pose_refinement'])):        
             images = dust3r_load_images([image0, image1], size=self.args['resize'], verbose=False)
             pairs = dust3r_make_pairs(images, scene_graph='complete', prefilter=None, symmetrize=True)
-            output = dust3r_inference(pairs, self.model, device, batch_size=1, verbose=False)
+            output = dust3r_inference(pairs, self.model, self.device, batch_size=1, verbose=False)
     
             # at this stage, you have the raw dust3r predictions
             # view1, pred1 = output['view1'], output['pred1']
@@ -393,9 +395,9 @@ class dust3r_module:
             # if using GlobalAlignerMode.PairViewer, no need to run compute_global_alignment
         
             if not self.args['3D_pose_refinement']:
-                scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PairViewer, verbose=False)      
+                scene = global_aligner(output, device=self.device, mode=GlobalAlignerMode.PairViewer, verbose=False)      
             else:
-                scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer, verbose=False)
+                scene = global_aligner(output, device=self.device, mode=GlobalAlignerMode.PointCloudOptimizer, verbose=False)
 
             loss = scene.compute_global_alignment(init="mst", niter=self.args['niter'], schedule=self.args['schedule'], lr=self.args['lr'])
     
@@ -453,13 +455,13 @@ class dust3r_module:
         s1 = max(Image.open(image0).size)
         s2 = max(Image.open(image1).size)
         
-        kps1 = torch.tensor(kps1 * s1 / self.args['resize'], device=device, dtype=torch.float)
-        kps2 = torch.tensor(kps2 * s2 / self.args['resize'], device=device, dtype=torch.float)
+        kps1 = torch.tensor(kps1 * s1 / self.args['resize'], device=self.device, dtype=torch.float)
+        kps2 = torch.tensor(kps2 * s2 / self.args['resize'], device=self.device, dtype=torch.float)
         
         kp = [kps1, kps2]
         kH = [
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
-            torch.zeros((kp[0].shape[0], 3, 3), device=device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
+            torch.zeros((kp[0].shape[0], 3, 3), device=self.device),
             ]
         
         kH[0][:, [0, 1], 2] = -kp[0] / self.args['patch_radius']
@@ -472,12 +474,12 @@ class dust3r_module:
         kH[1][:, 1, 1] = 1 / self.args['patch_radius']
         kH[1][:, 2, 2] = 1
 
-        kr = [torch.full((kp[0].shape[0],), torch.nan, device=device), torch.full((kp[0].shape[0],), torch.nan, device=device)]        
+        kr = [torch.full((kp[0].shape[0],), torch.nan, device=self.device), torch.full((kp[0].shape[0],), torch.nan, device=self.device)]        
 
-        m_mask = torch.full((kps1.shape[0], ), 1, device=device, dtype=torch.bool)
-        m_val = torch.full((kps1.shape[0], ), 1, device=device, dtype=torch.bool)
+        m_mask = torch.full((kps1.shape[0], ), 1, device=self.device, dtype=torch.bool)
+        m_val = torch.full((kps1.shape[0], ), 1, device=self.device, dtype=torch.bool)
 
-        m_idx = torch.zeros((kp[0].shape[0], 2), device=device, dtype=torch.int)
+        m_idx = torch.zeros((kp[0].shape[0], 2), device=self.device, dtype=torch.int)
         m_idx[:, 0] = torch.arange(kp[0].shape[0])
         m_idx[:, 1] = torch.arange(kp[0].shape[0])
 

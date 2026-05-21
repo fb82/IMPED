@@ -2,7 +2,8 @@
 import kornia as K
 import torch
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class smnn_module:
@@ -26,6 +27,7 @@ class smnn_module:
         self.pipeliner = False      
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                                 
         self.args = {
             'id_more': '',
@@ -48,5 +50,5 @@ class smnn_module:
     def run(self, **args):
         val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
-        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=device, dtype=torch.bool)}
+        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)}
 

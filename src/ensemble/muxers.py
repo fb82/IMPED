@@ -5,9 +5,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from core import (
-    device,  #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
-)
+from core import device 
 
 from .sampling import pipe_union
 
@@ -130,6 +128,7 @@ class image_muxer_module:
         self.pipe_gather = pipe_gather
         self.add_to_cache = add_to_cache
         self.check_border = check_border
+        
 
         if pipeline is None: pipeline = []
         self.pipeline = pipeline

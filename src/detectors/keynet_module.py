@@ -1,7 +1,9 @@
 
 import kornia as K
+import torch
 
-from core import device, laf2homo, set_args
+from core import device as global_device
+from core import laf2homo, set_args
 
 
 class keynet_module:
@@ -24,6 +26,9 @@ class keynet_module:
         self.pipeliner = False   
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
+
                 
         self.args = {
             'id_more': '',
@@ -36,7 +41,7 @@ class keynet_module:
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         
         self.id_string, self.args = set_args('keynet', args, self.args)
-        self.detector = K.feature.KeyNetDetector(**self.args['params']).to(device)
+        self.detector = K.feature.KeyNetDetector(**self.args['params']).to(self.device)
 
 
     def get_id(self):
@@ -48,8 +53,8 @@ class keynet_module:
 
     
     def run(self, **args):
-        img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        img = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
         kp, kr = self.detector(img)
-        kp, kH = laf2homo(kp.detach().to(device).squeeze(0))
+        kp, kH = laf2homo(kp.detach().to(self.device).squeeze(0))
 
-        return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(device).squeeze(0)}
+        return {'kp': kp, 'kH': kH, 'kr': kr.detach().to(self.device).squeeze(0)}

@@ -112,6 +112,29 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
     finalize_pipeline(pipeline)
 
+
+
+def _move_to_device(x, target_device):
+    if torch.is_tensor(x):
+        return x.to(target_device)
+    if isinstance(x, list):
+        return [_move_to_device(v, target_device) for v in x]
+    if isinstance(x, dict):
+        return {k: _move_to_device(v, target_device) for k, v in x.items()}
+    return x
+
+
+def _align_pipe_data_device(pipe_data, target_device):
+    tensor_keys = [
+        'warp', 'kp', 'kH', 'kr', 'desc',
+        'm_idx', 'm_val', 'm_mask',
+        'F', 'E', 'H'
+    ]
+    for k in tensor_keys:
+        if k in pipe_data:
+            pipe_data[k] = _move_to_device(pipe_data[k], target_device)
+
+
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
     """
     Executes a sequence of image processing modules on a pair of images.
@@ -146,6 +169,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
         if pipe_name == '': pipe_name = '/'
         pipe_name_prev = pipe_name            
         pipe_name = pipe_name + pipe_id
+
+        
         
         if hasattr(pipe_module, 'single_image') and pipe_module.single_image:            
             for n in range(len(pipe_data['img'])):
@@ -155,6 +180,17 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 out_data, is_found = db.get(data_key)                    
                 if (not is_found) or force:
                     start_time = time.time()
+
+                    target_device = device
+
+                    if hasattr(pipe_module, 'args'):
+                        module_device = pipe_module.args.get('device', None)
+                        if module_device is not None:
+                            target_device = torch.device(module_device)
+                    _align_pipe_data_device(pipe_data, target_device)
+
+
+
                     out_data = pipe_module.run(idx=n, **pipe_data)
                     stop_time = time.time()
                     out_data['running_time'] = stop_time - start_time

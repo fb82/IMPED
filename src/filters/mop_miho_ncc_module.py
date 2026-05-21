@@ -6,7 +6,8 @@ from PIL import Image
 import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class mop_miho_ncc_module:
@@ -39,6 +40,7 @@ class mop_miho_ncc_module:
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                         
         self.args = {
             'id_more': '',
@@ -153,7 +155,7 @@ class mop_miho_ncc_module:
             
             # self.mop.attach_images(Image.open(args['img'][0]),Image.open(args['img'][1]))
 
-            lidx = torch.arange(mm.shape[0], device=device)[mm]
+            lidx = torch.arange(mm.shape[0], device=self.device)[mm]
             Hs_mop_, Hidx = self.mop.planar_clustering(pt1, pt2)
             
             # self.mop.show_clustering()
@@ -174,7 +176,7 @@ class mop_miho_ncc_module:
                 p2 = args['kp'][1][mi[lidx, 1]]
 
                 r = self.args['patch_radius']
-                S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(p1.shape[0], 1, 1)
+                S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=self.device).unsqueeze(0).repeat(p1.shape[0], 1, 1)
                                 
                 if self.args['miho']:                
                     Ha = torch.stack([Hs_mop_[i][0] for i in range(len(Hs_mop_))], dim=0)
@@ -186,16 +188,16 @@ class mop_miho_ncc_module:
                 H1 = Ha[Hidx[Hidx > -1]]
                 H2 = Hb[Hidx[Hidx > -1]]
                 
-                p1_ = H1.bmm(torch.cat((p1, torch.ones((p1.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+                p1_ = H1.bmm(torch.cat((p1, torch.ones((p1.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
                 p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
 
-                p2_ = H2.bmm(torch.cat((p2, torch.ones((p2.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+                p2_ = H2.bmm(torch.cat((p2, torch.ones((p2.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
                 p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
 
-                T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+                T1 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
                 T1[:, :2, 2] = -p1_[:, :2].squeeze(-1)
 
-                T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+                T2 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
                 T2[:, :2, 2] = -p2_[:, :2].squeeze(-1)
 
                 kH0[mi[lidx, 0]] = S.bmm(T1).bmm(H1)
@@ -213,13 +215,13 @@ class mop_miho_ncc_module:
             im1 = Image.open(args['img'][0])
             im2 = Image.open(args['img'][1])
     
-            im1 = self.transform(im1).type(torch.float16).to(device)
-            im2 = self.transform(im2).type(torch.float16).to(device)               
+            im1 = self.transform(im1).type(torch.float16).to(self.device)
+            im2 = self.transform(im2).type(torch.float16).to(self.device)               
                     
             mi = args['m_idx']                     
             if self.mop is None: mm = args['m_mask']
 
-            lidx = torch.arange(mm.shape[0], device=device)[mm]
+            lidx = torch.arange(mm.shape[0], device=self.device)[mm]
             l = lidx.shape[0]
                     
             pt1_base = args['kp'][0][mi[lidx, 0]]
@@ -230,12 +232,12 @@ class mop_miho_ncc_module:
 
             pt1_ = pt1_base
             pt2_ = pt2_base
-            Hs_ = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
-            T_ = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
-            val_ = torch.full((l, ), -np.inf, device=device)
+            Hs_ = torch.eye(3, device=self.device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            T_ = torch.eye(3, device=self.device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            val_ = torch.full((l, ), -np.inf, device=self.device)
                         
         if ('eye' in self.args['ncc_todo']) and mm.sum():
-            Hs_in = torch.eye(3, device=device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
+            Hs_in = torch.eye(3, device=self.device).repeat(l * 2, 1).reshape(l, 2, 3, 3)
             
             pt1_eye, pt2_eye, Hs_eye, val_eye, T_eye = ncc.refinement_norm_corr_alternate(im1, im2, pt1_base, pt2_base, Hs_in, **self.args['ncc_cfg'], img_patches=False)   
             replace_idx = torch.argwhere((torch.cat((val_.unsqueeze(0),val_eye.unsqueeze(0)), dim=0)).max(dim=0)[1] == 1)
@@ -247,21 +249,21 @@ class mop_miho_ncc_module:
                         
         if ('laf' in self.args['ncc_todo']) and mm.sum():
             r = self.args['patch_radius']
-            S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=device).unsqueeze(0).repeat(l, 1, 1)
+            S = torch.tensor([[r, 0, 0],[0, r, 0],[0, 0, 1.]], device=self.device).unsqueeze(0).repeat(l, 1, 1)
 
             kH1 = args['kH'][0][mi[lidx, 0]]
             kH2 = args['kH'][1][mi[lidx, 1]]
 
-            p1_ = kH1.bmm(torch.cat((pt1_base, torch.ones((pt1_base.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p1_ = kH1.bmm(torch.cat((pt1_base, torch.ones((pt1_base.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
             p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
 
-            p2_ = kH2.bmm(torch.cat((pt2_base, torch.ones((pt2_base.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p2_ = kH2.bmm(torch.cat((pt2_base, torch.ones((pt2_base.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
             p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
 
-            T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+            T1 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
             T1[:, :2, 2] = p1_[:, :2].squeeze(-1)
 
-            T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+            T2 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
             T2[:, :2, 2] = p2_[:, :2].squeeze(-1)
 
             Z1 = T1.bmm(S).bmm(kH1)
@@ -295,7 +297,7 @@ class mop_miho_ncc_module:
             T_[replace_idx] = T_laf.reshape(T_laf.shape[0] // 2, 2, 3, 3)[replace_idx]
             
         if (self.mop is not None) and ('mop_miho' in self.args['ncc_todo']) and mm.sum():                        
-            Hs_in = torch.zeros((l, 2, 3, 3), device=device)
+            Hs_in = torch.zeros((l, 2, 3, 3), device=self.device)
                         
             Hidx_ = Hidx[Hidx > -1]
             for i in torch.arange(l):                           
@@ -316,26 +318,26 @@ class mop_miho_ncc_module:
                 'kr': args['kr'],
                 'kH': args['kH'],
                 'm_idx': args['m_idx'][~mm],
-                'm_val': torch.full(((~mm).sum(),), np.nan, device=device, dtype=torch.bool),
+                'm_val': torch.full(((~mm).sum(),), np.nan, device=self.device, dtype=torch.bool),
                 'm_mask': mm[~mm],
                 }
     
             r = self.args['patch_radius']
-            S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=device).unsqueeze(0).repeat(mm.sum(), 1, 1)
+            S = torch.tensor([[1/r, 0, 0],[0, 1/r, 0],[0, 0, 1]], device=self.device).unsqueeze(0).repeat(mm.sum(), 1, 1)
                             
             H1 = Hs_[:, 0]
             H2 = Hs_[:, 1]
                                     
-            p1_ = H1.bmm(torch.cat((pt1_, torch.ones((pt1_.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p1_ = H1.bmm(torch.cat((pt1_, torch.ones((pt1_.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
             p1_ = p1_ / p1_[:, 2].unsqueeze(-1)
     
-            p2_ = H2.bmm(torch.cat((pt2_, torch.ones((pt2_.shape[0], 1), device=device)), dim=1).unsqueeze(-1))
+            p2_ = H2.bmm(torch.cat((pt2_, torch.ones((pt2_.shape[0], 1), device=self.device)), dim=1).unsqueeze(-1))
             p2_ = p2_ / p2_[:, 2].unsqueeze(-1)
     
-            T1 = torch.eye(3, device=device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
+            T1 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p1_.shape[0], 1, 1)
             T1[:, :2, 2] = -p1_[:, :2].squeeze(-1)
     
-            T2 = torch.eye(3, device=device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
+            T2 = torch.eye(3, device=self.device).unsqueeze(0).repeat(p2_.shape[0], 1, 1)
             T2[:, :2, 2] = -p2_[:, :2].squeeze(-1)
     
             Hs1 = S.bmm(T1).bmm(H1)
@@ -345,7 +347,7 @@ class mop_miho_ncc_module:
                 'kp': [pt1_, pt2_],
                 'kr': [kr1, kr2],
                 'kH': [Hs1, Hs2],
-                'm_idx': torch.arange(pt1_.shape[0], device=device).unsqueeze(1).repeat(1, 2),
+                'm_idx': torch.arange(pt1_.shape[0], device=self.device).unsqueeze(1).repeat(1, 2),
                 'm_val': val_,
                 'm_mask': mm[mm],
                 }

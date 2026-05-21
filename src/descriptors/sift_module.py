@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from kornia_moons.feature import opencv_kpts_from_laf
 
-from core import device, homo2laf, set_args
+from core import device as global_device
+from core import homo2laf, set_args
 
 
 class sift_module:
@@ -27,7 +28,8 @@ class sift_module:
         self.pipeliner = False        
         self.pass_through = False
         self.add_to_cache = True
-                
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
         self.args = {
             'id_more': '',
             'rootsift': True,
@@ -64,6 +66,6 @@ class sift_module:
             desc /= desc.sum(axis=1, keepdims=True) + 1e-8
             desc = np.sqrt(desc)
             
-        desc = torch.tensor(desc, device=device, dtype=torch.float)
+        desc = torch.tensor(desc, device=self.device, dtype=torch.float)
                     
         return {'desc': desc}

@@ -3,7 +3,8 @@ import numpy as np
 import poselib
 import torch
 
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class poselib_module:
@@ -28,6 +29,7 @@ class poselib_module:
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                         
         self.args = {
             'id_more': '',
@@ -87,15 +89,15 @@ class poselib_module:
             mask = info['inliers']
 
         if (not isinstance(mask, list)) or (mask == []):
-            mask = torch.zeros(pt1.shape[0], device=device, dtype=torch.bool)
+            mask = torch.zeros(pt1.shape[0], device=self.device, dtype=torch.bool)
         else:
-            mask = torch.tensor(mask, device=device, dtype=torch.bool)
+            mask = torch.tensor(mask, device=self.device, dtype=torch.bool)
  
         aux = mm.clone()
         mm[aux] = mask
         
         if F is not None:
-            F = torch.tensor(F, device=device)
+            F = torch.tensor(F, device=self.device)
         
         if self.args['mode'] == 'fundamental_matrix':
             return {'m_mask': mm, 'F': F}

@@ -6,7 +6,8 @@ import torch
 
 import plot.utils as viz_utils
 import plot.viz2d as viz
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 
 class show_matches_module:
@@ -31,6 +32,7 @@ class show_matches_module:
         self.pipeliner = False        
         self.pass_through = True
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.args = {
             'id_more': '',
@@ -95,7 +97,7 @@ class show_matches_module:
                     params = self.args['params']
 
                     m_mask = args['m_mask']
-                    m_sum = torch.tensor([(m_mask == i).sum().item() for i in mask_idx], device=device)
+                    m_sum = torch.tensor([(m_mask == i).sum().item() for i in mask_idx], device=self.device)
                     idx = torch.argsort(m_sum, descending=True)
 
                     mask_idx = [mask_idx[i] for i in idx]

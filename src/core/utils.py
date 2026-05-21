@@ -9,6 +9,15 @@ from imc import _EPS
 
 
 def set_args(id_string, args, args_):
+
+    if 'device' not in args_:
+        try:
+            from .device import device as core_device
+        except Exception:
+            core_device = 'cpu'
+        
+        args_['device'] = core_device
+
         
     if args:
         for k, v in args.items():

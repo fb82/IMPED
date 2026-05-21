@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from kornia_moons.feature import laf_from_opencv_kpts
 
-from core import device, laf2homo, set_args
+from core import device as global_device
+from core import homo2laf, laf2homo, set_args
 
 
 class dog_module:
@@ -28,6 +29,8 @@ class dog_module:
         self.pipeliner = False                
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
 
         self.args = {
             'id_more': '',
@@ -63,9 +66,9 @@ class dog_module:
 
         kr = []
         for i in range(len(kp)): kr.append(kp[i].response)
-        kr = torch.tensor(kr, device=device, dtype=torch.float)
+        kr = torch.tensor(kr, device=self.device, dtype=torch.float)
                 
-        kp = laf_from_opencv_kpts(kp, device=device)
-        kp, kH = laf2homo(kp.detach().to(device).squeeze(0))
+        kp = laf_from_opencv_kpts(kp, device=self.device)
+        kp, kH = laf2homo(kp.detach().to(self.device).squeeze(0))
     
         return {'kp': kp, 'kH': kH, 'kr': kr}

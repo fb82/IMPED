@@ -6,6 +6,7 @@ import gdown
 import numpy as np
 import torch
 
+from core import device as global_device
 from core import device, set_args
 
 
@@ -71,6 +72,7 @@ class oanet_module:
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                         
         self.args = {
             'id_more': '',
@@ -114,7 +116,7 @@ class oanet_module:
         if l > 1:
             _, _, _, _, mask = self.lm.infer(pt1, pt2)
             
-            mask_aux = torch.tensor(mask, device=device)         
+            mask_aux = torch.tensor(mask, device=self.device)         
             aux = mm.clone()
             mm[aux] = mask_aux
         

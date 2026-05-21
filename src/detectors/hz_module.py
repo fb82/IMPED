@@ -28,6 +28,7 @@ class hz_module:
         self.pipeliner = False        
         self.pass_through = False
         self.add_to_cache = True
+        
 
         self.args = {
             'id_more': '',

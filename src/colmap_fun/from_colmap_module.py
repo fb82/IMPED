@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 
-from core import device
+from core import device as global_device
 
 #pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
 from .colmap_ext import coldb_ext
@@ -28,11 +28,11 @@ def kpts_from_colmap(kp):
     """
     w_ = kp[:, 2:]
     kp = kp[:, :2]
-    w = torch.zeros((kp.shape[0], 3, 3), device=device)
+    w = torch.zeros((kp.shape[0], 3, 3), device=global_device)
     w[:, 2, 2] = 1
     w[:, :2, :2] = w_.reshape(-1, 2, 2)
          
-    t = torch.zeros((kp.shape[0], 3, 3), device=device)        
+    t = torch.zeros((kp.shape[0], 3, 3), device=global_device)        
     t[:, [0, 1], 2] = kp
     t[:, 0, 0] = 1
     t[:, 1, 1] = 1
@@ -40,7 +40,7 @@ def kpts_from_colmap(kp):
      
     kH = t.bmm(w).inverse()
      
-    kr = torch.full((kp.shape[0], ), np.inf, device=device)    
+    kr = torch.full((kp.shape[0], ), np.inf, device=global_device)    
              
     return kp, kH, kr
 
@@ -67,6 +67,8 @@ class from_colmap_module:
         self.pipeliner = False        
         self.pass_through = True
         self.add_to_cache = True
+
+        self.device = torch.device(self.args.get('device', str(global_device)))
         
         self.args = {
             'id_more': '',
@@ -99,12 +101,12 @@ class from_colmap_module:
             im_id = self.db.get_image_id(img)
 
             if im_id is None:
-                kp = torch.zeros((0, 2), device=device)
-                kr = torch.zeros((0, ), device=device)
-                kH = torch.zeros((0, 3, 3), device=device)
+                kp = torch.zeros((0, 2), device=self.device)
+                kr = torch.zeros((0, ), device=self.device)
+                kH = torch.zeros((0, 3, 3), device=self.device)
             else:                
                 kp_ = self.db.get_keypoints(im_id)
-                kp, kH, kr = kpts_from_colmap(torch.tensor(kp_, device=device))
+                kp, kH, kr = kpts_from_colmap(torch.tensor(kp_, device=self.device))
 
             return {'kp': kp, 'kH': kH, 'kr': kr}
         
@@ -116,24 +118,24 @@ class from_colmap_module:
             im0_id = self.db.get_image_id(img0)
 
             if im0_id is None:
-                kp0 = torch.zeros((0, 2), device=device)
-                kr0 = torch.zeros((0, ), device=device)
-                kH0 = torch.zeros((0, 3, 3), device=device)
+                kp0 = torch.zeros((0, 2), device=self.device)
+                kr0 = torch.zeros((0, ), device=self.device)
+                kH0 = torch.zeros((0, 3, 3), device=self.device)
             else:                
                 kp0_ = self.db.get_keypoints(im0_id)
-                kp0, kH0, kr0 = kpts_from_colmap(torch.tensor(kp0_, device=device))
+                kp0, kH0, kr0 = kpts_from_colmap(torch.tensor(kp0_, device=self.device))
 
             im1 = args['img'][1]            
             _, img1 = os.path.split(im1)           
             im1_id = self.db.get_image_id(img1)
 
             if im1_id is None:
-                kp1 = torch.zeros((0, 2), device=device)
-                kr1 = torch.zeros((0, ), device=device)
-                kH1 = torch.zeros((0, 3, 3), device=device)
+                kp1 = torch.zeros((0, 2), device=self.device)
+                kr1 = torch.zeros((0, ), device=self.device)
+                kH1 = torch.zeros((0, 3, 3), device=self.device)
             else:                
                 kp1_ = self.db.get_keypoints(im1_id)
-                kp1, kH1, kr1 = kpts_from_colmap(torch.tensor(kp1_, device=device))
+                kp1, kH1, kr1 = kpts_from_colmap(torch.tensor(kp1_, device=self.device))
 
             kp = [kp0, kp1]
             kH = [kH0, kH1]
@@ -147,25 +149,25 @@ class from_colmap_module:
                 m_idx = self.db.get_matches(im0_id, im1_id)
                 
                 if m_idx is not None:
-                    m_idx = torch.tensor(np.copy(m_idx), device=device, dtype=torch.int)
+                    m_idx = torch.tensor(np.copy(m_idx), device=self.device, dtype=torch.int)
                     
                     if not self.args['include_two_view_geometry']:
-                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                        m_mask = torch.full((m_idx.shape[0],), 1, device=self.device, dtype=torch.bool)
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=self.device)
                     
                     else:
                         s_idx, models = self.db.get_two_view_geometry(im0_id, im1_id)
                     
                         if s_idx is None:
-                            m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
+                            m_mask = torch.full((m_idx.shape[0],), 1, device=self.device, dtype=torch.bool)
                         else:
-                            s_idx = torch.tensor(np.copy(s_idx), device=device, dtype=torch.int)
+                            s_idx = torch.tensor(np.copy(s_idx), device=self.device, dtype=torch.int)
                             
                             if len(models.keys()) == 1:
                                 for model in ['H', 'F', 'E']:
-                                    if model in models: out_data[model] = torch.tensor(models[model], device=device)
+                                    if model in models: out_data[model] = torch.tensor(models[model], device=self.device)
                             
-                            m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
+                            m_mask = torch.zeros(m_idx.shape[0], device=self.device, dtype=torch.bool)
                             
                             idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
                             m_idx = m_idx[idx]
@@ -189,7 +191,7 @@ class from_colmap_module:
                                 else:
                                     q1 = q1 + 1
 
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
+                        m_val = torch.full((m_idx.shape[0],), np.inf, device=self.device)
                                                     
                     out_data['m_idx'] = m_idx
                     out_data['m_val'] = m_val

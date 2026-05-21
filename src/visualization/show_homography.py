@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 import torch
 
-from core import apply_homo, device, set_args
+from core import device as global_device    
+from core import apply_homo, set_args
 
 
 class show_homography_module:
@@ -30,6 +31,7 @@ class show_homography_module:
         self.pipeliner = False        
         self.pass_through = True
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
 
         self.args = {
             'id_more': '',
@@ -122,24 +124,24 @@ class show_homography_module:
         ima0 = cv2.imread(img0, cv2.IMREAD_UNCHANGED)
         ima1 = cv2.imread(img1, cv2.IMREAD_UNCHANGED)
 
-        bts0 = torch.tensor([[0.0, 0], [0, ima0.shape[0]], [ima0.shape[1], 0],  [ima0.shape[1], ima0.shape[0]]], device=device, dtype=torch.float)
-        bts0_offset = (torch.tensor([ima0.shape[1], ima0.shape[0]], device=device) * exp_len / 2).round()
-        bts0_proj = bts0 + bts0_offset * torch.tensor([[-1.0, -1], [-1, 1], [1, -1], [1, 1]], device=device)
+        bts0 = torch.tensor([[0.0, 0], [0, ima0.shape[0]], [ima0.shape[1], 0],  [ima0.shape[1], ima0.shape[0]]], device=self.device, dtype=torch.float)
+        bts0_offset = (torch.tensor([ima0.shape[1], ima0.shape[0]], device=self.device) * exp_len / 2).round()
+        bts0_proj = bts0 + bts0_offset * torch.tensor([[-1.0, -1], [-1, 1], [1, -1], [1, 1]], device=self.device)
 
-        bts1 = torch.tensor([[0.0, 0], [0, ima1.shape[0]], [ima1.shape[1], 0],  [ima1.shape[1], ima1.shape[0]]], device=device, dtype=torch.float)
+        bts1 = torch.tensor([[0.0, 0], [0, ima1.shape[0]], [ima1.shape[1], 0],  [ima1.shape[1], ima1.shape[0]]], device=self.device, dtype=torch.float)
         bts1_proj = apply_homo(bts1, H.inverse().to(torch.float)).round()
 
         bts_all = torch.cat((bts0, bts1_proj), axis=0)
         bts_small = [max(min(bts_all[:, 0]), min(bts0_proj[:, 0])).item(), max(min(bts_all[:, 1]), min(bts0_proj[:, 1])).item()]
         bts_big = [min(max(bts_all[:, 0]), max(bts0_proj[:, 0])).item(), min(max(bts_all[:, 1]), max(bts0_proj[:, 1])).item()]
 
-        bts_orig = torch.tensor(bts_small, device=device)
-        bts_size = torch.tensor(bts_big, device=device) - bts_orig 
+        bts_orig = torch.tensor(bts_small, device=self.device)
+        bts_size = torch.tensor(bts_big, device=self.device) - bts_orig 
 
         s_rev = max(bts_size / max_sz)
         s = 1.0 if s_rev <= 1 else 1/s_rev
         
-        T = torch.eye(3, device=device, dtype=H.dtype)
+        T = torch.eye(3, device=self.device, dtype=H.dtype)
         T[:2, 2] = -s * bts_orig
         T[0, 0] = s
         T[1, 1] = s

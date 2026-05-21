@@ -4,10 +4,7 @@ import cv2
 import numpy as np
 import torch
 
-from core import (
-    device,  #, pipe_color, show_progress, go_iter, run_pipeline, run_pairs, finalize_pipeline, image_pairs, laf2homo, homo2laf, apply_homo, change_patch_homo, decompose_H_other, decompose_H, compressed_pickle, decompress_pickle, qvec2rotmat, vector_norm, quaternion_matrix, affine_matrix_from_points, set_args, enable_quadtree
-)
-
+from core import device as global_device
 
 def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=256, shared=1/3, interpolation=cv2.INTER_AREA, force=False):
     """
@@ -79,11 +76,11 @@ def to_pyramid(in_image, cache_path='pyramid_cache', split_max=3, block_sz_max=2
         for i, r in enumerate(row):
             for j, c in enumerate(col):
                 new_img = img[r[0]:r[1], c[0]:c[1]]
-                T = torch.eye(3, device=device, dtype=torch.float)
+                T = torch.eye(3, device=global_device, dtype=torch.float)
                 T[0, 2] = -c[0]
                 T[1, 2] = -r[0]
 
-                S = torch.eye(3, device=device, dtype=torch.float)
+                S = torch.eye(3, device=global_device, dtype=torch.float)
                 if scale != 1.0:
                     sc = round(scale * (c[1] - c[0]))
                     sr = round(scale * (r[1] - r[0]))

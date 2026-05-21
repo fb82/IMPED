@@ -1,7 +1,9 @@
 
 import kornia as K
 
-from core import device, homo2laf, set_args
+from core import device as global_device
+from core import homo2laf, set_args
+import torch
 
 
 class deep_descriptor_module:
@@ -23,6 +25,8 @@ class deep_descriptor_module:
         self.pipeliner = False        
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
+
                 
         self.args = {
             'id_more': '',
@@ -39,12 +43,12 @@ class deep_descriptor_module:
         
         if self.args['descriptor'] == 'hardnet':
             base_string = 'hardnet'
-            desc = K.feature.HardNet(**self.args['desc_params']).to(device)
+            desc = K.feature.HardNet(**self.args['desc_params']).to(self.device)
         if self.args['descriptor'] == 'sosnet':
-            desc = K.feature.SOSNet(**self.args['desc_params']).to(device)
+            desc = K.feature.SOSNet(**self.args['desc_params']).to(self.device)
             base_string = 'sosnet'
         if self.args['descriptor'] == 'hynet':
-            desc = K.feature.HyNet(**self.args['desc_params']).to(device)
+            desc = K.feature.HyNet(**self.args['desc_params']).to(self.device)
             base_string = 'hynet'
 
         self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.args['patch_params'])
@@ -60,7 +64,7 @@ class deep_descriptor_module:
 
 
     def run(self, **args):    
-        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=device).unsqueeze(0)
+        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)

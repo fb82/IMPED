@@ -7,7 +7,8 @@ import torch
 from PIL import Image
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import apply_homo, device, set_args
+from core import device as global_device
+from core import apply_homo, set_args
 from visualization import colorize_plane
 
 from .metrics import (
@@ -45,6 +46,8 @@ class pairwise_benchmark_module:
         self.pipeliner = False        
         self.pass_through = True
         self.add_to_cache = True
+
+        self.device = torch.device(self.args.get('device', str(global_device)))
         
         self.args = { 
             'id_more': '',
@@ -112,7 +115,7 @@ class pairwise_benchmark_module:
         F_error_1 = []
         F_error_2 = []
         n = 0
-        inliers = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+        inliers = torch.zeros(len(self.args['err_th_list']), device=self.device, dtype=torch.int)
         auc = []
         acc = []
 
@@ -179,7 +182,7 @@ class pairwise_benchmark_module:
         H_error_2 = []
         n = 0
         v = 0
-        inliers = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+        inliers = torch.zeros(len(self.args['err_th_list']), device=self.device, dtype=torch.int)
         auc = []
         acc = []
 
@@ -252,7 +255,7 @@ class pairwise_benchmark_module:
         R_error = []
         t_error = []
         n = 0
-        inliers = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+        inliers = torch.zeros(len(self.args['err_th_list']), device=self.device, dtype=torch.int)
         auc = []
         acc = []
 
@@ -422,14 +425,14 @@ class pairwise_benchmark_module:
         
             nn = pts1.shape[0]
 
-            inl_sum = torch.zeros(len(err_th_list), device=device, dtype=torch.int)
+            inl_sum = torch.zeros(len(err_th_list), device=self.device, dtype=torch.int)
         
             if nn < 8:
                 F = None
             else:
                 if 'F' in args:
-                    s1 = torch.eye(3, device=device)
-                    s2 = torch.eye(3, device=device)
+                    s1 = torch.eye(3, device=self.device)
+                    s2 = torch.eye(3, device=self.device)
 
                     s1[0, 0] = 1 / scales[0, 0]
                     s1[1, 1] = 1 / scales[0, 1]
@@ -441,19 +444,19 @@ class pairwise_benchmark_module:
                     F = F / F[2, 2]
                 else:
                     F = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
-                    if F is not None: F = torch.tensor(F, device=device)
+                    if F is not None: F = torch.tensor(F, device=self.device)
         
             if nn > 0:
-                F_gt = torch.tensor(K2.T, device=device, dtype=torch.float64).inverse() @ \
+                F_gt = torch.tensor(K2.T, device=self.device, dtype=torch.float64).inverse() @ \
                        torch.tensor([[0, -t_gt[2], t_gt[1]],
                                     [t_gt[2], 0, -t_gt[0]],
-                                    [-t_gt[1], t_gt[0], 0]], device=device) @ \
-                       torch.tensor(R_gt, device=device) @ \
-                       torch.tensor(K1, device=device, dtype=torch.float64).inverse()
+                                    [-t_gt[1], t_gt[0], 0]], device=self.device) @ \
+                       torch.tensor(R_gt, device=self.device) @ \
+                       torch.tensor(K1, device=self.device, dtype=torch.float64).inverse()
                 F_gt = F_gt / F_gt.sum()
         
-                pt1_ = torch.vstack((torch.tensor(pts1.T, device=device), torch.ones((1, nn), device=device)))
-                pt2_ = torch.vstack((torch.tensor(pts2.T, device=device), torch.ones((1, nn), device=device)))
+                pt1_ = torch.vstack((torch.tensor(pts1.T, device=self.device), torch.ones((1, nn), device=self.device)))
+                pt2_ = torch.vstack((torch.tensor(pts2.T, device=self.device), torch.ones((1, nn), device=self.device)))
         
                 l1_ = F_gt @ pt1_
                 d1 = pt2_.permute(1,0).unsqueeze(-2).bmm(l1_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l1_[:2]**2).sum(0).sqrt()
@@ -462,7 +465,7 @@ class pairwise_benchmark_module:
                 d2 = pt1_.permute(1,0).unsqueeze(-2).bmm(l2_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l2_[:2]**2).sum(0).sqrt()
         
                 epi_max_err = torch.maximum(d1, d2)
-                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=device).unsqueeze(0)).sum(dim=0).type(torch.int)        
+                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=self.device).unsqueeze(0)).sum(dim=0).type(torch.int)        
             
             if F is None:
                 F_error_1 = np.inf
@@ -563,14 +566,14 @@ class pairwise_benchmark_module:
         
             nn = pts1.shape[0]
 
-            inl_sum = torch.zeros(len(err_th_list), device=device, dtype=torch.int)
+            inl_sum = torch.zeros(len(err_th_list), device=self.device, dtype=torch.int)
         
             if nn < 8:
                 Rt_ = None
             else:
                 if 'F' in args:
-                    s1 = torch.eye(3, device=device)
-                    s2 = torch.eye(3, device=device)
+                    s1 = torch.eye(3, device=self.device)
+                    s2 = torch.eye(3, device=self.device)
 
                     s1[0, 0] = 1 / scales[0, 0]
                     s1[1, 1] = 1 / scales[0, 1]
@@ -591,16 +594,16 @@ class pairwise_benchmark_module:
                     Rt_ = cv2.decomposeEssentialMat(E)
         
             if nn > 0:
-                F_gt = torch.tensor(K2.T, device=device, dtype=torch.float64).inverse() @ \
+                F_gt = torch.tensor(K2.T, device=self.device, dtype=torch.float64).inverse() @ \
                        torch.tensor([[0, -t_gt[2], t_gt[1]],
                                     [t_gt[2], 0, -t_gt[0]],
-                                    [-t_gt[1], t_gt[0], 0]], device=device) @ \
-                       torch.tensor(R_gt, device=device) @ \
-                       torch.tensor(K1, device=device, dtype=torch.float64).inverse()
+                                    [-t_gt[1], t_gt[0], 0]], device=self.device) @ \
+                       torch.tensor(R_gt, device=self.device) @ \
+                       torch.tensor(K1, device=self.device, dtype=torch.float64).inverse()
                 F_gt = F_gt / F_gt.sum()
         
-                pt1_ = torch.vstack((torch.tensor(pts1.T, device=device), torch.ones((1, nn), device=device)))
-                pt2_ = torch.vstack((torch.tensor(pts2.T, device=device), torch.ones((1, nn), device=device)))
+                pt1_ = torch.vstack((torch.tensor(pts1.T, device=self.device), torch.ones((1, nn), device=self.device)))
+                pt2_ = torch.vstack((torch.tensor(pts2.T, device=self.device), torch.ones((1, nn), device=self.device)))
         
                 l1_ = F_gt @ pt1_
                 d1 = pt2_.permute(1,0).unsqueeze(-2).bmm(l1_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l1_[:2]**2).sum(0).sqrt()
@@ -609,7 +612,7 @@ class pairwise_benchmark_module:
                 d2 = pt1_.permute(1,0).unsqueeze(-2).bmm(l2_.permute(1,0).unsqueeze(-1)).squeeze().abs() / (l2_[:2]**2).sum(0).sqrt()
         
                 epi_max_err = torch.maximum(d1, d2)
-                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=device).unsqueeze(0)).sum(dim=0).type(torch.int)        
+                inl_sum = (epi_max_err.unsqueeze(-1) < torch.tensor(err_th_list, device=self.device).unsqueeze(0)).sum(dim=0).type(torch.int)        
             
             if Rt_ is None:
                 R_error = np.inf
@@ -760,7 +763,7 @@ class pairwise_benchmark_module:
         use_scale = self.args['gt']['use_scale']
         
         if gt is not None:
-            H_gt = torch.tensor(gt['H'], device=device)
+            H_gt = torch.tensor(gt['H'], device=self.device)
               
             mm = args['m_idx'][args['m_mask']]
            
@@ -782,15 +785,15 @@ class pairwise_benchmark_module:
                 H = None
             else:
                 if 'H' not in args:                
-                    H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=device)
+                    H = torch.tensor(cv2.findHomography(pts1, pts2, 0)[0], device=self.device)
                 else:
                     H = args['H']
         
             if nn > 0:
                 H_gt_inv = H_gt.inverse()
                 
-                pts1 = torch.tensor(pts1, device=device)
-                pts2 = torch.tensor(pts2, device=device)
+                pts1 = torch.tensor(pts1, device=self.device)
+                pts2 = torch.tensor(pts2, device=self.device)
                  
                 pts1_reproj = apply_homo(pts1, H_gt.to(torch.float))
                 d1 = ((pts2 - pts1_reproj)**2).sum(1).sqrt()
@@ -798,22 +801,22 @@ class pairwise_benchmark_module:
                 pts2_reproj = apply_homo(pts2, H_gt_inv.to(torch.float))
                 d2 = ((pts1 - pts2_reproj)**2).sum(1).sqrt()
                  
-                valid_matches = torch.ones(nn, device=device, dtype=torch.bool)                            
+                valid_matches = torch.ones(nn, device=self.device, dtype=torch.bool)                            
                 valid_matches = valid_matches & ~invalid_matches(gt['mask1'], gt['full_mask2'], pts1, pts2, rad)          
                 valid_matches = valid_matches & ~invalid_matches(gt['mask2'], gt['full_mask1'], pts2, pts1, rad)
                                                      
                 reproj_max_err_ = torch.maximum(d1, d2)                                
                 reproj_max_err = reproj_max_err_[valid_matches]
-                inl_sum = (reproj_max_err.unsqueeze(-1) < torch.tensor(self.args['err_th_list'], device=device).unsqueeze(0)).sum(dim=0).type(torch.int)
+                inl_sum = (reproj_max_err.unsqueeze(-1) < torch.tensor(self.args['err_th_list'], device=self.device).unsqueeze(0)).sum(dim=0).type(torch.int)
                 valid_sum = valid_matches.sum()
             else:                                                    
                 H = None
-                inl_sum = torch.zeros(len(self.args['err_th_list']), device=device, dtype=torch.int)
+                inl_sum = torch.zeros(len(self.args['err_th_list']), device=self.device, dtype=torch.int)
                 valid_sum = 0
 
             if H is not None:
-                heat1 = homography_error_heat_map(H_gt, H, torch.tensor(gt['full_mask1'], device=device))
-                heat2 = homography_error_heat_map(H_gt_inv, H.inverse(), torch.tensor(gt['full_mask2'], device=device))
+                heat1 = homography_error_heat_map(H_gt, H, torch.tensor(gt['full_mask1'], device=self.device))
+                heat2 = homography_error_heat_map(H_gt_inv, H.inverse(), torch.tensor(gt['full_mask2'], device=self.device))
 
                 H_error_1 = heat1[heat1 != -1].mean().detach().cpu().numpy() 
                 H_error_2 = heat2[heat2 != -1].mean().detach().cpu().numpy()                  

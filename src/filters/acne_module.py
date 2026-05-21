@@ -11,7 +11,8 @@ from PIL import Image
 
 import acne.acne_custom as acne
 from acne.config import get_config as acne_get_config
-from core import device, set_args
+from core import device as global_device
+from core import set_args
 
 tf.disable_v2_behavior()
 
@@ -72,6 +73,7 @@ class acne_module:
         self.pipeliner = False     
         self.pass_through = False
         self.add_to_cache = True
+        self.device = torch.device(self.args.get('device', str(global_device)))
                         
         self.args = {
             'id_more': '',
@@ -198,7 +200,7 @@ class acne_module:
             w_com = w_com[0]
         
             mask = w_com > 1e-5
-            mask_aux = torch.tensor(mask, device=device)         
+            mask_aux = torch.tensor(mask, device=self.device)         
             aux = mm.clone()
             mm[aux] = mask_aux
 
