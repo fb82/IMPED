@@ -123,8 +123,8 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
                 m_val.append(pipe_data['m_val'].to(device)[to_retain])
                 m_mask.append(pipe_data['m_mask'].to(device)[to_retain[:pipe_data['m_mask'].shape[0]]])
                     
-                m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
-                m1_offset = m1_offset + pipe_data['kp'][1].shape[0]
+            m0_offset = m0_offset + pipe_data['kp'][0].shape[0]
+            m1_offset = m1_offset + pipe_data['kp'][1].shape[0]
 
     if 'kp' in pipe_data:
         kp0 = torch.cat(kp0)

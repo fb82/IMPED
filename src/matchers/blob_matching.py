@@ -4,7 +4,6 @@ import torch
 import dtm.src.dtm as dtm
 from core import device as global_device
 from core import set_args
-from filters import dtm_module as dtm
 
 
 class blob_matching_module:

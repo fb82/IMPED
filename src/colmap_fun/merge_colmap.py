@@ -48,9 +48,11 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
     from core import go_iter
 
     from .colmap_ext import SIMPLE_RADIAL
+    device = torch.device('cpu')
 
     if device.type != 'cpu':
         warnings.warn('device is not set to cpu, computation will be *very slow*')
+        device = torch.device('cpu')
     
     aux_hdf5 = None
     if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):         

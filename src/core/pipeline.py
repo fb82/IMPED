@@ -36,6 +36,14 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
     imgs = list(imgs)
 
+    if imgs and isinstance(imgs[0], tuple):
+        if add_path:
+            imgs = [(os.path.join(add_path, p0), os.path.join(add_path, p1)) for p0, p1 in imgs]
+        for pair in go_iter(imgs, msg='          processed pairs'):
+            run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+        finalize_pipeline(pipeline)
+        return
+
     img_map = {
         os.path.basename(p): p
         for p in imgs
