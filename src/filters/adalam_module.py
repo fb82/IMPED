@@ -32,8 +32,6 @@ class adalam_module:
         def __init__(self, custom_config=None):         
             super().__init__(custom_config=custom_config)
             self.device =  torch.device(global_device)
-        if 'device' in args:
-            self.device = torch.device(args['device'])
             
 
         def match_and_filter(self, k1, k2, im1shape=None, im2shape=None, o1=None, o2=None, s1=None, s2=None, putative_matches=None, scores=None, mnn=None):    

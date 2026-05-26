@@ -409,6 +409,23 @@ def filter_colmap_reconstruction(input_model_path='../aux/colmap/model', img_pat
         for pts3D in model.point3D_ids(): model.delete_point3D(pts3D)
 
     if (not only_cameras) and add_3D_points and (img_path is not None) and (db_path is not None):
+        num_reg_images = None
+        if hasattr(model, 'num_reg_images'):
+            num_reg_images = model.num_reg_images()
+        elif hasattr(model, 'reg_image_ids'):
+            num_reg_images = len(model.reg_image_ids())
+        elif hasattr(model, 'images'):
+            num_reg_images = len(model.images)
+
+        if (num_reg_images is not None) and (num_reg_images < 2):
+            warnings.warn(
+                f"Skipping triangulation: need at least 2 registered images, found {num_reg_images}."
+            )
+            if img_path is not None:
+                model.extract_colors_for_all_images(img_path)
+            model.write_binary(output_model_path)
+            return
+
         incr_map_opt = pycolmap.IncrementalPipelineOptions()
         if add_as_possible:
             tri_opt = incr_map_opt.triangulation
@@ -497,6 +514,50 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
     if not only_cameras:
         fused_db = coldb_ext(output_db)
     
+    def _get_or_create_fused_image(image, camera):
+        img_id = fused_db.get_image_id(image.name)
+        if img_id is None:
+            cam_id = fused_db.add_camera(
+                camera.model.value if hasattr(camera.model, 'value') else int(camera.model),
+                camera.width,
+                camera.height,
+                np.array(camera.params),
+                0,
+            )
+            img_id = fused_db.add_image(image.name, cam_id)
+            return img_id, cam_id
+
+        row = fused_db.get_image(img_id)
+        if row is None:
+            cam_id = fused_db.add_camera(
+                camera.model.value if hasattr(camera.model, 'value') else int(camera.model),
+                camera.width,
+                camera.height,
+                np.array(camera.params),
+                0,
+            )
+            img_id = fused_db.add_image(image.name, cam_id)
+            return img_id, cam_id
+
+        return img_id, row[1]
+
+    def _sync_fused_db_with_model(model):
+        # Keep the DB in sync with the reconstruction before triangulation.
+        for image_id in model.images:
+            image = model.image(image_id)
+            if fused_db.get_image_id(image.name) is not None:
+                continue
+
+            camera = model.camera(image.camera_id)
+            cam_id = fused_db.add_camera(
+                camera.model.value if hasattr(camera.model, 'value') else int(camera.model),
+                camera.width,
+                camera.height,
+                np.array(camera.params),
+                0,
+            )
+            fused_db.add_image(image.name, cam_id)
+    
     count = 1
     for image_id in model1.images:
         image = model1.image(image_id)
@@ -506,8 +567,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
             img_id = count
             cam_id = count
         else:
-            img_id = fused_db.get_image_id(image.name)
-            cam_id = fused_db.get_image(img_id)[1]
+            img_id, cam_id = _get_or_create_fused_image(image, camera)
         
         new_camera = pycolmap.Camera()
         new_camera.camera_id = cam_id
@@ -535,8 +595,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
             img_id = count
             cam_id = count
         else:
-            img_id = fused_db.get_image_id(image.name)
-            cam_id = fused_db.get_image(img_id)[1]
+            img_id, cam_id = _get_or_create_fused_image(image, camera)
 
         new_camera = pycolmap.Camera()
         new_camera.camera_id = cam_id
@@ -555,6 +614,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         count = count + 1
         
     if not only_cameras:
+        _sync_fused_db_with_model(fused_model)
         fused_db.close()
         
     if (not only_cameras):

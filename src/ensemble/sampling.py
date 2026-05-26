@@ -194,6 +194,15 @@ def pipe_union(pipe_block, unique=True, no_unmatched=False, only_matched=False, 
             
     if unique:
         if 'm_idx' in pipe_data:
+           
+            valid_m = (
+                (m_idx[:, 0] >= 0) & (m_idx[:, 0] < kp0.shape[0]) &
+                (m_idx[:, 1] >= 0) & (m_idx[:, 1] < kp1.shape[0])
+            )
+            m_idx = m_idx[valid_m]
+            m_val = m_val[valid_m]
+            m_mask = m_mask[valid_m]
+
             idx = torch.argsort(m_val, descending=True, stable=True)
 
             m_idx = m_idx[idx]
