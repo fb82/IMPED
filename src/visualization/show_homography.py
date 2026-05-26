@@ -49,7 +49,9 @@ class show_homography_module:
             'chessboard_size': 100,
             'interpolation': cv2.INTER_LANCZOS4,
         }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 

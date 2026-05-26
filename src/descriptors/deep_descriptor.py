@@ -35,7 +35,9 @@ class deep_descriptor_module:
                 },
             'patch_params': {},
             }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
 
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']

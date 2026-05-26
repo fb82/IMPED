@@ -69,7 +69,9 @@ Attributes:
             'resize': None,                      # self.resize = [800, 600]
             'patch_radius': 16,
             }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
             

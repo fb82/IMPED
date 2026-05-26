@@ -189,14 +189,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 if (not is_found) or force:
                     start_time = time.time()
 
-                    target_device = device
-
-                    if hasattr(pipe_module, 'args'):
-                        module_device = pipe_module.args.get('device', None)
-                        if module_device is not None:
-                            target_device = torch.device(module_device)
+                    target_device = getattr(pipe_module, 'device', device)
                     _align_pipe_data_device(pipe_data, target_device)
-
 
 
                     out_data = pipe_module.run(idx=n, **pipe_data)
@@ -222,6 +216,9 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             out_data, is_found = db.get(data_key)                    
             if (not is_found) or force:
                 start_time = time.time()
+
+                target_device = getattr(pipe_module, 'device', device)
+                _align_pipe_data_device(pipe_data, target_device)
 
                 if hasattr(pipe_module, 'pipeliner') and pipe_module.pipeliner:
                     out_data = pipe_module.run(pipe_data=pipe_data, pipe_name=pipe_name_prev, db=db, force=force)

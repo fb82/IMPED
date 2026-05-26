@@ -28,7 +28,9 @@ class sift_module:
         self.pipeliner = False        
         self.pass_through = False
         self.add_to_cache = True
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
 
         self.args = {
             'id_more': '',

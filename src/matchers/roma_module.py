@@ -43,7 +43,9 @@ class roma_module:
             'max_keypoints': 2000,
             'patch_radius': 16,
             }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
         self.roma_model = roma_outdoor(device=self.device, **args)
 
         

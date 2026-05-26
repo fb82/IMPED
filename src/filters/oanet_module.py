@@ -78,7 +78,9 @@ class oanet_module:
             'weights': '../weights/oanet/model_best.pth',
             'inlier_threshold': 1,
             }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 

@@ -320,7 +320,9 @@ class dust3r_module:
             'patch_radius': 16,
             '3D_pose_refinement': False,
             }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
         

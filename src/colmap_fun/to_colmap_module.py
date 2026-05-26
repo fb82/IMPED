@@ -55,7 +55,9 @@ class to_colmap_module:
             'sampling_offset': 0,
             'commit_every_pairs': 10,
         }
-        self.device = torch.device(self.args.get('device', str(global_device)))
+        self.device =  torch.device(global_device)
+        if 'device' in args:
+            self.device = torch.device(args['device'])
 
 
         if 'add_to_cache' in args:
