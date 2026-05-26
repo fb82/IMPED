@@ -17,7 +17,7 @@
 | Add LoMa |  | 📝 |
 | Optimize incremental adding of images | ✅ |  |
 | Optimize hdf5 database |  | 📝 |
-| Device as optional parameter |  | 📝 |
+| Device as optional parameter | ✅ |  |
 
 
 
