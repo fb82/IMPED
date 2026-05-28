@@ -15,7 +15,8 @@ extra_paths = [
     project_root / "aspanformer" / "src",
     project_root / "miho" / "src",
     project_root / "romav2" / "src",
-    project_root / "gsm" 
+    project_root / "loma" / "src",
+    project_root / "gsm"
 ]
 
 
@@ -41,8 +42,7 @@ if __name__ == '__main__':
     with torch.inference_mode(): 
         # Pipelines go from 1 to 38
         
-        print('Running pipeline 38')
-        test_pipelines.pipeline38()
+        test_pipelines.pipeline1()
 
     print('doh!')
 
