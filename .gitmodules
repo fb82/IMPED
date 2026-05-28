@@ -40,3 +40,6 @@
 [submodule "src/romav2"]
 	path = src/romav2
 	url = https://github.com/Parskatt/RoMaV2.git
+[submodule "src/loma"]
+	path = src/loma
+	url = https://github.com/davnords/LoMa.git
