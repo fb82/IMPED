@@ -84,9 +84,9 @@ if __name__ == '__main__':
 
 The following example showcases capabilities that go beyond what prior frameworks offered: rotation-robust matching via `image_muxer_module`, multi-pipeline fusion via `pipeline_muxer_module`, and incremental COLMAP export from independent runs that share a single database making it straightforward to merge results from different matchers in a subsequent reconstruction step.
 
-`pipeline_a` fuses LoFTR and LightGlue (via `deep_joined_module`) under a `pipeline_muxer_module` that takes the union of their matches. That fused pipeline is then wrapped in an `image_muxer_module` with `pair_rot4`, which evaluates four 90° rotations of each image pair and keeps the orientation that yields the most matches, useful for datasets with strong viewpoint variation. All results are exported to a shared COLMAP database.
+`pipeline_a` fuses LoFTR and LightGlue (via `deep_joined_module`) under a `pipeline_muxer_module` that takes the union of their matches. That fused pipeline is then wrapped in an `image_muxer_module` with `pair_rot4`, which evaluates four 90° rotations of each image pair and keeps the orientation that yields the most matches, useful for datasets with high degree of rotations. Besides saving the computation in a HDF5 database, all results are exported to a shared COLMAP database.
 
-`pipeline_b` runs RoMa independently, ready to be merged with pipeline_a's reconstruction.
+`pipeline_b` runs RoMa independently saving data in another HDF5 database, but directly merging matches in the same COLMAP database of `pipeline_a`.
 
 ```python
 
@@ -118,7 +118,7 @@ def advanced_ensemble_pipeline():
         ),
         show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap_a.db'),
+        to_colmap_module(db='custom_colmap.db'),
     ]
     imgs = '../data/ET'
     run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
@@ -127,7 +127,7 @@ def advanced_ensemble_pipeline():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap_b.db'),
+        to_colmap_module(db='custom_colmap.db'),
     ]
     run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
 
@@ -289,3 +289,4 @@ src/
 - [ ] Delete & refactor repeated code across modules
 - [ ] Add design-by-contract validation to pipeline modules
 - [ ] Optimize HDF5 database read/write performance
+- [ ] Improve documentation
