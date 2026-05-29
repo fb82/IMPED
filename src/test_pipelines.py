@@ -1007,7 +1007,7 @@ def pipeline42():
         ]),   
         show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap_a.db'),             
+        to_colmap_module(db='custom_colmap.db'),             
     ]
     imgs = '../data/ET'
     run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
@@ -1016,7 +1016,7 @@ def pipeline42():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap_b.db'),
+        to_colmap_module(db='custom_colmap.db'),
     ]    
     imgs = '../data/ET'
     run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
