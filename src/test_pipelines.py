@@ -40,6 +40,7 @@ from matchers import (
     lightglue_module,
     loftr_module,
     mast3r_module,
+    loma_module,
     roma_module,
     romav2_module,
     smnn_module,
@@ -980,3 +981,56 @@ def pipeline41():
     imgs = '../data/ET'
     name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
+
+
+def pipeline42():
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    pipeline_a = [
+        image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+                [
+                    loftr_module(),
+                    show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
+                    magsac_module(),
+                    show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+               ],
+               [
+                    deep_joined_module(),
+                    show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+                    lightglue_module(),
+                    magsac_module(),
+                    show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),                    
+               ],
+            ]),
+        ]),   
+        show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
+        show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='custom_colmap_a.db'),             
+    ]
+    imgs = '../data/ET'
+    run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
+
+    pipeline_b = [
+        roma_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='custom_colmap_b.db'),
+    ]    
+    imgs = '../data/ET'
+    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
+
+def pipeline43():
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    pipeline = [
+        loma_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(),
+    ]    
+    imgs = '../data/ET'
+    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    run_pairs(pipeline, imgs, db_name=name_db)  

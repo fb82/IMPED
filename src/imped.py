@@ -40,9 +40,8 @@ torch.backends.cudnn.enabled = False
 
 if __name__ == '__main__':       
     with torch.inference_mode(): 
-        # Pipelines go from 1 to 38
         
-        test_pipelines.pipeline1()
+        test_pipelines.pipeline42()
 
     print('doh!')
 

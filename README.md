@@ -17,6 +17,8 @@ Key features:
 - **Incremental processing** — HDF5-backed caching avoids redundant computation across runs.
 - **Device-aware execution** — per-module CPU/GPU assignment with automatic tensor routing.
 
+For a quick tour of what is possible, browse `src/test_pipelines.py` it contains many ready-to-run examples covering a wide range of pipeline combinations.
+
 ---
 
 ## Installation
@@ -54,16 +56,6 @@ python src/imped.py
 A pipeline is a Python list of module instances. The following example runs a classic detect-describe-match-filter pipeline with match visualization:
 
 ```python
-from test_pipelines import (
-    dog_module,
-    patch_module,
-    deep_descriptor_module,
-    smnn_module,
-    magsac_module,
-    show_matches_module,
-)
-from core import run_pairs
-
 
 def custom_pipeline():
     pipeline = [
@@ -87,6 +79,72 @@ if __name__ == '__main__':
     with torch.inference_mode():
         custom_pipeline()
 ```
+
+### Advanced example: ensemble pipelines with COLMAP export
+
+The following example showcases capabilities that go beyond what prior frameworks offered: rotation-robust matching via `image_muxer_module`, multi-pipeline fusion via `pipeline_muxer_module`, and incremental COLMAP export from independent runs that share a single database making it straightforward to merge results from different matchers in a subsequent reconstruction step.
+
+`pipeline_a` fuses LoFTR and LightGlue (via `deep_joined_module`) under a `pipeline_muxer_module` that takes the union of their matches. That fused pipeline is then wrapped in an `image_muxer_module` with `pair_rot4`, which evaluates four 90° rotations of each image pair and keeps the orientation that yields the most matches, useful for datasets with strong viewpoint variation. All results are exported to a shared COLMAP database.
+
+`pipeline_b` runs RoMa independently, ready to be merged with pipeline_a's reconstruction.
+
+```python
+
+def advanced_ensemble_pipeline():
+    pipeline_a = [
+        image_muxer_module(
+            pair_generator=pair_rot4,
+            pipe_gather=pipe_max_matches,
+            pipeline=[
+                pipeline_muxer_module(
+                    pipe_gather=pipe_union,
+                    pipeline=[
+                        [
+                            loftr_module(),
+                            show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
+                            magsac_module(),
+                            show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+                        ],
+                        [
+                            deep_joined_module(),
+                            show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+                            lightglue_module(),
+                            magsac_module(),
+                            show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),
+                        ],
+                    ],
+                ),
+            ],
+        ),
+        show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
+        show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='custom_colmap_a.db'),
+    ]
+    imgs = '../data/ET'
+    run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
+
+    pipeline_b = [
+        roma_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='custom_colmap_b.db'),
+    ]
+    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
+
+
+if __name__ == '__main__':
+    with torch.inference_mode():
+        advanced_ensemble_pipeline()
+```
+This pipeline is already implemented in `src/test_pipelines.py` as `pipeline42()`.
+
+### Module options
+
+Each module exposes a number of configuration options. These are not yet fully documented; please refer to the source code of each module for the available arguments.
+
+### Adding custom modules
+
+Writing a new module is intentionally simple: implement the required interface and drop the file into the appropriate subdirectory. The module can then be composed into any pipeline just like a built-in one. Contributions and new integrations are welcome feel free to open a pull request.
 
 ### Device control
 
