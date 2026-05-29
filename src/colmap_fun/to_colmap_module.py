@@ -54,6 +54,7 @@ class to_colmap_module:
             'sampling_scale': 1,
             'sampling_offset': 0,
             'commit_every_pairs': 10,
+            'reprocess_pairs': True,
         }
         self.device =  torch.device(global_device)
         if 'device' in args:
@@ -196,7 +197,7 @@ class to_colmap_module:
 
         # ---------------- PAIR SKIP (NEW) ----------------
         pair = tuple(sorted((imgs[0], imgs[1])))
-        if pair in self._pair_cache:
+        if pair in self._pair_cache and not self.args['reprocess_pairs']:
             return {}
 
         # ====================================================

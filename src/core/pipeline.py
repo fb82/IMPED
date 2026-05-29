@@ -24,7 +24,7 @@ def finalize_pipeline(pipeline):
         if hasattr(pipe_module, 'finalize'):
             pipe_module.finalize()
     
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, reprocess_existing_pairs=True):    
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
     if isinstance(imgs, str):
@@ -102,6 +102,12 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
     else:
         # Incremental mode
         def gen_pairs():
+            if reprocess_existing_pairs:
+                # existing vs existing
+                for i in range(len(existing)):
+                    for j in range(i + 1, len(existing)):
+                        yield (existing[i], existing[j])
+
             # new vs existing
             for n in new:
                 for e in existing:

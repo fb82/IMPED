@@ -171,7 +171,7 @@ pipeline = [
 | `mode` | Pairing mode for `image_pairs` (default: `'exclude'`) |
 | `colmap_req` | Required COLMAP data type (default: `'geometry'`) |
 | `colmap_min_matches` | Minimum match count for COLMAP-based pairing |
-
+| `reprocess_existing_pairs` | If `True` new information is added to the pairs, else only new pairs get processed |
 ---
 
 ## Module Reference
