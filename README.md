@@ -17,7 +17,7 @@ Key features:
 - **Incremental processing** — HDF5-backed caching avoids redundant computation across runs.
 - **Device-aware execution** — per-module CPU/GPU assignment with automatic tensor routing.
 
-For a quick tour of what is possible, browse `src/test_pipelines.py` it contains many ready-to-run examples covering a wide range of pipeline combinations.
+For a quick tour of what is possible, browse `src/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
 
 ---
 
