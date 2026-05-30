@@ -118,7 +118,7 @@ def advanced_ensemble_pipeline():
         ),
         show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),
+        to_colmap_module(db='custom_colmap_ab.db'),
     ]
     imgs = '../data/ET'
     run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
@@ -127,9 +127,9 @@ def advanced_ensemble_pipeline():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),
+        to_colmap_module(db='custom_colmap_ab.db'),
     ]
-    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
+    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5', colmap_db_or_list='custom_colmap_ab.db', mode='include')
 
 
 if __name__ == '__main__':
