@@ -1017,10 +1017,10 @@ def pipeline42():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=name_example +'_colmap_ab.db'),
+        to_colmap_module(db=name_example + '_colmap_ab.db'),
     ]    
     imgs = '../data/ET'
-    run_pairs(pipeline_b, imgs, db_name=name_example + '_b.hdf5', colmap_db_or_list=name_example +'_colmap_ab.db', mode='include')
+    run_pairs(pipeline_b, imgs, db_name=name_example + '_b.hdf5', colmap_db_or_list=name_example + '_colmap_ab.db', mode='include')
 
 
 if __name__ == '__main__':
