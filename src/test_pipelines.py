@@ -984,9 +984,10 @@ def pipeline41():
 
 
 def pipeline42():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline_a = [
         image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
             pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
@@ -1007,19 +1008,26 @@ def pipeline42():
         ]),   
         show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),             
+        to_colmap_module(db='name_example' + '_colmap_ab.db'),             
     ]
     imgs = '../data/ET'
-    run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
+    run_pairs(pipeline_a, imgs, db_name=name_example + '_a.hdf5')
 
     pipeline_b = [
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),
+        to_colmap_module(db=name_example +'_colmap_ab.db'),
     ]    
     imgs = '../data/ET'
-    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5')
+    run_pairs(pipeline_b, imgs, db_name=name_example + '_b.hdf5', colmap_db_or_list=name_example +'_colmap_ab.db', mode='include')
+
+
+if __name__ == '__main__':
+    with torch.inference_mode():
+        advanced_ensemble_pipeline()
+
+)
 
 def pipeline43():
     print("\n \n")
