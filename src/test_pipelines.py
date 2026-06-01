@@ -963,7 +963,6 @@ def pipeline40(imgs='../data/ET'):
 
     end_time2 = time.time()
 
-
     print(f"Execution time full dataset: {end_time - start_time} seconds")
     print(f"Execution time incremental dataset: {end_time2 - start_time2} seconds")
 
@@ -1025,12 +1024,6 @@ def pipeline42():
     imgs = '../data/ET'
     run_pairs(pipeline_b, imgs, db_name=name_example + '_b.hdf5', colmap_db_or_list=name_example + '_colmap_ab.db', mode='include')
 
-
-if __name__ == '__main__':
-    with torch.inference_mode():
-        advanced_ensemble_pipeline()
-
-)
 
 def pipeline43():
     print("\n \n")
