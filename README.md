@@ -101,23 +101,21 @@ def advanced_ensemble_pipeline():
                     pipeline=[
                         [
                             loftr_module(),
-                            show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
-                            magsac_module(),
-                            show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+                            show_kpts_module(id_more='1st', img_prefix='a_', prepend_pair=False),
                         ],
                         [
                             deep_joined_module(),
-                            show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+                            show_kpts_module(id_more='2nd', img_prefix='b_', prepend_pair=False),
                             lightglue_module(),
-                            magsac_module(),
-                            show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),
                         ],
                     ],
                 ),
+                magsac_module(),
+                show_matches_module(id_more='1st', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
             ],
         ),
-        show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
-        show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
+        show_kpts_module(id_more='3th', img_prefix='union_', prepend_pair=False),
+        show_matches_module(id_more='2nd', img_prefix='best_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='custom_colmap_ab.db'),
     ]
     imgs = '../data/ET'
