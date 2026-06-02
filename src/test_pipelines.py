@@ -76,7 +76,7 @@ from visualization import (
 
 
 def pipeline1():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -100,7 +100,7 @@ def pipeline1():
 
 
 def pipeline2():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -116,7 +116,7 @@ def pipeline2():
 
 
 def pipeline3():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -132,7 +132,7 @@ def pipeline3():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline4():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -154,7 +154,7 @@ def pipeline4():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline5():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -174,7 +174,7 @@ def pipeline5():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline6():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -203,7 +203,7 @@ def pipeline6():
 
 
 def pipeline7():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")   
@@ -232,7 +232,7 @@ def pipeline7():
     run_pairs(pipeline, imgs, db_name=name_db)    
 
 def pipeline8():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -248,7 +248,7 @@ def pipeline8():
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline9():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -264,7 +264,7 @@ def pipeline9():
 
 
 def pipeline10():  
-    name_example = f"database_{inspect.currentframe().f_code.co_name}" 
+    name_example = inspect.currentframe().f_code.co_name 
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -280,7 +280,7 @@ def pipeline10():
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline11(): 
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -296,7 +296,7 @@ def pipeline11():
 
 
 def pipeline12():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -311,7 +311,7 @@ def pipeline12():
     run_pairs(pipeline, imgs, db_name=name_db)  
  
 def pipeline13():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -327,7 +327,7 @@ def pipeline13():
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline14():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -347,7 +347,7 @@ def pipeline14():
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline15():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -362,7 +362,7 @@ def pipeline15():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline16():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -376,7 +376,7 @@ def pipeline16():
     run_pairs(pipeline, imgs, db_name=name_db)
  
 def pipeline17():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}" 
+    name_example = inspect.currentframe().f_code.co_name 
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -393,7 +393,7 @@ def pipeline17():
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)      
 
 def pipeline18():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -410,7 +410,7 @@ def pipeline18():
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet)
 
 def pipeline19():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -429,7 +429,7 @@ def pipeline19():
     run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
 def pipeline20():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -458,7 +458,7 @@ def pipeline20():
     merge_colmap_db([f'{name_example}_aliked.db', f'{name_example}_superpoint.db'], f'{name_example}_aliked_superpoint.db', img_folder='../data/ET')
 
 def pipeline21():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -478,7 +478,7 @@ def pipeline21():
 
 
 def pipeline21bis():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -525,7 +525,7 @@ def pipeline21bis():
     )
 
 def pipeline22():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -560,7 +560,7 @@ def pipeline22():
     align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
 def pipeline23():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -576,7 +576,7 @@ def pipeline23():
     run_pairs(pipeline, imgs, db_name=None)
 
 def pipeline24():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -605,7 +605,7 @@ def pipeline24():
     run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches', db_name=name_db)
 
 def pipeline25():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -637,7 +637,7 @@ def pipeline25():
     run_pairs(pipeline, imgs, db_name=None)  
 
 def pipeline26():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -653,7 +653,7 @@ def pipeline26():
 
 
 def pipeline27():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -670,7 +670,7 @@ def pipeline27():
     run_pairs(pipeline, imgs, add_path=to_add_path_planar, force=True, db_name=name_db)   
 
 def pipeline28():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -687,7 +687,7 @@ def pipeline28():
     run_pairs(pipeline, imgs, add_path=to_add_path_imc, db_name=name_db)   
 
 def pipeline29():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -704,7 +704,7 @@ def pipeline29():
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth, db_name = name_db)   
 
 def pipeline30():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -721,7 +721,7 @@ def pipeline30():
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet, db_name = name_db)   
 
 def pipeline31():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -745,7 +745,7 @@ def pipeline31():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline32():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -773,7 +773,7 @@ def pipeline32():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline33():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -787,7 +787,7 @@ def pipeline33():
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline34():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")        
@@ -801,7 +801,7 @@ def pipeline34():
     run_pairs(pipeline, imgs, db_name=name_db)          
 
 def pipeline35():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -847,7 +847,7 @@ def pipeline35():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline36():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -872,7 +872,7 @@ def pipeline36():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline37():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -902,7 +902,7 @@ def pipeline37():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline38():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -937,7 +937,7 @@ def pipeline38():
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline39():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -953,7 +953,7 @@ def pipeline39():
 
 
 def pipeline40(imgs='../data/ET'):
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -1005,7 +1005,7 @@ def pipeline40(imgs='../data/ET'):
 
 
 def pipeline41():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -1021,7 +1021,7 @@ def pipeline41():
 
 
 def pipeline42():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
@@ -1064,7 +1064,7 @@ def pipeline42():
 
 
 def pipeline43():
-    name_example = f"database_{inspect.currentframe().f_code.co_name}"
+    name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
