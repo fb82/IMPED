@@ -76,9 +76,10 @@ from visualization import (
 
 
 def pipeline1():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
             dog_module(),
             # show_kpts_module(id_more='first', prepend_pair=False),
@@ -94,14 +95,15 @@ def pipeline1():
             show_matches_module(id_moreFalse='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
 def pipeline2():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loftr_module(),
         show_kpts_module(id_more='first', prepend_pair=False),
@@ -109,14 +111,15 @@ def pipeline2():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
 def pipeline3():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(),
         show_kpts_module(id_more='first', prepend_pair=False),
@@ -125,13 +128,14 @@ def pipeline3():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline4():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
             hz_module(),
@@ -146,13 +150,14 @@ def pipeline4():
         show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline5():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
             deep_joined_module(),
@@ -165,13 +170,14 @@ def pipeline5():
         show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET_random_rotated'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline6():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -192,14 +198,15 @@ def pipeline6():
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
 def pipeline7():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")   
+    print(f"Running: {name_example}")   
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -221,13 +228,14 @@ def pipeline7():
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)    
 
 def pipeline8():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loftr_module(),
         magsac_module(),
@@ -236,13 +244,14 @@ def pipeline8():
         show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline9():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loftr_module(),
         magsac_module(),
@@ -250,14 +259,15 @@ def pipeline9():
         to_colmap_module(),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)       
 
 
-def pipeline10():   
+def pipeline10():  
+    name_example = f"database_{inspect.currentframe().f_code.co_name}" 
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
@@ -266,13 +276,14 @@ def pipeline10():
         to_colmap_module(),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline11(): 
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loftr_module(),
         magsac_module(),
@@ -280,14 +291,15 @@ def pipeline11():
         to_colmap_module(),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 
 def pipeline12():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         roma_module(),
         magsac_module(),
@@ -295,13 +307,14 @@ def pipeline12():
         to_colmap_module(),
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
  
 def pipeline13():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         r2d2_module(),
         # smnn_module(),
@@ -310,13 +323,14 @@ def pipeline13():
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline14():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         dog_module(),
         patch_module(),
@@ -329,13 +343,14 @@ def pipeline14():
         show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline15():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         aspanformer_module(),
         magsac_module(),
@@ -343,26 +358,28 @@ def pipeline15():
         to_colmap_module(),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline16():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         from_colmap_module(),
         show_kpts_module(img_prefix='sift_', prepend_pair=False),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
  
-def pipeline17(): 
+def pipeline17():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}" 
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -376,9 +393,10 @@ def pipeline17():
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)      
 
 def pipeline18():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -392,9 +410,10 @@ def pipeline18():
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet)
 
 def pipeline19():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -410,18 +429,19 @@ def pipeline19():
     run_pairs(pipeline, imgs, add_path=to_add_path_imc)
 
 def pipeline20():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs = '../data/ET'
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'{inspect.currentframe().f_code.co_name}_aliked.db'),            
+        to_colmap_module(db=f'{name_example}_aliked.db'),            
     ]         
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_aliked.hdf5"
+    name_db = f"database_{name_example}_aliked.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     #
     pipeline = [
@@ -429,37 +449,39 @@ def pipeline20():
         lightglue_module(what='superpoint'),
         magsac_module(),
         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'{inspect.currentframe().f_code.co_name}_superpoint.db'),            
+        to_colmap_module(db=f'{name_example}_superpoint.db'),            
     ]         
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_superpoint.hdf5"
+    name_db = f"database_{name_example}_superpoint.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     #
     device = torch.device('cpu')
-    merge_colmap_db([f'{inspect.currentframe().f_code.co_name}_aliked.db', f'{inspect.currentframe().f_code.co_name}_superpoint.db'], f'{inspect.currentframe().f_code.co_name}_aliked_superpoint.db', img_folder='../data/ET')
+    merge_colmap_db([f'{name_example}_aliked.db', f'{name_example}_superpoint.db'], f'{name_example}_aliked_superpoint.db', img_folder='../data/ET')
 
 def pipeline21():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'database_{inspect.currentframe().f_code.co_name}_aliked.db'),            
+        to_colmap_module(db=f'database_{name_example}_aliked.db'),            
     ]         
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     os.makedirs('aliked_colmap_models', exist_ok=True)          
-    pycolmap.incremental_mapping(database_path=f'database_{inspect.currentframe().f_code.co_name}_aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path=f'database_{inspect.currentframe().f_code.co_name}_aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    pycolmap.incremental_mapping(database_path=f'database_{name_example}_aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
+    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path=f'database_{name_example}_aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
 
 
 def pipeline21bis():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     import os
     from pathlib import Path
     
@@ -477,23 +499,23 @@ def pipeline21bis():
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=str(base_dir / f"{inspect.currentframe().f_code.co_name}_aliked.db")),            
+        to_colmap_module(db=str(base_dir / f"{name_example}_aliked.db")),            
     ]         
     imgs = str(base_dir.parent / 'data' / 'ET')
     
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     os.makedirs(base_dir / 'aliked_colmap_models', exist_ok=True)    
       
     pycolmap.incremental_mapping(
-        database_path=str(base_dir / f"{inspect.currentframe().f_code.co_name}_aliked.db"),
+        database_path=str(base_dir / f"{name_example}_aliked.db"),
         image_path=imgs,
         output_path=str(base_dir / 'aliked_colmap_models')
     )            
     
     filter_colmap_reconstruction(
         input_model_path=str(base_dir / 'aliked_colmap_models' / '0'),
-        db_path=str(base_dir / f"{inspect.currentframe().f_code.co_name}_aliked.db"),
+        db_path=str(base_dir / f"{name_example}_aliked.db"),
         img_path=imgs,
         output_model_path=str(base_dir / 'aliked_colmap_models' / 'filtered_model'),
         to_filter=['et002.jpg', 'et005.jpg'],
@@ -503,10 +525,10 @@ def pipeline21bis():
     )
 
 def pipeline22():
-
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs = '../data/ET'
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -515,7 +537,7 @@ def pipeline22():
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='aliked.db'),            
     ]         
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_aliked.hdf5"
+    name_db = f"database_{name_example}_aliked.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     os.makedirs('aliked_colmap_models', exist_ok=True)          
     pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
@@ -528,7 +550,7 @@ def pipeline22():
         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='superpoint.db'),            
     ]         
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_superpoint.hdf5"
+    name_db = f"database_{name_example}_superpoint.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     os.makedirs('superpoint_colmap_models', exist_ok=True)          
     pycolmap.incremental_mapping(database_path='superpoint.db', image_path=imgs, output_path='superpoint_colmap_models')            
@@ -538,9 +560,10 @@ def pipeline22():
     align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
 
 def pipeline23():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(),
         lightglue_module(),
@@ -553,10 +576,10 @@ def pipeline23():
     run_pairs(pipeline, imgs, db_name=None)
 
 def pipeline24():
-
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
@@ -567,7 +590,7 @@ def pipeline24():
     # imgs = '../data/ET'
     # run_pairs(pipeline, imgs, colmap_db_or_list=['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg'], mode='exclude')
     imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_aliked1.hdf5"
+    name_db = f"database_{name_example}_aliked1.hdf5"
     run_pairs(pipeline, imgs, add_path='../data/ET', db_name= name_db)
     # now the remaining mathing pairs only
     pipeline = [
@@ -578,14 +601,14 @@ def pipeline24():
         to_colmap_module(db='aliked.db'),            
     ]         
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}_aliked2.hdf5"
+    name_db = f"database_{name_example}_aliked2.hdf5"
     run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches', db_name=name_db)
 
 def pipeline25():
-
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -614,10 +637,10 @@ def pipeline25():
     run_pairs(pipeline, imgs, db_name=None)  
 
 def pipeline26():
-
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         deep_joined_module(),
         lightglue_module(),
@@ -630,9 +653,10 @@ def pipeline26():
 
 
 def pipeline27():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_planar, gt_planar, to_add_path_planar = benchmark_setup(bench_path='../bench_data', dataset='planar')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -642,13 +666,14 @@ def pipeline27():
         pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
     ]         
     imgs = [imgs_planar[i] for i in range(20)]
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, add_path=to_add_path_planar, force=True, db_name=name_db)   
 
 def pipeline28():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_imc, gt_imc, to_add_path_imc = benchmark_setup(bench_path='../bench_data', dataset='imc')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -658,13 +683,14 @@ def pipeline28():
         pairwise_benchmark_module(gt=gt_imc, to_add_path=to_add_path_imc, mode='epipolar'),
     ]         
     imgs = [imgs_imc[i] for i in range(10)]
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, add_path=to_add_path_imc, db_name=name_db)   
 
 def pipeline29():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_megadepth, gt_megadepth, to_add_path_megadepth = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -674,13 +700,14 @@ def pipeline29():
         pairwise_benchmark_module(gt=gt_megadepth, to_add_path=to_add_path_megadepth, mode='epipolar'),
     ]         
     imgs = [imgs_megadepth[i] for i in range(10)]
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth, db_name = name_db)   
 
 def pipeline30():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     imgs_scannet, gt_scannet, to_add_path_scannet = benchmark_setup(bench_path='../bench_data', dataset='scannet')
     pipeline = [
         deep_joined_module(what='aliked'),
@@ -690,13 +717,14 @@ def pipeline30():
         pairwise_benchmark_module(gt=gt_scannet, to_add_path=to_add_path_scannet, mode='epipolar'),
     ]         
     imgs = [imgs_scannet[i] for i in range(10)]
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet, db_name = name_db)   
 
 def pipeline31():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         dog_module(),
         patch_module(),
@@ -713,13 +741,14 @@ def pipeline31():
         show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline32():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
@@ -740,39 +769,42 @@ def pipeline32():
         show_matches_module(img_prefix='matches_final_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline33():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         mast3r_module(),
         magsac_module(),
         show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline34():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")        
+    print(f"Running: {name_example}")        
     pipeline = [
         dust3r_module(),
         magsac_module(),
         show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)          
 
 def pipeline35():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
 
     pipeline = [
         image_muxer_module(pair_generator=pair_pyramid, pipe_gather=pipe_union, pipeline=[
@@ -811,13 +843,14 @@ def pipeline35():
         show_matches_module(id_more='all_show', img_prefix='matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline36():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
 
     pipeline = [
         hz_module(),
@@ -835,13 +868,14 @@ def pipeline36():
         show_matches_module(id_more='dtm_guided', img_prefix='matches_dtm_guided_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline37():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
                 [
@@ -864,13 +898,14 @@ def pipeline37():
         show_matches_module(img_prefix='matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline38():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
 
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
@@ -898,13 +933,14 @@ def pipeline38():
         show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline39():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         romav2_module(),
         magsac_module(),
@@ -912,14 +948,15 @@ def pipeline39():
         to_colmap_module(),
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 
 def pipeline40(imgs='../data/ET'):
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
 
     start_time = time.time()
 
@@ -955,7 +992,7 @@ def pipeline40(imgs='../data/ET'):
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(db='ET_pt2.db'),            
     ]         
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
     
 
@@ -968,9 +1005,10 @@ def pipeline40(imgs='../data/ET'):
 
 
 def pipeline41():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loftr_module(device='cpu'),
         show_kpts_module(id_more='first', prepend_pair=False),
@@ -978,7 +1016,7 @@ def pipeline41():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -1026,9 +1064,10 @@ def pipeline42():
 
 
 def pipeline43():
+    name_example = f"database_{inspect.currentframe().f_code.co_name}"
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {inspect.currentframe().f_code.co_name}")
+    print(f"Running: {name_example}")
     pipeline = [
         loma_module(),
         magsac_module(),
@@ -1036,5 +1075,5 @@ def pipeline43():
         to_colmap_module(),
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{inspect.currentframe().f_code.co_name}.hdf5"
+    name_db = f"database_{name_example}.hdf5"
     run_pairs(pipeline, imgs, db_name=name_db)  
