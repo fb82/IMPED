@@ -101,24 +101,22 @@ def advanced_ensemble_pipeline():
                     pipeline=[
                         [
                             loftr_module(),
-                            show_kpts_module(id_more='a_first', img_prefix='a_', prepend_pair=False),
-                            magsac_module(),
-                            show_matches_module(id_more='a_second', img_prefix='a_matches_', mask_idx=[1, 0], prepend_pair=False),
+                            show_kpts_module(id_more='1st', img_prefix='a_', prepend_pair=False),
                         ],
                         [
                             deep_joined_module(),
-                            show_kpts_module(id_more='b_first', img_prefix='b_', prepend_pair=False),
+                            show_kpts_module(id_more='2nd', img_prefix='b_', prepend_pair=False),
                             lightglue_module(),
-                            magsac_module(),
-                            show_matches_module(id_more='b_second', img_prefix='b_matches_', mask_idx=[1, 0], prepend_pair=False),
                         ],
                     ],
                 ),
+                magsac_module(),
+                show_matches_module(id_more='1st', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
             ],
         ),
-        show_kpts_module(id_more='third', img_prefix='union_', prepend_pair=False),
-        show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),
+        show_kpts_module(id_more='3th', img_prefix='union_', prepend_pair=False),
+        show_matches_module(id_more='2nd', img_prefix='best_matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db='custom_colmap_ab.db'),
     ]
     imgs = '../data/ET'
     run_pairs(pipeline_a, imgs, db_name='database_custom_a.hdf5')
@@ -127,9 +125,9 @@ def advanced_ensemble_pipeline():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap.db'),
+        to_colmap_module(db='custom_colmap_ab.db'),
     ]
-    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5', mode = 'include', colmap_db_or_list='custom_colmap.db')
+    run_pairs(pipeline_b, imgs, db_name='database_custom_b.hdf5', colmap_db_or_list='custom_colmap_ab.db', mode='include')
 
 
 if __name__ == '__main__':
@@ -168,9 +166,10 @@ pipeline = [
 | `force` | If `True`, rerun modules even when cached results exist |
 | `add_path` | Prefix applied to image paths when passing relative pairs |
 | `colmap_db_or_list` | Optional COLMAP database or pair list for pair selection |
-| `mode` | Pairing mode for `image_pairs` (default: `'exclude'`). If `include` the pipeline is run also over previously seen pairs to add data |
+| `mode` | Pairing mode for `image_pairs` (default: `'exclude'`) |
 | `colmap_req` | Required COLMAP data type (default: `'geometry'`) |
 | `colmap_min_matches` | Minimum match count for COLMAP-based pairing |
+| `reprocess_existing_pairs` | If `True` new information is added to the pairs, else only new pairs get processed |
 ---
 
 ## Module Reference
