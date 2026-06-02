@@ -988,7 +988,7 @@ def pipeline42():
     print("=" * 50)
     print(f"Running: {name_example}")
     pipeline_a = [
-        image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+        image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches,
             pipeline=[
                 pipeline_muxer_module(
                     pipe_gather=pipe_union,
@@ -1010,7 +1010,7 @@ def pipeline42():
         ),
         show_kpts_module(id_more='3th', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='2nd', img_prefix='best_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='custom_colmap_ab.db'),
+        to_colmap_module(db=name_example + '_colmap_ab.db'),
     ]
     imgs = '../data/ET'
     run_pairs(pipeline_a, imgs, db_name=name_example + '_a.hdf5')
