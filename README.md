@@ -1,4 +1,4 @@
-# IMPED
+# IMPED (Image Matching PipelinED)
 
 **IMPED** is a modular image matching and feature pipeline toolkit. It provides a unified, composable interface for building, testing, and benchmarking image matching pipelines — from keypoint detection and description to geometric filtering, COLMAP integration, and ensemble methods.
 
