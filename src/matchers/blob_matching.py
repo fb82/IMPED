@@ -68,6 +68,9 @@ class blob_matching_module:
 
 
     def run(self, **args):
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before blob_matching"
+
         pt1 = args['kp'][0]
         pt2 = args['kp'][1]
         

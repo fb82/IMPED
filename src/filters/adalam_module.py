@@ -95,7 +95,14 @@ class adalam_module:
         return
 
         
-    def run(self, **args):  
+    def run(self, **args):
+        assert 'img' in args and len(args['img']) == 2
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'kH' in args and len(args['kH']) == 2, "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+        assert 'm_idx' in args
+        assert 'm_mask' in args
+        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
+
         sz1 = Image.open(args['img'][0]).size
         sz2 = Image.open(args['img'][1]).size
 

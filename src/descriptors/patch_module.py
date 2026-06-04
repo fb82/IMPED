@@ -81,7 +81,12 @@ class patch_module:
         return
 
 
-    def run(self, **args):    
+    def run(self, **args):
+        assert 'idx' in args
+        assert 'img' in args and len(args['img']) > args['idx']
+        assert 'kp' in args and len(args['kp']) > args['idx']
+        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+
         import cv2
         import numpy as np
 

@@ -135,6 +135,13 @@ class mop_miho_ncc_module:
             dict: Updated pipeline dictionary containing refined keypoints, 
                   homographies, and updated validity masks.
         """     
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'm_idx' in args and 'm_mask' in args
+        if len(self.args['ncc_todo']):
+            assert 'img' in args and len(args['img']) == 2
+            assert 'kH' in args and len(args['kH']) == 2, "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+            assert 'kr' in args and len(args['kr']) == 2, "kr missing — use a detector that produces scale/response info"
+
         from ensemble import pipe_union
         if self.mop is not None:
             mi = args['m_idx']                     

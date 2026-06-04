@@ -66,7 +66,12 @@ class deep_descriptor_module:
         return
 
 
-    def run(self, **args):    
+    def run(self, **args):
+        assert 'idx' in args
+        assert 'img' in args and len(args['img']) > args['idx']
+        assert 'kp' in args and len(args['kp']) > args['idx']
+        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])

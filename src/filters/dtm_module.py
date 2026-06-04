@@ -59,7 +59,13 @@ class dtm_module:
         return
 
         
-    def run(self, **args):                
+    def run(self, **args):
+        assert 'img' in args and len(args['img']) == 2
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'm_idx' in args
+        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
+        assert 'm_mask' in args
+
         match_data = {
             'img': args['img'],
             'kp': args['kp'],

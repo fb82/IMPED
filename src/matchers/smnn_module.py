@@ -50,6 +50,8 @@ class smnn_module:
 
 
     def run(self, **args):
+        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before smnn"
+
         val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
         return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)}

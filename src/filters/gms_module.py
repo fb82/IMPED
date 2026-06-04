@@ -129,7 +129,12 @@ class gms_module:
         return
 
         
-    def run(self, **args):  
+    def run(self, **args):
+        assert 'img' in args and len(args['img']) == 2
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'm_idx' in args and 'm_mask' in args
+        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
+
         kp1 = args['kp'][0]
         kp2 = args['kp'][1]
         

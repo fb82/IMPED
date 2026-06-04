@@ -58,6 +58,11 @@ class sift_module:
 
 
     def run(self, **args):
+        assert 'idx' in args
+        assert 'img' in args and len(args['img']) > args['idx']
+        assert 'kp' in args and len(args['kp']) > args['idx']
+        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+
         im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)        
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])                
         kp = opencv_kpts_from_laf(lafs)

@@ -81,9 +81,12 @@ class lightglue_module:
         return
     
     
-    def run(self, **args):           
-        # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])
-        # dict_keys(['matches0', 'matches1', 'matching_scores0', 'matching_scores1', 'stop', 'matches', 'scores', 'prune0', 'prune1'])
+    def run(self, **args):
+        assert 'img' in args and len(args['img']) == 2
+        assert 'kp' in args and len(args['kp']) == 2
+        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before lightglue"
+        if self.what in ('sift', 'doghardnet'):
+            assert 'kH' in args and len(args['kH']) == 2, f"kH missing — required when what='{self.what}'"
 
         width, height = Image.open(args['img'][0]).size
         sz1 = torch.tensor([width / 2, height / 2], device=self.device)
