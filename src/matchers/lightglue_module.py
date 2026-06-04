@@ -94,13 +94,13 @@ class lightglue_module:
         width, height = Image.open(args['img'][1]).size
         sz2 = torch.tensor([width / 2, height / 2], device=self.device)
 
-        feats1 = {'keypoints': args['kp'][0].unsqueeze(0), 'descriptors': args['desc'][0].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz1.unsqueeze(0)} 
-        feats2 = {'keypoints': args['kp'][1].unsqueeze(0), 'descriptors': args['desc'][1].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz2.unsqueeze(0)} 
-        
+        feats1 = {'keypoints': args['kp'][0].unsqueeze(0), 'descriptors': args['desc'][0].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz1.unsqueeze(0)}
+        feats2 = {'keypoints': args['kp'][1].unsqueeze(0), 'descriptors': args['desc'][1].unsqueeze(0) * self.args['desc_cf'], 'image_size': sz2.unsqueeze(0)}
+
         if (self.what == 'sift') or (self.what == 'doghardnet'):
             lafs1 = homo2laf(args['kp'][0], args['kH'][0])
             lafs2 = homo2laf(args['kp'][1], args['kH'][1])
-            
+
             kp1 = opencv_kpts_from_laf(lafs1)
             kp2 = opencv_kpts_from_laf(lafs2)
 
@@ -109,10 +109,14 @@ class lightglue_module:
 
             feats1['scales'] = torch.tensor([kp.size for kp in kp1], device=self.device).unsqueeze(0)
             feats2['scales'] = torch.tensor([kp.size for kp in kp2], device=self.device).unsqueeze(0)
-            
-            
+
+        assert all(k in feats1 for k in ('keypoints', 'descriptors', 'image_size'))
+        assert all(k in feats2 for k in ('keypoints', 'descriptors', 'image_size'))
+
         matches12 = self.matcher({'image0': feats1, 'image1': feats2})
         feats1_, feats2_, matches12 = [lg_rbd(x) for x in [feats1, feats2, matches12]]
+
+        assert all(k in matches12 for k in ('matches0', 'matches1', 'matching_scores0', 'matching_scores1', 'stop', 'matches', 'scores', 'prune0', 'prune1')), f"unexpected matcher output keys: {list(matches12.keys())}"
 
         idxs = matches12['matches'].squeeze(0)
         m_val = matches12['scores'].squeeze(0)
@@ -197,10 +201,11 @@ class deep_joined_module:
 
 
     def run(self, **args):
-        # dict_keys(['keypoints', 'keypoint_scores', 'descriptors', 'image_size'])         
         img = lg_load_image(args['img'][args['idx']]).to(self.device)
-        
+
         feats = self.extractor.extract(img, resize=self.args['resize'])
+        assert all(k in feats for k in ('keypoints', 'keypoint_scores', 'descriptors', 'image_size')), f"unexpected extractor output keys: {list(feats.keys())}"
+
         kp = feats['keypoints'].squeeze(0)       
         desc = feats['descriptors'].squeeze(0)       
 
