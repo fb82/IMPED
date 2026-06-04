@@ -286,3 +286,4 @@ src/
 - [ ] Delete & refactor repeated code across modules
 - [ ] Optimize HDF5 database read/write performance
 - [ ] Improve documentation
+- [ ] Add support for triplet or more images matching
