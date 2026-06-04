@@ -10,7 +10,7 @@ IMPED is designed around a simple principle: a pipeline is a list of modules. Ea
 
 Key features:
 - **Modular by design** — mix and match detectors, descriptors, matchers, and filters in any combination.
-- **Broad method coverage** — includes SIFT, R2D2, KeyNet, HardNet, LightGlue, LoFTR, RoMa, MASt3R, DUSt3R, MatchFormer, ASpanFormer, and more.
+- **Broad method coverage** — includes SIFT, R2D2, KeyNet, HardNet, LightGlue, LoFTR, LoMa, RoMa, MASt3R, DUSt3R, MatchFormer, ASpanFormer, and more.
 - **Ensemble support** — union, muxing, pyramid, and sampling utilities for combining multiple pipelines.
 - **COLMAP integration** — export/import features and matches, use COLMAP databases for pair selection, and merge reconstructions.
 - **Benchmarking tools** — built-in support for MegaDepth-1500, ScanNet-1500, IMC PhotoTourism, and planar datasets with standard pose and homography metrics.
