@@ -284,6 +284,5 @@ src/
 ## Roadmap
 
 - [ ] Delete & refactor repeated code across modules
-- [ ] Add design-by-contract validation to pipeline modules
 - [ ] Optimize HDF5 database read/write performance
 - [ ] Improve documentation
