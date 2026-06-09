@@ -8,7 +8,7 @@ from PIL import Image
 
 import gms.python.gms_matcher as gms
 from core import device as global_device
-from core import set_args
+from core import set_args, check_data
 
 
 class gms_module:
@@ -118,8 +118,17 @@ class gms_module:
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
-        self.id_string, self.args = set_args('gms', args, self.args)     
-        
+        self.id_string, self.args = set_args('gms', args, self.args)
+
+        self.required_input = {
+            'img':    2,
+            'kp':     2,
+            'm_idx':  [-1, 2],
+            'm_mask': [-1],
+            'm_val':  [-1],
+        }
+        self.required_output = {'m_mask': [-1]}
+
 
     def get_id(self): 
         return self.id_string
@@ -130,10 +139,7 @@ class gms_module:
 
         
     def run(self, **args):
-        assert 'img' in args and len(args['img']) == 2
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'm_idx' in args and 'm_mask' in args
-        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
+        check_data(args, self.required_input)
 
         kp1 = args['kp'][0]
         kp2 = args['kp'][1]
@@ -162,5 +168,7 @@ class gms_module:
         aux = mm.clone()
         mm[aux] = mask
         
-        return {'m_mask': mm}
+        result = {'m_mask': mm}
+        check_data(result, self.required_output)
+        return result
 

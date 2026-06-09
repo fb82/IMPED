@@ -3,7 +3,7 @@ import torch
 
 import dtm.src.dtm as dtm
 from core import device as global_device
-from core import set_args
+from core import set_args, check_data
 
 
 class blob_matching_module:
@@ -56,7 +56,17 @@ class blob_matching_module:
             self.device = torch.device(args['device'])
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
-        self.id_string, self.args = set_args('blob_matching', args, self.args)        
+        self.id_string, self.args = set_args('blob_matching', args, self.args)
+
+        self.required_input = {
+            'kp':   2,
+            'desc': 2,
+        }
+        self.required_output = {
+            'm_idx':  [-1, 2],
+            'm_val':  [-1],
+            'm_mask': [-1],
+        }
 
 
     def get_id(self): 
@@ -68,8 +78,7 @@ class blob_matching_module:
 
 
     def run(self, **args):
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before blob_matching"
+        check_data(args, self.required_input)
 
         pt1 = args['kp'][0]
         pt2 = args['kp'][1]
@@ -94,4 +103,6 @@ class blob_matching_module:
         midx = midx.to(self.device)
         val = val.to(self.device)
     
-        return {'m_idx': midx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=self.device, dtype=torch.bool)}
+        result = {'m_idx': midx, 'm_val': val, 'm_mask': torch.ones(val.shape[0], device=self.device, dtype=torch.bool)}
+        check_data(result, self.required_output)
+        return result

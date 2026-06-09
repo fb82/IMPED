@@ -6,7 +6,7 @@ from PIL import Image
 
 import adalam.adalam.adalam as adalam
 from core import device as global_device
-from core import homo2laf, set_args
+from core import homo2laf, set_args, check_data
 
 
 class adalam_module:
@@ -80,11 +80,21 @@ class adalam_module:
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
-        self.id_string, self.args = set_args('adalam', args, self.args)        
+        self.id_string, self.args = set_args('adalam', args, self.args)
         if self.args['adalam_params']['device'] is None:
             self.args['adalam_params']['device'] = self.device
-        
+
         self.matcher = self.adalamfilter_custom(self.args['adalam_params'])
+
+        self.required_input = {
+            'img':    2,
+            'kp':     2,
+            'kH':     2,
+            'm_idx':  [-1, 2],
+            'm_mask': [-1],
+            'm_val':  [-1],
+        }
+        self.required_output = {'m_mask': [-1]}
 
 
     def get_id(self): 
@@ -96,12 +106,7 @@ class adalam_module:
 
         
     def run(self, **args):
-        assert 'img' in args and len(args['img']) == 2
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'kH' in args and len(args['kH']) == 2, "kH missing — use a LAF-producing detector (keynet, dog, hz)"
-        assert 'm_idx' in args
-        assert 'm_mask' in args
-        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
+        check_data(args, self.required_input)
 
         sz1 = Image.open(args['img'][0]).size
         sz2 = Image.open(args['img'][1]).size
@@ -146,5 +151,7 @@ class adalam_module:
         aux = mm.clone()
         mm[aux] = mask_aux
         
-        return {'m_mask': mm}
+        result = {'m_mask': mm}
+        check_data(result, self.required_output)
+        return result
 

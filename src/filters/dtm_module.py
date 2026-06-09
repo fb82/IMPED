@@ -3,7 +3,7 @@ import torch
 
 import dtm.src.dtm as dtm
 from core import device as global_device
-from core import set_args
+from core import set_args, check_data
 
 
 class dtm_module:
@@ -48,7 +48,16 @@ class dtm_module:
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
-        self.id_string, self.args = set_args('dtm', args, self.args)        
+        self.id_string, self.args = set_args('dtm', args, self.args)
+
+        self.required_input = {
+            'img':    2,
+            'kp':     2,
+            'm_idx':  [-1, 2],
+            'm_val':  [-1],
+            'm_mask': [-1],
+        }
+        self.required_output = {'m_mask': [-1]}
 
 
     def get_id(self): 
@@ -60,11 +69,7 @@ class dtm_module:
 
         
     def run(self, **args):
-        assert 'img' in args and len(args['img']) == 2
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'm_idx' in args
-        assert 'm_val' in args, "m_val missing — upstream matcher must produce match scores"
-        assert 'm_mask' in args
+        check_data(args, self.required_input)
 
         match_data = {
             'img': args['img'],
@@ -82,4 +87,6 @@ class dtm_module:
 
         dtm_mask = dtm.dtm(match_data, show_in_progress=self.args['show_progress'], full_dtm=self.args['full_dtm'], st=self.args['st'], prepare_data=self.args['prepare_data'])
    
-        return {'m_mask': torch.tensor(dtm_mask <= 0, dtype=torch.bool, device=self.device)}        
+        result = {'m_mask': torch.tensor(dtm_mask <= 0, dtype=torch.bool, device=self.device)}
+        check_data(result, self.required_output)
+        return result

@@ -5,7 +5,7 @@ import torch
 from kornia_moons.feature import opencv_kpts_from_laf
 
 from core import device as global_device
-from core import homo2laf, set_args
+from core import homo2laf, set_args, check_data
 
 
 class sift_module:
@@ -49,6 +49,14 @@ class sift_module:
             
         self.id_string = base_string + self.id_string
 
+        self.required_input = {
+            'idx': None,
+            'img': -1,
+            'kp':  -1,
+            'kH':  -1,
+        }
+        self.required_output = {'desc': [-1, -1]}
+
     def get_id(self): 
         return self.id_string
 
@@ -58,21 +66,20 @@ class sift_module:
 
 
     def run(self, **args):
-        assert 'idx' in args
-        assert 'img' in args and len(args['img']) > args['idx']
-        assert 'kp' in args and len(args['kp']) > args['idx']
-        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+        check_data(args, self.required_input)
 
-        im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)        
-        lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])                
+        im = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
+        lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         kp = opencv_kpts_from_laf(lafs)
-        
+
         _, desc = self.descriptor.compute(im, kp)
 
         if self.args['rootsift']:
             desc /= desc.sum(axis=1, keepdims=True) + 1e-8
             desc = np.sqrt(desc)
-            
+
         desc = torch.tensor(desc, device=self.device, dtype=torch.float)
-                    
-        return {'desc': desc}
+
+        result = {'desc': desc}
+        check_data(result, self.required_output)
+        return result

@@ -8,6 +8,45 @@ import numpy as np
 from imc import _EPS
 
 
+_KEY_HINTS = {
+    'kH':   "use a LAF-producing detector (keynet, dog, hz)",
+    'desc': "add a descriptor module before this one",
+    'kr':   "use a detector that produces scale/response info",
+    'm_val': "upstream matcher must produce match scores",
+}
+
+
+def check_data(args, required_data):
+    idx = args.get('idx')
+    for key, spec in required_data.items():
+        hint = f" — {_KEY_HINTS[key]}" if key in _KEY_HINTS else ""
+        assert key in args, f"missing required key '{key}'{hint}"
+        val = args[key]
+        match key:
+            case 'img' | 'kp' | 'kH' | 'kr' | 'desc':
+                if isinstance(spec, list):
+                    assert hasattr(val, 'ndim') and val.ndim == len(spec), \
+                        f"'{key}' expected {len(spec)}D tensor, got ndim={getattr(val, 'ndim', '?')}"
+                    for i, dim in enumerate(spec):
+                        if dim != -1:
+                            assert val.shape[i] == dim, \
+                                f"'{key}' dim {i} expected {dim}, got {val.shape[i]}"
+                elif spec == -1:
+                    assert idx is not None and len(val) > idx, \
+                        f"'{key}' needs at least {idx + 1} elements, got {len(val)}"
+                else:
+                    assert len(val) == spec, \
+                        f"'{key}' expected {spec} elements (one per image), got {len(val)}"
+            case 'm_idx':
+                assert hasattr(val, 'ndim') and val.ndim == 2 and val.shape[1] == spec[1], \
+                    f"'m_idx' expected shape (N, {spec[1]}), got {tuple(val.shape)}"
+            case 'm_mask' | 'm_val':
+                assert hasattr(val, 'ndim') and val.ndim == len(spec), \
+                    f"'{key}' expected {len(spec)}D tensor, got ndim={getattr(val, 'ndim', '?')}"
+            case 'idx':
+                assert isinstance(val, int), f"'idx' must be an int, got {type(val).__name__}"
+
+
 def set_args(id_string, args, args_):
 
     if 'device' not in args_:

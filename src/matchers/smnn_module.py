@@ -3,7 +3,7 @@ import kornia as K
 import torch
 
 from core import device as global_device
-from core import set_args
+from core import set_args, check_data
 
 
 class smnn_module:
@@ -38,7 +38,14 @@ class smnn_module:
         
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
                 
-        self.id_string, self.args = set_args('smnn', args, self.args)        
+        self.id_string, self.args = set_args('smnn', args, self.args)
+
+        self.required_input = {'desc': 2}
+        self.required_output = {
+            'm_idx':  [-1, 2],
+            'm_val':  [-1],
+            'm_mask': [-1],
+        }
 
 
     def get_id(self): 
@@ -50,9 +57,11 @@ class smnn_module:
 
 
     def run(self, **args):
-        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before smnn"
+        check_data(args, self.required_input)
 
         val, idxs = K.feature.match_smnn(args['desc'][0], args['desc'][1], self.args['th'])
 
-        return {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)}
+        result = {'m_idx': idxs, 'm_val': val.squeeze(1), 'm_mask': torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)}
+        check_data(result, self.required_output)
+        return result
 

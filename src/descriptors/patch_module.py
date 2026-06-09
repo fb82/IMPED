@@ -2,7 +2,7 @@
 import kornia as K
 
 from core import device as global_device
-from core import homo2laf, laf2homo, set_args
+from core import homo2laf, laf2homo, set_args, check_data
 import torch
 
 
@@ -72,6 +72,17 @@ class patch_module:
         if not len(base_string): base_string = 'pass_laf'
         self.id_string = base_string + self.id_string
 
+        self.required_input = {
+            'idx': None,
+            'img': -1,
+            'kp':  -1,
+            'kH':  -1,
+        }
+        self.required_output = {
+            'kp': [-1, 2],
+            'kH': [-1, 3, 3],
+        }
+
 
     def get_id(self): 
         return self.id_string
@@ -82,10 +93,7 @@ class patch_module:
 
 
     def run(self, **args):
-        assert 'idx' in args
-        assert 'img' in args and len(args['img']) > args['idx']
-        assert 'kp' in args and len(args['kp']) > args['idx']
-        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+        check_data(args, self.required_input)
 
         import cv2
         import numpy as np
@@ -108,5 +116,7 @@ class patch_module:
         lafs = self.ori_module(lafs, im)
 
         kp, kH = laf2homo(lafs.squeeze(0))
-    
-        return {'kp': kp, 'kH': kH}
+
+        result = {'kp': kp, 'kH': kH}
+        check_data(result, self.required_output)
+        return result

@@ -18,6 +18,7 @@ from .geometry import (
 )
 from .utils import (
     set_args,
+    check_data,
     compressed_pickle,
     decompress_pickle,
     qvec2rotmat,

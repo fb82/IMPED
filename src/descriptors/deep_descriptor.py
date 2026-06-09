@@ -2,7 +2,7 @@
 import kornia as K
 
 from core import device as global_device
-from core import homo2laf, set_args
+from core import homo2laf, set_args, check_data
 import torch
 
 
@@ -57,6 +57,14 @@ class deep_descriptor_module:
         self.ddesc = K.feature.LAFDescriptor(patch_descriptor_module=desc, **self.args['patch_params'])
         self.id_string = base_string + self.id_string
 
+        self.required_input = {
+            'idx': None,
+            'img': -1,
+            'kp':  -1,
+            'kH':  -1,
+        }
+        self.required_output = {'desc': [-1, -1]}
+
 
     def get_id(self): 
         return self.id_string
@@ -67,14 +75,13 @@ class deep_descriptor_module:
 
 
     def run(self, **args):
-        assert 'idx' in args
-        assert 'img' in args and len(args['img']) > args['idx']
-        assert 'kp' in args and len(args['kp']) > args['idx']
-        assert 'kH' in args and len(args['kH']) > args['idx'], "kH missing — use a LAF-producing detector (keynet, dog, hz)"
+        check_data(args, self.required_input)
 
         im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)
-    
-        return {'desc': desc}
+
+        result = {'desc': desc}
+        check_data(result, self.required_output)
+        return result

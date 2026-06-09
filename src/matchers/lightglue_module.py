@@ -12,7 +12,7 @@ from lightglue.utils import rbd as lg_rbd
 from PIL import Image
 
 from core import device as global_device
-from core import homo2laf, set_args
+from core import homo2laf, set_args, check_data
 
 
 class lightglue_module:
@@ -68,25 +68,33 @@ class lightglue_module:
             self.matcher = lg_lightglue(features='sift').eval().to(self.device)                            
         elif self.what == 'doghardnet':            
             self.matcher = lg_lightglue(features='doghardnet').eval().to(self.device)            
-        else:   
+        else:
             self.what = 'superpoint'
-            self.matcher = lg_lightglue(features='superpoint').eval().to(self.device)            
+            self.matcher = lg_lightglue(features='superpoint').eval().to(self.device)
 
+        self.required_input = {
+            'img':  2,
+            'kp':   2,
+            'desc': 2,
+        }
+        if self.what in ('sift', 'doghardnet'):
+            self.required_input['kH'] = 2
+        self.required_output = {
+            'm_idx':  [-1, 2],
+            'm_val':  [-1],
+            'm_mask': [-1],
+        }
 
-    def get_id(self): 
+    def get_id(self):
         return self.id_string
-    
-    
+
+
     def finalize(self):
         return
-    
-    
+
+
     def run(self, **args):
-        assert 'img' in args and len(args['img']) == 2
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'desc' in args and len(args['desc']) == 2, "desc missing — add a descriptor module before lightglue"
-        if self.what in ('sift', 'doghardnet'):
-            assert 'kH' in args and len(args['kH']) == 2, f"kH missing — required when what='{self.what}'"
+        check_data(args, self.required_input)
 
         width, height = Image.open(args['img'][0]).size
         sz1 = torch.tensor([width / 2, height / 2], device=self.device)
@@ -126,8 +134,10 @@ class lightglue_module:
             m_val = m_val.reshape(1)
         
         m_mask = torch.ones(idxs.shape[0], device=self.device, dtype=torch.bool)
-                    
-        return {'m_idx': idxs, 'm_val': m_val, 'm_mask': m_mask}
+
+        result = {'m_idx': idxs, 'm_val': m_val, 'm_mask': m_mask}
+        check_data(result, self.required_output)
+        return result
     
 
 
@@ -187,12 +197,22 @@ class deep_joined_module:
             self.extractor = lg_sift(max_num_keypoints=self.args['num_features']).eval().to(self.device)
         elif self.what == 'doghardnet':            
             self.extractor = lg_doghardnet(max_num_keypoints=self.args['num_features']).eval().to(self.device)
-        else:   
+        else:
             self.what = 'superpoint'
             self.extractor = lg_superpoint(max_num_keypoints=self.args['num_features']).eval().to(self.device)
 
+        self.required_input = {
+            'img': -1,
+            'idx': None,
+        }
+        self.required_output = {
+            'kp':   [-1, 2],
+            'kH':   [-1, 3, 3],
+            'kr':   [-1],
+            'desc': [-1, -1],
+        }
 
-    def get_id(self): 
+    def get_id(self):
         return self.id_string
     
     
@@ -201,22 +221,26 @@ class deep_joined_module:
 
 
     def run(self, **args):
+        check_data(args, self.required_input)
+
         img = lg_load_image(args['img'][args['idx']]).to(self.device)
 
         feats = self.extractor.extract(img, resize=self.args['resize'])
         assert all(k in feats for k in ('keypoints', 'keypoint_scores', 'descriptors', 'image_size')), f"unexpected extractor output keys: {list(feats.keys())}"
 
-        kp = feats['keypoints'].squeeze(0)       
-        desc = feats['descriptors'].squeeze(0)       
+        kp = feats['keypoints'].squeeze(0)
+        desc = feats['descriptors'].squeeze(0)
 
-        kH = torch.zeros((kp.shape[0], 3, 3), device=self.device)        
+        kH = torch.zeros((kp.shape[0], 3, 3), device=self.device)
         kH[:, [0, 1], 2] = -kp / self.args['patch_radius']
         kH[:, 0, 0] = 1 / self.args['patch_radius']
         kH[:, 1, 1] = 1 / self.args['patch_radius']
         kH[:, 2, 2] = 1
 
-        kr = torch.full((kp.shape[0], ), torch.nan, device=self.device)        
-        
-        # todo: add feats['keypoint_scores'] as kr        
-        return {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
+        kr = torch.full((kp.shape[0], ), torch.nan, device=self.device)
+
+        # todo: add feats['keypoint_scores'] as kr
+        result = {'kp': kp, 'kH': kH, 'kr': kr, 'desc': desc}
+        check_data(result, self.required_output)
+        return result
 

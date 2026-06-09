@@ -7,7 +7,7 @@ import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
 from core import device as global_device
-from core import set_args
+from core import set_args, check_data
 
 
 class mop_miho_ncc_module:
@@ -93,8 +93,18 @@ class mop_miho_ncc_module:
                 'subpix': True,
                 'ref_image': 'both',
                 'use_covariance': True,
-                'centered_derivative': True,                
+                'centered_derivative': True,
                 }
+
+        self.required_input = {
+            'kp':     2,
+            'm_idx':  [-1, 2],
+            'm_mask': [-1],
+        }
+        if len(self.args['ncc_todo']):
+            self.required_input['img'] = 2
+            self.required_input['kH'] = 2
+            self.required_input['kr'] = 2
 
         self.transform = transforms.Compose([
             transforms.Grayscale(),
@@ -135,12 +145,7 @@ class mop_miho_ncc_module:
             dict: Updated pipeline dictionary containing refined keypoints, 
                   homographies, and updated validity masks.
         """     
-        assert 'kp' in args and len(args['kp']) == 2
-        assert 'm_idx' in args and 'm_mask' in args
-        if len(self.args['ncc_todo']):
-            assert 'img' in args and len(args['img']) == 2
-            assert 'kH' in args and len(args['kH']) == 2, "kH missing — use a LAF-producing detector (keynet, dog, hz)"
-            assert 'kr' in args and len(args['kr']) == 2, "kr missing — use a detector that produces scale/response info"
+        check_data(args, self.required_input)
 
         from ensemble import pipe_union
         if self.mop is not None:
