@@ -8,6 +8,10 @@ import numpy as np
 from imc import _EPS
 
 
+DONTCARE   = -1  # list length not checked (single-image modules)
+NKEYPOINTS = -1  # any number of keypoints
+NMATCHES   = -1  # any number of matches
+
 _KEY_HINTS = {
     'kH':   "use a LAF-producing detector (keynet, dog, hz)",
     'desc': "add a descriptor module before this one",

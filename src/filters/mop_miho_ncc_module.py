@@ -7,7 +7,7 @@ import miho.src.miho as mop_miho
 import miho.src.miho_other as mop
 import miho.src.ncc as ncc
 from core import device as global_device
-from core import set_args, check_data
+from core import set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class mop_miho_ncc_module:
@@ -98,8 +98,8 @@ class mop_miho_ncc_module:
 
         self.required_input = {
             'kp':     2,
-            'm_idx':  [-1, 2],
-            'm_mask': [-1],
+            'm_idx':  [NMATCHES, 2],
+            'm_mask': [NMATCHES],
         }
         if len(self.args['ncc_todo']):
             self.required_input['img'] = 2

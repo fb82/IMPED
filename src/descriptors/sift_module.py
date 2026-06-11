@@ -5,7 +5,7 @@ import torch
 from kornia_moons.feature import opencv_kpts_from_laf
 
 from core import device as global_device
-from core import homo2laf, set_args, check_data
+from core import homo2laf, set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class sift_module:
@@ -51,11 +51,11 @@ class sift_module:
 
         self.required_input = {
             'idx': None,
-            'img': -1,
-            'kp':  -1,
-            'kH':  -1,
+            'img': DONTCARE,
+            'kp':  DONTCARE,
+            'kH':  DONTCARE,
         }
-        self.required_output = {'desc': [-1, -1]}
+        self.required_output = {'desc': [NKEYPOINTS, DONTCARE]}
 
     def get_id(self): 
         return self.id_string

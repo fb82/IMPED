@@ -2,7 +2,7 @@
 import kornia as K
 
 from core import device as global_device
-from core import homo2laf, laf2homo, set_args, check_data
+from core import homo2laf, laf2homo, set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 import torch
 
 
@@ -74,13 +74,13 @@ class patch_module:
 
         self.required_input = {
             'idx': None,
-            'img': -1,
-            'kp':  -1,
-            'kH':  -1,
+            'img': DONTCARE,
+            'kp':  DONTCARE,
+            'kH':  DONTCARE,
         }
         self.required_output = {
-            'kp': [-1, 2],
-            'kH': [-1, 3, 3],
+            'kp': [NKEYPOINTS, 2],
+            'kH': [NKEYPOINTS, 3, 3],
         }
 
 

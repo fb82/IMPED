@@ -6,7 +6,7 @@ from PIL import Image
 
 import adalam.adalam.adalam as adalam
 from core import device as global_device
-from core import homo2laf, set_args, check_data
+from core import homo2laf, set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class adalam_module:
@@ -90,11 +90,11 @@ class adalam_module:
             'img':    2,
             'kp':     2,
             'kH':     2,
-            'm_idx':  [-1, 2],
-            'm_mask': [-1],
-            'm_val':  [-1],
+            'm_idx':  [NMATCHES, 2],
+            'm_mask': [NMATCHES],
+            'm_val':  [NMATCHES],
         }
-        self.required_output = {'m_mask': [-1]}
+        self.required_output = {'m_mask': [NMATCHES]}
 
 
     def get_id(self): 

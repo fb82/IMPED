@@ -3,7 +3,7 @@ import kornia as K
 import torch
 
 from core import device as global_device
-from core import set_args, check_data
+from core import set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class smnn_module:
@@ -42,9 +42,9 @@ class smnn_module:
 
         self.required_input = {'desc': 2}
         self.required_output = {
-            'm_idx':  [-1, 2],
-            'm_val':  [-1],
-            'm_mask': [-1],
+            'm_idx':  [NMATCHES, 2],
+            'm_val':  [NMATCHES],
+            'm_mask': [NMATCHES],
         }
 
 

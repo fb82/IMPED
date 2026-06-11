@@ -2,7 +2,7 @@
 import kornia as K
 
 from core import device as global_device
-from core import homo2laf, set_args, check_data
+from core import homo2laf, set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 import torch
 
 
@@ -59,11 +59,11 @@ class deep_descriptor_module:
 
         self.required_input = {
             'idx': None,
-            'img': -1,
-            'kp':  -1,
-            'kH':  -1,
+            'img': DONTCARE,
+            'kp':  DONTCARE,
+            'kH':  DONTCARE,
         }
-        self.required_output = {'desc': [-1, -1]}
+        self.required_output = {'desc': [NKEYPOINTS, DONTCARE]}
 
 
     def get_id(self): 
@@ -77,7 +77,8 @@ class deep_descriptor_module:
     def run(self, **args):
         check_data(args, self.required_input)
 
-        im = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.GRAY32, device=self.device).unsqueeze(0)
+        im_rgb = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.RGB32, device=self.device)
+        im = K.color.rgb_to_grayscale(im_rgb).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)

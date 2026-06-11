@@ -12,7 +12,7 @@ from lightglue.utils import rbd as lg_rbd
 from PIL import Image
 
 from core import device as global_device
-from core import homo2laf, set_args, check_data
+from core import homo2laf, set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class lightglue_module:
@@ -80,9 +80,9 @@ class lightglue_module:
         if self.what in ('sift', 'doghardnet'):
             self.required_input['kH'] = 2
         self.required_output = {
-            'm_idx':  [-1, 2],
-            'm_val':  [-1],
-            'm_mask': [-1],
+            'm_idx':  [NMATCHES, 2],
+            'm_val':  [NMATCHES],
+            'm_mask': [NMATCHES],
         }
 
     def get_id(self):
@@ -202,14 +202,14 @@ class deep_joined_module:
             self.extractor = lg_superpoint(max_num_keypoints=self.args['num_features']).eval().to(self.device)
 
         self.required_input = {
-            'img': -1,
+            'img': DONTCARE,
             'idx': None,
         }
         self.required_output = {
-            'kp':   [-1, 2],
-            'kH':   [-1, 3, 3],
-            'kr':   [-1],
-            'desc': [-1, -1],
+            'kp':   [NKEYPOINTS, 2],
+            'kH':   [NKEYPOINTS, 3, 3],
+            'kr':   [NKEYPOINTS],
+            'desc': [NKEYPOINTS, DONTCARE],
         }
 
     def get_id(self):

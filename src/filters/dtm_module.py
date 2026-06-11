@@ -3,7 +3,7 @@ import torch
 
 import dtm.src.dtm as dtm
 from core import device as global_device
-from core import set_args, check_data
+from core import set_args, check_data, DONTCARE, NKEYPOINTS, NMATCHES
 
 
 class dtm_module:
@@ -53,11 +53,11 @@ class dtm_module:
         self.required_input = {
             'img':    2,
             'kp':     2,
-            'm_idx':  [-1, 2],
-            'm_val':  [-1],
-            'm_mask': [-1],
+            'm_idx':  [NMATCHES, 2],
+            'm_val':  [NMATCHES],
+            'm_mask': [NMATCHES],
         }
-        self.required_output = {'m_mask': [-1]}
+        self.required_output = {'m_mask': [NMATCHES]}
 
 
     def get_id(self): 
