@@ -24,7 +24,7 @@ def finalize_pipeline(pipeline):
         if hasattr(pipe_module, 'finalize'):
             pipe_module.finalize()
     
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):    
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
     if isinstance(imgs, str):
@@ -97,7 +97,7 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
             colmap_db_or_list=colmap_db_or_list,
             mode=mode,
             colmap_req=colmap_req,
-            colmap_min_matches=colmap_min_matches
+            colmap_min_matches=colmap_min_matches,
         )
     else:
         # Incremental mode
@@ -120,9 +120,40 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
         pairs_iter = gen_pairs()
 
+        n_existing_vs_existing = len(existing) * (len(existing) - 1) // 2 if mode == 'include' else 0
+        n_new_vs_existing = len(new) * len(existing)
+        n_new_vs_new = len(new) * (len(new) - 1) // 2
+        total = n_existing_vs_existing + n_new_vs_existing + n_new_vs_new
 
-    for pair in go_iter(pairs_iter, msg='          processed pairs'):
-        run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+
+    total = len(pairs_iter) if hasattr(pairs_iter, '__len__') else total
+
+    computed_pairs = set()
+    if not force:
+        hdf5 = db.get_hdf5()
+        if hdf5 is not None and db.label_prefix in hdf5:
+            root = hdf5[db.label_prefix]
+            for im0, item0 in root.items():
+                if hasattr(item0, 'items'):
+                    for im1, item1 in item0.items():
+                        if hasattr(item1, 'items'):
+                            computed_pairs.add((im0, im1))
+
+    for k, pair in enumerate(go_iter(pairs_iter, msg='          processed pairs')):
+        img0 = os.path.basename(pair[0])
+        img1 = os.path.basename(pair[1])
+
+        if not force:
+            if (img0, img1) in computed_pairs or (img1, img0) in computed_pairs:
+                tqdm.write(f'  skipping already computed pair ({img0}, {img1})') if show_progress else print(f'  skipping already computed pair ({img0}, {img1})')
+                continue
+
+        msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
+        tqdm.write(msg) if show_progress else print(msg)
+        try:
+            run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+        except Exception as e:
+            tqdm.write(f'  skipping pair ({img0}, {img1}): {e}') if show_progress else print(f'  skipping pair ({img0}, {img1}): {e}')
 
     finalize_pipeline(pipeline)
 

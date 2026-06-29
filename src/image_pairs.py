@@ -113,7 +113,7 @@ class image_pairs:
     
 
     def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
-        imgs = []        
+        imgs = []
 
         if isinstance(to_list, str):
             warnings.warn("retrieving image list from the image folder")
@@ -208,32 +208,31 @@ class image_pairs:
         if self.iter_base:
             in_loop = True
             while in_loop:
-                if (self.i < len(self.imgs)) and (self.j < len(self.imgs)):                    
+                if (self.i < len(self.imgs)) and (self.j < len(self.imgs)):
                         ii, jj = self.imgs[self.i], self.imgs[self.j]
-                    
+
                         self.j = self.j + 1
-    
-                        if self.j >= len(self.imgs):                    
+                        if self.j >= len(self.imgs):
                             self.i = self.i + 1
                             self.j = self.i + 1
-    
+
                         if self.must_skip_after_additional_image_pair_check(ii, jj):
                             self.len = max(0, self.len - 1)
                             continue
-                                                       
+
                         return ii, jj
                 else:
                     if self.additional_colmap_db is not None: self.additional_colmap_db.close()
                     raise StopIteration
 
         else:
-            while self.k < len(self.imgs):            
+            while self.k < len(self.imgs):
                 i, j = self.imgs[self.k]
                 self.k = self.k + 1
 
                 ii = os.path.join(self.add_path, i)
                 jj = os.path.join(self.add_path, j)
-        
+
                 if self.check_img:
                     try:
                         Image.open(ii).verify()
@@ -241,11 +240,11 @@ class image_pairs:
                     except:
                         self.len = max(0, self.len - 1)
                         continue
-                        
+
                 if self.must_skip_after_additional_image_pair_check(ii, jj):
                     self.len = max(0, self.len - 1)
                     continue
-    
+
                 return ii, jj            
 
             if self.additional_colmap_db is not None: self.additional_colmap_db.close()

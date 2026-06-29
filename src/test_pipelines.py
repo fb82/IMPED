@@ -1073,7 +1073,43 @@ def pipeline43():
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         to_colmap_module(),
-    ]    
+    ]
     imgs = '../data/ET'
     name_db = f"database_{name_example}.hdf5"
-    run_pairs(pipeline, imgs, db_name=name_db)  
+    run_pairs(pipeline, imgs, db_name=name_db)
+
+
+def pipeline_ssma():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs = '/home/colombo/Documenti/newest/IMPED/data/imgs_orig/'
+
+    pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                smnn_module(),
+            ],
+        ]),
+        magsac_module(),
+        to_colmap_module(db='colmap_new_backup.db'),
+    ]
+
+    run_pairs(
+        pipeline, imgs,
+        db_name=None,
+        colmap_db_or_list='colmap_new_backup.db',
+    )

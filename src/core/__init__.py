@@ -3,9 +3,9 @@ __version__ = "0.1.0"
 from .device import device, pipe_color, show_progress, enable_quadtree
 
 from .pipeline import (
-    run_pipeline, 
-    run_pairs, 
-    finalize_pipeline, 
+    run_pipeline,
+    run_pairs,
+    finalize_pipeline,
     go_iter
 )
 from .geometry import (
@@ -19,6 +19,9 @@ from .geometry import (
 from .utils import (
     set_args,
     check_data,
+    DONTCARE,
+    NKEYPOINTS,
+    NMATCHES,
     compressed_pickle,
     decompress_pickle,
     qvec2rotmat,

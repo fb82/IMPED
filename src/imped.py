@@ -38,11 +38,10 @@ import test_pipelines
 warnings.filterwarnings('ignore')
 torch.backends.cudnn.enabled = False
 
-if __name__ == '__main__':       
-    with torch.inference_mode(): 
-        
-        test_pipelines.pipeline42()
+if __name__ == '__main__':
+    with torch.inference_mode():
+        test_pipelines.pipeline_ssma()
 
-    print('doh!')
+    print('done!')
 
 
