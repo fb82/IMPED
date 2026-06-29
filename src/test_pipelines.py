@@ -9,7 +9,7 @@ import inspect
 import pycolmap
 import torch
 
-from core import enable_quadtree, run_pairs
+from core import enable_quadtree, run_pairs, split_images, merge_hdf5
 
 project_root = Path(__file__).parent.resolve()
 
@@ -1113,3 +1113,105 @@ def pipeline_ssma():
         db_name=None,
         colmap_db_or_list='colmap_new_backup.db',
     )
+
+
+def pipeline44():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    import h5py
+
+    imgs_dir = '../data/ET'
+    db0 = f'database_{name_example}_chunk0.hdf5'
+    db1 = f'database_{name_example}_chunk1.hdf5'
+    db_merged = f'database_{name_example}_merged.hdf5'
+
+    for f in [db0, db1, db_merged]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    def make_pipeline():
+        return [
+            dog_module(),
+            patch_module(),
+            deep_descriptor_module(),
+            smnn_module(),
+            magsac_module(),
+        ]
+
+    chunk0 = split_images(imgs_dir, n_chunks=2, chunk_idx=0)
+    chunk1 = split_images(imgs_dir, n_chunks=2, chunk_idx=1)
+    chunk0_names = {os.path.basename(p) for p in chunk0}
+    chunk1_names = {os.path.basename(p) for p in chunk1}
+    all_names = chunk0_names | chunk1_names
+
+    print(f"chunk0 ({len(chunk0)} imgs): {sorted(chunk0_names)}")
+    print(f"chunk1 ({len(chunk1)} imgs): {sorted(chunk1_names)}")
+
+    run_pairs(make_pipeline(), chunk0, db_name=db0)
+    run_pairs(make_pipeline(), chunk1, db_name=db1)
+
+    def get_computed_pairs(db_path):
+        pairs = set()
+        with h5py.File(db_path, 'r') as f:
+            if 'pickled' not in f:
+                return pairs
+            root = f['pickled']
+            for im0 in root.keys():
+                if im0 not in all_names:
+                    continue
+                for im1 in root[im0].keys():
+                    if im1 in all_names and hasattr(root[im0][im1], 'keys'):
+                        pairs.add((im0, im1))
+        return pairs
+
+    pairs0 = get_computed_pairs(db0)
+    pairs1 = get_computed_pairs(db1)
+    n_intra0 = len(chunk0) * (len(chunk0) - 1) // 2
+    n_intra1 = len(chunk1) * (len(chunk1) - 1) // 2
+
+    assert len(pairs0) == n_intra0, f"Expected {n_intra0} pairs in chunk0 db, got {len(pairs0)}"
+    assert len(pairs1) == n_intra1, f"Expected {n_intra1} pairs in chunk1 db, got {len(pairs1)}"
+    for im0, im1 in pairs0:
+        assert im0 in chunk0_names and im1 in chunk0_names, \
+            f"Cross-chunk pair ({im0}, {im1}) found in chunk0 db"
+    for im0, im1 in pairs1:
+        assert im0 in chunk1_names and im1 in chunk1_names, \
+            f"Cross-chunk pair ({im0}, {im1}) found in chunk1 db"
+    print("  [OK] chunk runs produced only intra-chunk pairs")
+
+    merge_hdf5([db0, db1], db_merged)
+
+    pairs_before = get_computed_pairs(db_merged)
+    assert len(pairs_before) == n_intra0 + n_intra1, \
+        f"Expected {n_intra0 + n_intra1} pairs after merge, got {len(pairs_before)}"
+    print(f"  [OK] merge produced {len(pairs_before)} intra-chunk pairs")
+
+    # Run on all images — each image in chunk0 has its intra-chunk pairs done
+    # but its cross-chunk pairs are missing; this verifies that partial-pair
+    # images get their remaining pairs computed and are not skipped entirely
+    run_pairs(make_pipeline(), imgs_dir, db_name=db_merged)
+
+    pairs_after = get_computed_pairs(db_merged)
+    n_total = len(all_names) * (len(all_names) - 1) // 2
+    n_cross = len(chunk0) * len(chunk1)
+
+    assert len(pairs_after) == n_total, \
+        f"Expected {n_total} total pairs after full run, got {len(pairs_after)}"
+
+    new_pairs = pairs_after - pairs_before
+    assert len(new_pairs) == n_cross, \
+        f"Expected {n_cross} new cross-chunk pairs, got {len(new_pairs)}"
+    for im0, im1 in new_pairs:
+        is_cross = (im0 in chunk0_names and im1 in chunk1_names) or \
+                   (im0 in chunk1_names and im1 in chunk0_names)
+        assert is_cross, f"Non-cross-chunk pair ({im0}, {im1}) found in newly computed pairs"
+    print(f"  [OK] {n_cross} cross-chunk pairs computed, {len(pairs_before)} intra-chunk pairs skipped")
+
+    for f in [db0, db1, db_merged]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("pipeline44: ALL ASSERTIONS PASSED")

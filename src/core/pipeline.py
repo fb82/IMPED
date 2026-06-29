@@ -1,6 +1,8 @@
 import os
 import time
 
+import h5py
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -271,4 +273,36 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             for k, v in out_data.items(): pipe_data[k] = v
                 
     return pipe_data, pipe_name
+
+
+def split_images(imgs, n_chunks, chunk_idx):
+    if isinstance(imgs, str):
+        imgs = [
+            os.path.join(imgs, f)
+            for f in os.listdir(imgs)
+            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+        ]
+    imgs = sorted(imgs)
+    chunk_size = (len(imgs) + n_chunks - 1) // n_chunks
+    start = chunk_idx * chunk_size
+    end = min(start + chunk_size, len(imgs))
+    return imgs[start:end]
+
+
+def merge_hdf5(db_paths, output_path, prefix='pickled'):
+    with h5py.File(output_path, 'a') as dst:
+        if prefix not in dst:
+            dst.create_group(prefix)
+        dst_root = dst[prefix]
+
+        for db_path in db_paths:
+            with h5py.File(db_path, 'r') as src:
+                if prefix not in src:
+                    continue
+                src_root = src[prefix]
+                for key in src_root.keys():
+                    if key in dst_root:
+                        print(f'Warning: skipping conflicting key "{key}" from {db_path}')
+                        continue
+                    src.copy(f'{prefix}/{key}', dst_root)
 

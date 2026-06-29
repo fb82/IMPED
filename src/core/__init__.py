@@ -6,7 +6,9 @@ from .pipeline import (
     run_pipeline,
     run_pairs,
     finalize_pipeline,
-    go_iter
+    go_iter,
+    split_images,
+    merge_hdf5,
 )
 from .geometry import (
     laf2homo, 

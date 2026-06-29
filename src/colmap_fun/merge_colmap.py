@@ -15,6 +15,47 @@ from ensemble import pipe_union
 from .colmap_ext import coldb_ext
 
 
+def _sort_and_mask(m_idx, s_idx):
+    """Lexicographically sort m_idx and compute which rows appear in s_idx."""
+    if m_idx.shape[0] == 0:
+        return m_idx, torch.zeros(0, dtype=torch.bool)
+    m_np = m_idx.cpu().numpy()
+    order = np.lexsort((m_np[:, 1], m_np[:, 0]))
+    m_idx = m_idx[torch.from_numpy(order)]
+    if s_idx.shape[0] == 0:
+        return m_idx, torch.zeros(m_idx.shape[0], dtype=torch.bool)
+    m_np_sorted = m_np[order]
+    s_np = s_idx.cpu().numpy()
+    void_dt = np.dtype((np.void, m_np_sorted.dtype.itemsize * 2))
+    m_void = np.ascontiguousarray(m_np_sorted).view(void_dt)
+    s_void = np.ascontiguousarray(s_np).view(void_dt)
+    return m_idx, torch.from_numpy(np.isin(m_void, s_void).reshape(-1))
+
+
+def _build_pipe_matches(matches, two_view_matches, models, pipe, device):
+    if matches is None:
+        m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)
+        pipe['m_idx'] = m_idx
+        pipe['m_val'] = torch.full((0,), torch.inf, device=device)
+        pipe['m_mask'] = torch.ones(0, device=device, dtype=torch.bool)
+        return
+    m_idx = torch.tensor(np.copy(matches), device=device, dtype=torch.int)
+    if two_view_matches is None:
+        pipe['m_idx'] = m_idx
+        pipe['m_val'] = torch.full((m_idx.shape[0],), np.inf, device=device)
+        pipe['m_mask'] = torch.ones(m_idx.shape[0], device=device, dtype=torch.bool)
+        return
+    s_idx = torch.tensor(np.copy(two_view_matches), device=device, dtype=torch.int)
+    if models is not None and len(models) == 1:
+        for model in ['H', 'F', 'E']:
+            if model in models:
+                pipe[model] = torch.tensor(models[model], device=device)
+    m_idx, m_mask = _sort_and_mask(m_idx, s_idx)
+    pipe['m_idx'] = m_idx.to(device)
+    pipe['m_val'] = torch.full((m_idx.shape[0],), np.inf, device=device)
+    pipe['m_mask'] = m_mask.to(device)
+
+
 def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, how_filter=None,
     only_keypoints=False, unique=True, only_matched=False, no_unmatched=True,
     include_two_view_geometry=True, sampling_mode='raw', overlapping_cells=False,
@@ -216,115 +257,25 @@ def merge_colmap_db(db_names, db_merged_name, img_folder=None, to_filter=None, h
 
                 no_matches = False
                 if only_keypoints: no_matches = True
- 
-                matches = None
-                two_view_matches = None
-                if no_matches == False:
+
+                matches = two_view_matches = models = None
+                if not no_matches:
                     matches = db.get_matches(im0_id, im1_id)
                     if matches is not None and include_two_view_geometry:
                         two_view_matches, models = db.get_two_view_geometry(im0_id, im1_id)
 
-                if matches is None:
-                    m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
-                    m_val = torch.full((m_idx.shape[0], ), torch.inf, device=device)
-                    m_mask = torch.full((m_idx.shape[0], ), 1, device=device, dtype=torch.bool)
-                else:                    
-                    m_idx = torch.tensor(np.copy(matches), device=device, dtype=torch.int)
-                    if two_view_matches is None:
-                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
-                    else:                       
-                        s_idx = torch.tensor(np.copy(two_view_matches), device=device, dtype=torch.int)
-                            
-                        if len(models.keys()) == 1:
-                            for model in ['H', 'F', 'E']:
-                                if model in models: pipe[model] = torch.tensor(models[model], device=device)
-                                
-                        m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
-                        
-                        idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
-                        m_idx = m_idx[idx]
-                        idx = torch.argsort(m_idx[:, 0].type(torch.int), stable=True)
-                        m_idx = m_idx[idx]
-
-                        idx = torch.argsort(s_idx[:, 1].type(torch.int), stable=True)
-                        s_idx = s_idx[idx]
-                        idx = torch.argsort(s_idx[:, 0].type(torch.int), stable=True)
-                        s_idx = s_idx[idx]
-
-                        q0 = 0
-                        q1 = 0
-                        while (q0 < s_idx.shape[0]) and (q1 < m_idx.shape[0]):                       
-                            if (s_idx[q0, 0] < m_idx[q1, 0]) or ((s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] < m_idx[q1, 1])):
-                                q0 = q0 + 1
-                            elif (s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] == m_idx[q1, 1]):
-                                m_mask[q1] = 1
-                                q0 = q0 + 1
-                                q1 = q1 + 1
-                            else:
-                                q1 = q1 + 1
-
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
-
-                pipe['m_idx'] = m_idx
-                pipe['m_val'] = m_val
-                pipe['m_mask'] = m_mask
+                _build_pipe_matches(matches, two_view_matches, models, pipe, device)
                 
                 if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
                     pipe['k_counter'] = [k0_count, k1_count]
         
-                matches_prev = None
-                two_view_matches_prev = None
-                if no_matches == False:
+                matches_prev = two_view_matches_prev = models_prev = None
+                if not no_matches:
                     matches_prev = db_merged.get_matches(im0_id_prev, im1_id_prev)
                     if matches_prev is not None and include_two_view_geometry:
                         two_view_matches_prev, models_prev = db_merged.get_two_view_geometry(im0_id_prev, im1_id_prev)
 
-                if matches_prev is None:
-                    m_idx = torch.zeros((0, 2), device=device, dtype=torch.int)        
-                    m_val = torch.full((m_idx.shape[0], ), torch.inf, device=device)
-                    m_mask = torch.full((m_idx.shape[0], ), 1, device=device, dtype=torch.bool)
-                else:                    
-                    m_idx = torch.tensor(np.copy(matches_prev), device=device, dtype=torch.int)
-                    if two_view_matches_prev is None:
-                        m_mask = torch.full((m_idx.shape[0],), 1, device=device, dtype=torch.bool)
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
-                    else:                       
-                        s_idx = torch.tensor(np.copy(two_view_matches_prev), device=device, dtype=torch.int)
-                            
-                        if len(models_prev.keys()) == 1:
-                            for model in ['H', 'F', 'E']:
-                                if model in models_prev: pipe_prev[model] = torch.tensor(models_prev[model], device=device)
-                                
-                        m_mask = torch.zeros(m_idx.shape[0], device=device, dtype=torch.bool)
-                        
-                        idx = torch.argsort(m_idx[:, 1].type(torch.int), stable=True)
-                        m_idx = m_idx[idx]
-                        idx = torch.argsort(m_idx[:, 0].type(torch.int), stable=True)
-                        m_idx = m_idx[idx]
-
-                        idx = torch.argsort(s_idx[:, 1].type(torch.int), stable=True)
-                        s_idx = s_idx[idx]
-                        idx = torch.argsort(s_idx[:, 0].type(torch.int), stable=True)
-                        s_idx = s_idx[idx]
-
-                        q0 = 0
-                        q1 = 0
-                        while (q0 < s_idx.shape[0]) and (q1 < m_idx.shape[0]):                       
-                            if (s_idx[q0, 0] < m_idx[q1, 0]) or ((s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] < m_idx[q1, 1])):
-                                q0 = q0 + 1
-                            elif (s_idx[q0, 0] == m_idx[q1, 0]) and (s_idx[q0, 1] == m_idx[q1, 1]):
-                                m_mask[q1] = 1
-                                q0 = q0 + 1
-                                q1 = q1 + 1
-                            else:
-                                q1 = q1 + 1
-
-                        m_val = torch.full((m_idx.shape[0],), np.inf, device=device)
-
-                pipe_prev['m_idx'] = m_idx
-                pipe_prev['m_val'] = m_val
-                pipe_prev['m_mask'] = m_mask
+                _build_pipe_matches(matches_prev, two_view_matches_prev, models_prev, pipe_prev, device)
                 
                 if (sampling_mode == 'avg_all_matches') or (sampling_mode == 'avg_inlier_matches'):        
                     pipe_prev['k_counter'] = [k0_count_prev, k1_count_prev]
