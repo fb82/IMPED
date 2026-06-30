@@ -43,3 +43,6 @@
 [submodule "src/loma"]
 	path = src/loma
 	url = https://github.com/davnords/LoMa.git
+[submodule "src/salad"]
+	path = src/salad
+	url = https://github.com/serizba/salad.git
