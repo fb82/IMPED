@@ -1,4 +1,6 @@
 
+import cv2
+import numpy as np
 import kornia as K
 
 from core import device as global_device
@@ -77,8 +79,8 @@ class deep_descriptor_module:
     def run(self, **args):
         check_data(args, self.required_input)
 
-        im_rgb = K.io.load_image(args['img'][args['idx']], K.io.ImageLoadType.RGB32, device=self.device)
-        im = K.color.rgb_to_grayscale(im_rgb).unsqueeze(0)
+        img_np = cv2.imread(args['img'][args['idx']], cv2.IMREAD_GRAYSCALE)
+        im = torch.from_numpy(img_np.astype(np.float32) / 255.0).to(self.device).unsqueeze(0).unsqueeze(0)
 
         lafs = homo2laf(args['kp'][args['idx']], args['kH'][args['idx']])
         desc = self.ddesc(im, lafs).squeeze(0)

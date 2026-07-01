@@ -5,6 +5,8 @@ import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
+from torchvision import transforms
+from PIL import Image
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from image_pairs import image_pairs
@@ -273,6 +275,242 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             for k, v in out_data.items(): pipe_data[k] = v
                 
     return pipe_data, pipe_name
+
+
+_SALAD_TRANSFORM = transforms.Compose([
+    transforms.Resize((322, 322), interpolation=transforms.InterpolationMode.BICUBIC),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+_salad_model = None
+
+
+_SALAD_CONFLICTING_MODULES = ('models', 'vpr_model', 'utils')
+
+
+def _get_salad_model(salad_path, salad_device):
+    global _salad_model
+    if _salad_model is None:
+        import sys
+
+        # Other submodules (e.g. mast3r/dust3r) may have already cached a 'models'
+        # or 'utils' package in sys.modules, which shadows SALAD's own modules.
+        # We temporarily evict those entries, do the import, then restore them.
+        saved = {}
+        for key in list(sys.modules):
+            if key in _SALAD_CONFLICTING_MODULES or any(
+                key.startswith(m + '.') for m in _SALAD_CONFLICTING_MODULES
+            ):
+                saved[key] = sys.modules.pop(key)
+
+        sys.path.insert(0, salad_path)
+        try:
+            from vpr_model import VPRModel
+            from models.backbones.dinov2 import DINOV2_ARCHS
+            import utils as salad_utils
+
+            # get_loss / get_miner require pytorch_metric_learning which is a
+            # training-only dependency. Stub them out — they are never called
+            # during inference (forward() only uses backbone + aggregator).
+            _orig_get_loss = salad_utils.get_loss
+            _orig_get_miner = salad_utils.get_miner
+            salad_utils.get_loss = lambda *a, **kw: None
+            salad_utils.get_miner = lambda *a, **kw: None
+
+            backbone = 'dinov2_vitb14'
+            try:
+                model = VPRModel(
+                    backbone_arch=backbone,
+                    backbone_config={
+                        'num_trainable_blocks': 4,
+                        'return_token': True,
+                        'norm_layer': True,
+                    },
+                    agg_arch='SALAD',
+                    agg_config={
+                        'num_channels': DINOV2_ARCHS[backbone],
+                        'num_clusters': 64,
+                        'cluster_dim': 128,
+                        'token_dim': 256,
+                    },
+                )
+            finally:
+                salad_utils.get_loss = _orig_get_loss
+                salad_utils.get_miner = _orig_get_miner
+            model.load_state_dict(
+                torch.hub.load_state_dict_from_url(
+                    'https://github.com/serizba/salad/releases/download/v1.0.0/dino_salad.ckpt',
+                    map_location=torch.device('cpu'),
+                )
+            )
+        finally:
+            sys.path.remove(salad_path)
+            # Evict the SALAD-specific entries we just imported, then restore the originals.
+            for key in list(sys.modules):
+                if key in _SALAD_CONFLICTING_MODULES or any(
+                    key.startswith(m + '.') for m in _SALAD_CONFLICTING_MODULES
+                ):
+                    del sys.modules[key]
+            sys.modules.update(saved)
+
+        _salad_model = model
+        _salad_model.eval()
+        _salad_model.to(salad_device)
+    return _salad_model
+
+
+def _compute_global_descriptors(imgs, salad_path, salad_device):
+    model = _get_salad_model(salad_path, salad_device)
+    descriptors = []
+    for img_path in go_iter(imgs, msg='computing global descriptors'):
+        img = Image.open(img_path).convert('RGB')
+        x = _SALAD_TRANSFORM(img).unsqueeze(0).to(salad_device)
+        with torch.no_grad():
+            desc = model(x)
+        descriptors.append(desc.squeeze(0).cpu())
+    return torch.stack(descriptors)  # (N, D)
+
+
+def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', force=False,
+                    add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry',
+                    colmap_min_matches=0, salad_device=None, n_chunks=1, chunk_idx=0,
+                    salad_cache=None):
+    """Like run_pairs but only matches each image against its n closest neighbours.
+
+    Global descriptors are computed with DINOv2 SALAD (serizba/salad) to rank
+    image similarity before running the feature-matching pipeline.
+
+    Args:
+        n (int): Number of nearest neighbours to pair each image with.
+        n_chunks (int): Total number of independent workers sharing the dataset.
+            Set to 1 (default) for single-machine use.
+        chunk_idx (int): Zero-based index of this worker (0 … n_chunks-1).
+            Pair generation is identical on every worker (deterministic, read-only);
+            the pair list is then split round-robin so each worker gets a disjoint,
+            balanced subset with no coordination or locking required.
+        salad_cache (str | None): Path to a .pt file for caching SALAD descriptors.
+            On first run the descriptors are saved there; subsequent runs (including
+            other chunks on other machines) load from it instead of recomputing.
+            Set to None (default) to disable caching.
+        salad_device: Torch device for SALAD inference. Defaults to the project device.
+        All other args are forwarded to run_pairs.
+    """
+    if salad_device is None:
+        salad_device = device
+
+    salad_path = os.path.join(os.path.dirname(__file__), '..', 'salad')
+    salad_path = os.path.normpath(salad_path)
+
+    if isinstance(imgs, str):
+        imgs = [
+            os.path.join(imgs, f)
+            for f in os.listdir(imgs)
+            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+        ]
+    if add_path:
+        imgs = [os.path.join(add_path, f) if not os.path.isabs(f) else f for f in imgs]
+
+    imgs = sorted(imgs)
+
+    if salad_cache is not None and os.path.exists(salad_cache):
+        cached = torch.load(salad_cache, map_location='cpu', weights_only=False)
+        if cached.get('imgs') == imgs:
+            print(f'Loading cached SALAD descriptors from {salad_cache}')
+            descs = cached['descs']
+        else:
+            print(f'SALAD cache image list mismatch, recomputing.')
+            descs = _compute_global_descriptors(imgs, salad_path, salad_device)
+            torch.save({'imgs': imgs, 'descs': descs}, salad_cache)
+    else:
+        descs = _compute_global_descriptors(imgs, salad_path, salad_device)
+        if salad_cache is not None:
+            torch.save({'imgs': imgs, 'descs': descs}, salad_cache)
+            print(f'SALAD descriptors saved to {salad_cache}')
+
+    # L2-normalise then dot product == cosine similarity
+    descs = descs / descs.norm(dim=1, keepdim=True).clamp(min=1e-6)
+    sim = descs @ descs.T  # (N, N)
+
+    k = min(n, len(imgs) - 1)
+    pairs = set()
+    for i in range(len(imgs)):
+        sim[i, i] = -1.0  # exclude self
+        top_k = torch.topk(sim[i], k=k).indices.tolist()
+        for j in top_k:
+            pair = (min(i, j), max(i, j))
+            pairs.add(pair)
+
+    # SALAD is only needed for pair generation — release it now so the
+    # ~1.3 GB DINOv2 backbone doesn't occupy VRAM during matching.
+    global _salad_model
+    _salad_model = None
+    torch.cuda.empty_cache()
+
+    pair_list = [(imgs[i], imgs[j]) for i, j in sorted(pairs)]
+
+    # Round-robin split across workers. Pair generation is identical on every
+    # machine (deterministic, read-only), so no coordination is needed.
+    if n_chunks > 1:
+        pair_list = pair_list[chunk_idx::n_chunks]
+
+    n_candidates = len(pair_list)
+
+    # When run_pairs receives a list of tuples it skips the colmap_db_or_list
+    # filter entirely, so we apply it here manually before handing off.
+    n_skipped_colmap = 0
+    if colmap_db_or_list is not None and not force:
+        ip = image_pairs(
+            pair_list,
+            add_path=add_path,
+            colmap_db_or_list=colmap_db_or_list,
+            mode=mode,
+            colmap_req=colmap_req,
+            colmap_min_matches=colmap_min_matches,
+        )
+        pair_list = list(ip)
+        n_skipped_colmap = n_candidates - len(pair_list)
+
+    # Check how many are already cached in the HDF5 db.
+    n_skipped_hdf5 = 0
+    if db_name is not None and not force:
+        db_tmp = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
+        hdf5 = db_tmp.get_hdf5()
+        if hdf5 is not None and db_tmp.label_prefix in hdf5:
+            root = hdf5[db_tmp.label_prefix]
+            cached = {
+                (im0, im1)
+                for im0, item0 in root.items() if hasattr(item0, 'items')
+                for im1, item1 in item0.items() if hasattr(item1, 'items')
+            }
+            before = len(pair_list)
+            pair_list = [
+                (p0, p1) for p0, p1 in pair_list
+                if (os.path.basename(p0), os.path.basename(p1)) not in cached
+                and (os.path.basename(p1), os.path.basename(p0)) not in cached
+            ]
+            n_skipped_hdf5 = before - len(pair_list)
+
+    n_to_compute = len(pair_list)
+    n_all_vs_all = len(imgs) * (len(imgs) - 1) // 2
+
+    print("\nClose-pairs summary:")
+    print(f"  Images           : {len(imgs)}")
+    print(f"  All-vs-all       : {n_all_vs_all}")
+    if n_chunks > 1:
+        print(f"  Chunk            : {chunk_idx} of {n_chunks}")
+    print(f"  Candidates (n={n:2d}): {n_candidates}")
+    if n_skipped_colmap:
+        print(f"  Skipped (colmap) : {n_skipped_colmap}")
+    if n_skipped_hdf5:
+        print(f"  Skipped (hdf5)   : {n_skipped_hdf5}")
+    print(f"  To compute       : {n_to_compute}")
+    print()
+
+    run_pairs(
+        pipeline, pair_list,
+        db_name=db_name, db_mode=db_mode, force=force,
+    )
 
 
 def split_images(imgs, n_chunks, chunk_idx):

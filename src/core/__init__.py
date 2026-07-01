@@ -5,6 +5,7 @@ from .device import device, pipe_color, show_progress, enable_quadtree
 from .pipeline import (
     run_pipeline,
     run_pairs,
+    run_close_pairs as run_close_pairs,
     finalize_pipeline,
     go_iter,
     split_images,

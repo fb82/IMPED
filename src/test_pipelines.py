@@ -6,10 +6,11 @@ import subprocess
 from pathlib import Path
 import inspect
 
+import h5py
 import pycolmap
 import torch
 
-from core import enable_quadtree, run_pairs, split_images, merge_hdf5
+from core import enable_quadtree, run_pairs, run_close_pairs, split_images, merge_hdf5
 
 project_root = Path(__file__).parent.resolve()
 
@@ -67,6 +68,7 @@ from ensemble import (
     sampling_module,
 )
 from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module
+from segmentators import segformer_module
 from visualization import (
     show_homography_module,
     show_kpts_module,
@@ -1079,39 +1081,59 @@ def pipeline43():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
-def pipeline_ssma():
-    name_example = inspect.currentframe().f_code.co_name
+def pipeline_ssma(
+    n_chunks=1,
+    chunk_idx=0,
+    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
+    output_folder='.',
+    n_close=10,
+):
     print("\n \n")
     print("=" * 50)
-    print(f"Running: {name_example}")
+    print(f"Running: pipeline_ssma  [chunk {chunk_idx} of {n_chunks}]")
 
-    imgs = '/home/colombo/Documenti/newest/IMPED/data/imgs_orig/'
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    chunk_db = str(output_path / f'ssma_chunk_{chunk_idx}.db')
+
+    # One shared instance so the in-memory segmentation cache is reused
+    # across all three sub-pipelines — SegFormer runs once per image, not three times.
+    seg = segformer_module()
 
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
                 deep_joined_module(what='aliked'),
+                seg,
                 lightglue_module(what='aliked'),
             ],
             [
                 deep_joined_module(what='superpoint'),
+                seg,
                 lightglue_module(what='superpoint'),
             ],
             [
                 dog_module(),
                 patch_module(),
                 deep_descriptor_module(),
+                seg,
                 smnn_module(),
             ],
         ]),
         magsac_module(),
-        to_colmap_module(db='colmap_new_backup.db'),
+        to_colmap_module(db=chunk_db),
     ]
 
-    run_pairs(
-        pipeline, imgs,
+    run_close_pairs(
+        pipeline,
+        images_folder,
+        n=n_close,
         db_name=None,
-        colmap_db_or_list='colmap_new_backup.db',
+        colmap_db_or_list=chunk_db,
+        n_chunks=n_chunks,
+        chunk_idx=chunk_idx,
+        salad_cache=str(output_path / 'salad_descriptors.pt'),
     )
 
 
@@ -1121,25 +1143,14 @@ def pipeline44():
     print("=" * 50)
     print(f"Running: {name_example}")
 
-    import h5py
-
     imgs_dir = '../data/ET'
-    db0 = f'database_{name_example}_chunk0.hdf5'
-    db1 = f'database_{name_example}_chunk1.hdf5'
-    db_merged = f'database_{name_example}_merged.hdf5'
+    name_db_chunk0 = f'database_{name_example}_chunk0.hdf5'
+    name_db_chunk1 = f'database_{name_example}_chunk1.hdf5'
+    name_db_merged = f'database_{name_example}_merged.hdf5'
 
-    for f in [db0, db1, db_merged]:
-        if os.path.exists(f):
-            os.remove(f)
-
-    def make_pipeline():
-        return [
-            dog_module(),
-            patch_module(),
-            deep_descriptor_module(),
-            smnn_module(),
-            magsac_module(),
-        ]
+    for name_db in [name_db_chunk0, name_db_chunk1, name_db_merged]:
+        if os.path.exists(name_db):
+            os.remove(name_db)
 
     chunk0 = split_images(imgs_dir, n_chunks=2, chunk_idx=0)
     chunk1 = split_images(imgs_dir, n_chunks=2, chunk_idx=1)
@@ -1150,68 +1161,85 @@ def pipeline44():
     print(f"chunk0 ({len(chunk0)} imgs): {sorted(chunk0_names)}")
     print(f"chunk1 ({len(chunk1)} imgs): {sorted(chunk1_names)}")
 
-    run_pairs(make_pipeline(), chunk0, db_name=db0)
-    run_pairs(make_pipeline(), chunk1, db_name=db1)
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        smnn_module(),
+        magsac_module(),
+    ]
+    run_pairs(pipeline, chunk0, db_name=name_db_chunk0)
 
-    def get_computed_pairs(db_path):
-        pairs = set()
-        with h5py.File(db_path, 'r') as f:
-            if 'pickled' not in f:
-                return pairs
-            root = f['pickled']
-            for im0 in root.keys():
-                if im0 not in all_names:
-                    continue
-                for im1 in root[im0].keys():
-                    if im1 in all_names and hasattr(root[im0][im1], 'keys'):
-                        pairs.add((im0, im1))
-        return pairs
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        smnn_module(),
+        magsac_module(),
+    ]
+    run_pairs(pipeline, chunk1, db_name=name_db_chunk1)
 
-    pairs0 = get_computed_pairs(db0)
-    pairs1 = get_computed_pairs(db1)
     n_intra0 = len(chunk0) * (len(chunk0) - 1) // 2
     n_intra1 = len(chunk1) * (len(chunk1) - 1) // 2
 
+    with h5py.File(name_db_chunk0, 'r') as f:
+        root = f['pickled']
+        pairs0 = {(im0, im1) for im0 in root if im0 in all_names
+                  for im1 in root[im0] if im1 in all_names and hasattr(root[im0][im1], 'keys')}
     assert len(pairs0) == n_intra0, f"Expected {n_intra0} pairs in chunk0 db, got {len(pairs0)}"
+    assert all(im0 in chunk0_names and im1 in chunk0_names for im0, im1 in pairs0), \
+        "Cross-chunk pair found in chunk0 db"
+
+    with h5py.File(name_db_chunk1, 'r') as f:
+        root = f['pickled']
+        pairs1 = {(im0, im1) for im0 in root if im0 in all_names
+                  for im1 in root[im0] if im1 in all_names and hasattr(root[im0][im1], 'keys')}
     assert len(pairs1) == n_intra1, f"Expected {n_intra1} pairs in chunk1 db, got {len(pairs1)}"
-    for im0, im1 in pairs0:
-        assert im0 in chunk0_names and im1 in chunk0_names, \
-            f"Cross-chunk pair ({im0}, {im1}) found in chunk0 db"
-    for im0, im1 in pairs1:
-        assert im0 in chunk1_names and im1 in chunk1_names, \
-            f"Cross-chunk pair ({im0}, {im1}) found in chunk1 db"
+    assert all(im0 in chunk1_names and im1 in chunk1_names for im0, im1 in pairs1), \
+        "Cross-chunk pair found in chunk1 db"
     print("  [OK] chunk runs produced only intra-chunk pairs")
 
-    merge_hdf5([db0, db1], db_merged)
+    merge_hdf5([name_db_chunk0, name_db_chunk1], name_db_merged)
 
-    pairs_before = get_computed_pairs(db_merged)
+    with h5py.File(name_db_merged, 'r') as f:
+        root = f['pickled']
+        pairs_before = {(im0, im1) for im0 in root if im0 in all_names
+                        for im1 in root[im0] if im1 in all_names and hasattr(root[im0][im1], 'keys')}
     assert len(pairs_before) == n_intra0 + n_intra1, \
         f"Expected {n_intra0 + n_intra1} pairs after merge, got {len(pairs_before)}"
     print(f"  [OK] merge produced {len(pairs_before)} intra-chunk pairs")
 
     # Run on all images — each image in chunk0 has its intra-chunk pairs done
-    # but its cross-chunk pairs are missing; this verifies that partial-pair
-    # images get their remaining pairs computed and are not skipped entirely
-    run_pairs(make_pipeline(), imgs_dir, db_name=db_merged)
+    # but not its cross-chunk pairs; this verifies partial-pair images get
+    # their remaining pairs computed and are not skipped entirely
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        smnn_module(),
+        magsac_module(),
+    ]
+    run_pairs(pipeline, imgs_dir, db_name=name_db_merged)
 
-    pairs_after = get_computed_pairs(db_merged)
+    with h5py.File(name_db_merged, 'r') as f:
+        root = f['pickled']
+        pairs_after = {(im0, im1) for im0 in root if im0 in all_names
+                       for im1 in root[im0] if im1 in all_names and hasattr(root[im0][im1], 'keys')}
     n_total = len(all_names) * (len(all_names) - 1) // 2
     n_cross = len(chunk0) * len(chunk1)
-
     assert len(pairs_after) == n_total, \
         f"Expected {n_total} total pairs after full run, got {len(pairs_after)}"
-
     new_pairs = pairs_after - pairs_before
     assert len(new_pairs) == n_cross, \
         f"Expected {n_cross} new cross-chunk pairs, got {len(new_pairs)}"
-    for im0, im1 in new_pairs:
-        is_cross = (im0 in chunk0_names and im1 in chunk1_names) or \
-                   (im0 in chunk1_names and im1 in chunk0_names)
-        assert is_cross, f"Non-cross-chunk pair ({im0}, {im1}) found in newly computed pairs"
+    assert all(
+        (im0 in chunk0_names and im1 in chunk1_names) or (im0 in chunk1_names and im1 in chunk0_names)
+        for im0, im1 in new_pairs
+    ), "Non-cross-chunk pair found in newly computed pairs"
     print(f"  [OK] {n_cross} cross-chunk pairs computed, {len(pairs_before)} intra-chunk pairs skipped")
 
-    for f in [db0, db1, db_merged]:
-        if os.path.exists(f):
-            os.remove(f)
+    for name_db in [name_db_chunk0, name_db_chunk1, name_db_merged]:
+        if os.path.exists(name_db):
+            os.remove(name_db)
 
     print("pipeline44: ALL ASSERTIONS PASSED")
