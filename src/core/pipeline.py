@@ -27,16 +27,26 @@ def finalize_pipeline(pipeline):
     for pipe_module in pipeline:
         if hasattr(pipe_module, 'finalize'):
             pipe_module.finalize()
-    
+
+
+def resolve_image_folder(folder):
+    """List a folder's contents, keeping only files PIL can open as images."""
+    imgs = []
+    for f in os.listdir(folder):
+        p = os.path.join(folder, f)
+        try:
+            Image.open(p).verify()
+        except Exception:
+            continue
+        imgs.append(p)
+    return imgs
+
+
 def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
     if isinstance(imgs, str):
-        imgs = [
-            os.path.join(imgs, f)
-            for f in os.listdir(imgs)
-            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
-        ]
+        imgs = resolve_image_folder(imgs)
 
     imgs = list(imgs)
 
@@ -92,9 +102,8 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
     print(f"Existing: {len(existing)}")
     print(f"New: {len(new)}")
 
-
     if colmap_db_path is None or len(existing_images) == 0:
-
+        # Exhaustive mode 
         pairs_iter = image_pairs(
             imgs,
             add_path=add_path,
@@ -105,6 +114,17 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
         )
     else:
         # Incremental mode
+        computed_pairs = set()
+        if not force:
+            hdf5 = db.get_hdf5()
+            if hdf5 is not None and db.label_prefix in hdf5:
+                root = hdf5[db.label_prefix]
+                for im0, item0 in root.items():
+                    if hasattr(item0, 'items'):
+                        for im1, item1 in item0.items():
+                            if hasattr(item1, 'items'):
+                                computed_pairs.add((im0, im1))
+
         def gen_pairs():
             if mode == 'include':
                 # existing vs existing
@@ -122,35 +142,21 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
                 for j in range(i + 1, len(new)):
                     yield (new[i], new[j])
 
-        pairs_iter = gen_pairs()
+        pairs_iter = image_pairs(
+            list(gen_pairs()),
+            check_img=False,
+            colmap_db_or_list=colmap_db_or_list,
+            mode=mode,
+            colmap_req=colmap_req,
+            colmap_min_matches=colmap_min_matches,
+            computed_pairs=computed_pairs,
+        )
 
-        n_existing_vs_existing = len(existing) * (len(existing) - 1) // 2 if mode == 'include' else 0
-        n_new_vs_existing = len(new) * len(existing)
-        n_new_vs_new = len(new) * (len(new) - 1) // 2
-        total = n_existing_vs_existing + n_new_vs_existing + n_new_vs_new
-
-
-    total = len(pairs_iter) if hasattr(pairs_iter, '__len__') else total
-
-    computed_pairs = set()
-    if not force:
-        hdf5 = db.get_hdf5()
-        if hdf5 is not None and db.label_prefix in hdf5:
-            root = hdf5[db.label_prefix]
-            for im0, item0 in root.items():
-                if hasattr(item0, 'items'):
-                    for im1, item1 in item0.items():
-                        if hasattr(item1, 'items'):
-                            computed_pairs.add((im0, im1))
+    total = len(pairs_iter)
 
     for k, pair in enumerate(go_iter(pairs_iter, msg='          processed pairs')):
         img0 = os.path.basename(pair[0])
         img1 = os.path.basename(pair[1])
-
-        if not force:
-            if (img0, img1) in computed_pairs or (img1, img0) in computed_pairs:
-                tqdm.write(f'  skipping already computed pair ({img0}, {img1})') if show_progress else print(f'  skipping already computed pair ({img0}, {img1})')
-                continue
 
         msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
         tqdm.write(msg) if show_progress else print(msg)
@@ -403,11 +409,7 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
     salad_path = os.path.normpath(salad_path)
 
     if isinstance(imgs, str):
-        imgs = [
-            os.path.join(imgs, f)
-            for f in os.listdir(imgs)
-            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
-        ]
+        imgs = resolve_image_folder(imgs)
     if add_path:
         imgs = [os.path.join(add_path, f) if not os.path.isabs(f) else f for f in imgs]
 
@@ -452,7 +454,13 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
     # Round-robin split across workers. Pair generation is identical on every
     # machine (deterministic, read-only), so no coordination is needed.
     if n_chunks > 1:
-        pair_list = pair_list[chunk_idx::n_chunks]
+        chunk_ip = image_pairs(
+            pair_list,
+            check_img=False,
+            chunk_id=chunk_idx,
+            n_chunk=n_chunks,
+        )
+        pair_list = list(chunk_ip)
 
     n_candidates = len(pair_list)
 
@@ -498,7 +506,7 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
     print(f"  Images           : {len(imgs)}")
     print(f"  All-vs-all       : {n_all_vs_all}")
     if n_chunks > 1:
-        print(f"  Chunk            : {chunk_idx} of {n_chunks}")
+        print(f"  Chunk            : {chunk_idx+1} of {n_chunks}")
     print(f"  Candidates (n={n:2d}): {n_candidates}")
     if n_skipped_colmap:
         print(f"  Skipped (colmap) : {n_skipped_colmap}")
@@ -515,11 +523,7 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
 
 def split_images(imgs, n_chunks, chunk_idx):
     if isinstance(imgs, str):
-        imgs = [
-            os.path.join(imgs, f)
-            for f in os.listdir(imgs)
-            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
-        ]
+        imgs = resolve_image_folder(imgs)
     imgs = sorted(imgs)
     chunk_size = (len(imgs) + n_chunks - 1) // n_chunks
     start = chunk_idx * chunk_size

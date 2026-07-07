@@ -32,7 +32,11 @@ class coldb_ext(coldb.COLMAPDatabase):
         super().__init__(*args, **kwargs)
         
 
-    def get_image_id(self, image):
+    def get_image_id(self, image, exists_only=False):
+        if exists_only:
+            cursor = self.execute("SELECT 1 FROM images WHERE name=?", (image, ))
+            return cursor.fetchone() is not None
+
         cursor = self.execute(
             "SELECT image_id FROM images WHERE name=?",
             (image, ),
@@ -42,7 +46,11 @@ class coldb_ext(coldb.COLMAPDatabase):
         return image_id
 
 
-    def get_camera(self, camera_id):
+    def get_camera(self, camera_id, exists_only=False):
+        if exists_only:
+            cursor = self.execute("SELECT 1 FROM cameras where camera_id=?", (camera_id, ))
+            return cursor.fetchone() is not None
+
         cursor = self.execute("SELECT model, width, height, params, prior_focal_length FROM cameras where camera_id=?", (camera_id, ))
         cam = cursor.fetchone()
         if cam is None:
@@ -53,7 +61,11 @@ class coldb_ext(coldb.COLMAPDatabase):
             return c, w, h, p, f
 
 
-    def get_image(self, image_id):
+    def get_image(self, image_id, exists_only=False):
+        if exists_only:
+            cursor = self.execute("SELECT 1 FROM images where image_id=?", (image_id, ))
+            return cursor.fetchone() is not None
+
         cursor = self.execute("SELECT name, camera_id FROM images where image_id=?", (image_id, ))
         img = cursor.fetchone()
         if img is None:
@@ -62,7 +74,15 @@ class coldb_ext(coldb.COLMAPDatabase):
             return img
 
 
-    def get_keypoints(self, image_id):
+    def get_keypoints(self, image_id, exists_only=False):
+        if exists_only:
+            cursor = self.execute("SELECT rows FROM keypoints where image_id=?", (image_id, ))
+            kpts = cursor.fetchone()
+            if kpts is None:
+                return False
+            else:
+                return True
+
         cursor = self.execute("SELECT data, rows, cols FROM keypoints where image_id=?", (image_id, ))
         kpts = cursor.fetchone()
         if kpts is None:
@@ -89,8 +109,17 @@ class coldb_ext(coldb.COLMAPDatabase):
                 (image_id, ),
                 )
 
-    def get_matches(self, image_id1, image_id2):
+    def get_matches(self, image_id1, image_id2, exists_only=False):
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+
+        if exists_only:
+            cursor = self.execute("SELECT rows FROM matches where pair_id=?", (pair_id, ))
+            m = cursor.fetchone()
+            if m is None or m[0] == 0:
+                return False
+            else:
+                return True
+
         cursor = self.execute("SELECT data, rows, cols FROM matches where pair_id=?", (pair_id, ))
         m = cursor.fetchone()
         if m is None:
@@ -107,8 +136,17 @@ class coldb_ext(coldb.COLMAPDatabase):
             return m
 
 
-    def get_two_view_geometry(self, image_id1, image_id2):
+    def get_two_view_geometry(self, image_id1, image_id2, exists_only=False):
         pair_id = coldb.image_ids_to_pair_id(image_id1, image_id2)
+
+        if exists_only:
+            cursor = self.execute("SELECT rows FROM two_view_geometries where pair_id=?", (pair_id, ))
+            m = cursor.fetchone()
+            if m is None or m[0] == 0:
+                return False
+            else:
+                return True
+
         cursor = self.execute("SELECT data, rows, cols, config, E, F, H FROM two_view_geometries where pair_id=?", (pair_id, ))
         m = cursor.fetchone()
         if m is None:

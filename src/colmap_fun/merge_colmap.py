@@ -496,7 +496,7 @@ def align_colmap_models(model_path1='../aux/colmap/model0', model_path2='../aux/
         # Keep the DB in sync with the reconstruction before triangulation.
         for image_id in model.images:
             image = model.image(image_id)
-            if fused_db.get_image_id(image.name) is not None:
+            if fused_db.get_image_id(image.name, exists_only=True):
                 continue
 
             camera = model.camera(image.camera_id)

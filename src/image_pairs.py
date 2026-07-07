@@ -23,9 +23,24 @@ class image_pairs:
 
     Attributes:
         imgs (list): List of image paths or pair tuples.
-        mode (str): Filtering behavior, either 'include' (only process listed) 
+        mode (str): Filtering behavior, either 'include' (only process listed)
             or 'exclude' (process everything except listed).
+        chunk_id (int): Zero-based index of this worker, used to split pairs
+            round-robin across `n_chunk` independent workers. Defaults to
+            processing the full set (chunk_id=0, n_chunk=1) when either
+            `chunk_id` or `n_chunk` is left unspecified.
+        n_chunk (int): Total number of independent workers sharing the pairs.
+        computed_pairs (set | None): Pairs of basenames already computed by
+            a prior run (e.g. found in an output cache). Always skipped,
+            regardless of `mode` — this tracks the caller's own prior
+            output, not an include/exclude filter over the dataset.
     """
+
+    def must_skip_after_chunk_check(self):
+        current = self.current
+        self.current = (self.current + 1) % self.n_chunk
+        return current != self.chunk_id
+
     def init_additional_image_pair_check(self, colmap_db_or_list, mode, colmap_req, colmap_min_matches):
 
         self.additional_colmap_db = None     
@@ -92,28 +107,50 @@ class image_pairs:
 
         if (not must_skip) and (self.additional_colmap_db is not None):
             in_colmap_db = True
-            
+
             if self.additional_colmap_db is not None:
-                im0_id = self.additional_colmap_db.get_image_id(i)
-                im1_id = self.additional_colmap_db.get_image_id(j)
-                
-                if (im0_id is None) or (im1_id is None): in_colmap_db = False
-    
-                if in_colmap_db and (self.colmap_req != 'keypoints'):
-                    if self.colmap_req == 'matches':                            
-                        m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
-                        if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                    else:
-                        m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
-                        if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False                                
-                                            
-            must_skip = (in_colmap_db and self.mode == 'exclude') or ((not in_colmap_db) and self.mode == 'include') 
-            
+                if self.colmap_req == 'keypoints':
+                    im0_exists = self.additional_colmap_db.get_image_id(i, exists_only=True)
+                    im1_exists = self.additional_colmap_db.get_image_id(j, exists_only=True)
+                    in_colmap_db = im0_exists and im1_exists
+                else:
+                    im0_id = self.additional_colmap_db.get_image_id(i)
+                    im1_id = self.additional_colmap_db.get_image_id(j)
+
+                    if (im0_id is None) or (im1_id is None): in_colmap_db = False
+
+                    if in_colmap_db:
+                        if self.colmap_min_matches > 0:
+                            if self.colmap_req == 'matches':
+                                m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
+                                if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False
+                            else:
+                                m_idx = self.additional_colmap_db.get_matches(im0_id, im1_id)
+                                if (m_idx is None) or (m_idx.shape[0] < self.colmap_min_matches): in_colmap_db = False
+                        else:
+                            if not self.additional_colmap_db.get_matches(im0_id, im1_id, exists_only=True): in_colmap_db = False
+
+            must_skip = (in_colmap_db and self.mode == 'exclude') or ((not in_colmap_db) and self.mode == 'include')
+
+        if (not must_skip) and (self.computed_pairs is not None):
+            if (i, j) in self.computed_pairs or (j, i) in self.computed_pairs:
+                must_skip = True
+
         return must_skip
     
 
-    def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
+    def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, chunk_id=None, n_chunk=None, computed_pairs=None):
         imgs = []
+
+        self.computed_pairs = computed_pairs
+
+        if chunk_id is None or n_chunk is None:
+            self.chunk_id = 0
+            self.n_chunk = 1
+        else:
+            self.chunk_id = chunk_id
+            self.n_chunk = n_chunk
+        self.current = 0
 
         if isinstance(to_list, str):
             warnings.warn("retrieving image list from the image folder")
@@ -220,6 +257,9 @@ class image_pairs:
                             self.len = max(0, self.len - 1)
                             continue
 
+                        if self.must_skip_after_chunk_check():
+                            continue
+
                         return ii, jj
                 else:
                     if self.additional_colmap_db is not None: self.additional_colmap_db.close()
@@ -245,7 +285,10 @@ class image_pairs:
                     self.len = max(0, self.len - 1)
                     continue
 
-                return ii, jj            
+                if self.must_skip_after_chunk_check():
+                    continue
+
+                return ii, jj
 
             if self.additional_colmap_db is not None: self.additional_colmap_db.close()
             raise StopIteration
