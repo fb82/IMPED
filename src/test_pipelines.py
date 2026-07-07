@@ -1097,30 +1097,27 @@ def pipeline_ssma(
 
     chunk_db = str(output_path / f'ssma_chunk_{chunk_idx}.db')
 
-    # One shared instance so the in-memory segmentation cache is reused
-    # across all three sub-pipelines — SegFormer runs once per image, not three times.
-    seg = segformer_module()
-
     pipeline = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
                 deep_joined_module(what='aliked'),
-                seg,
+                segformer_module(),
                 lightglue_module(what='aliked'),
             ],
             [
                 deep_joined_module(what='superpoint'),
-                seg,
+                segformer_module(),
                 lightglue_module(what='superpoint'),
             ],
             [
                 dog_module(),
                 patch_module(),
                 deep_descriptor_module(),
-                seg,
+                segformer_module(),
                 smnn_module(),
             ],
         ]),
+        segformer_module(stage='matches'),
         magsac_module(),
         to_colmap_module(db=chunk_db),
     ]
