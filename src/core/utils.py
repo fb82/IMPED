@@ -27,7 +27,7 @@ def check_data(args, required_data):
         assert key in args, f"missing required key '{key}'{hint}"
         val = args[key]
         match key:
-            case 'img' | 'kp' | 'kH' | 'kr' | 'desc':
+            case 'img' | 'kp' | 'kH' | 'kr' | 'desc' | 'global_desc':
                 if isinstance(spec, list):
                     assert hasattr(val, 'ndim') and val.ndim == len(spec), \
                         f"'{key}' expected {len(spec)}D tensor, got ndim={getattr(val, 'ndim', '?')}"

@@ -1,4 +1,5 @@
 
+import os
 from collections import OrderedDict
 
 import torch
@@ -6,7 +7,7 @@ from PIL import Image
 
 from core import device as global_device
 
-_MASK_CACHE_MAX = 128  # CPU bool masks; at ~1 MB each this caps usage at ~128 MB
+_MASK_CACHE_MAX = 128  # CPU seg maps kept in memory; at ~1 MB each this caps usage at ~128 MB
 
 
 CITYSCAPES_LABEL2ID = {
@@ -24,29 +25,30 @@ DEFAULT_EXCLUDE = [
 
 class segformer_module:
     """
-    Post-detection keypoint filter using SegFormer semantic segmentation.
+    Semantic-segmentation-based keypoint/match annotator using SegFormer.
 
     Runs SegFormer-B0 on Cityscapes labels to build a per-pixel keep/discard
-    mask, then drops any keypoints (and their kH, kr, desc) that land on
-    excluded semantic classes. Designed to remove dynamic objects and sky
-    before matching, improving 3-D reconstruction of static scenes.
+    mask ('seg_mask', one per image), then, non-destructively, marks which
+    keypoints ('keypt_mask') and matches (an extra column appended to
+    'm_mask') fall on an excluded semantic class. Nothing is removed — all
+    original keypoints/matches are preserved so the pre-filtering data stays
+    available for later use.
 
-    The loaded model and the raw per-pixel segmentation map are cached at the
-    class level, keyed by (model_name, device) and (model_name, img_path)
-    respectively. This means any segformer_module instance — not just the
-    same object — reuses them: SegFormer weights are loaded once per
-    (model_name, device) and inference runs once per (model_name, img_path),
-    even across separate instances with different exclude_classes appearing
-    in the same or different sub-pipelines.
+    The dense per-pixel class map used to build 'seg_mask' (the full
+    segmented-instances output, one class id per pixel) is heavier than a
+    binary mask, so it isn't stored in the hdf5 dict: it's cached to files
+    under `seg_cache_dir`, mirroring the image it came from, plus an
+    in-process LRU cache for repeated lookups within a run.
 
     Two stages are supported, selected via `stage`:
-    - 'keypoints' (default, single_image module): drops keypoints (and their
-      kH, kr, desc) landing on excluded classes, before matching.
-    - 'matches' (pair module, place after a matcher in the pipeline): drops
-      matches (m_idx, m_val, m_mask) where either endpoint keypoint landed on
-      an excluded class. Reuses the same cached segmentation maps, so put an
-      instance with the same exclude_classes after the matcher for a
-      belt-and-suspenders check with no extra SegFormer inference.
+    - 'keypoints' (default, single_image module): if 'kp' is present for the
+      image, computes 'keypt_mask' — one bool per keypoint.
+    - 'matches' (pair module, place after the matcher/geometric-verification
+      modules in the pipeline): if 'm_idx'/'m_mask' are present, appends a
+      segmentation column to 'm_mask', turning it from [M] into [M, 2]. Since
+      this changes 'm_mask' from 1D to 2D, any module placed after this one
+      that expects a 1D 'm_mask' must be updated accordingly — this module is
+      meant to be the last one touching 'm_mask' in a pipeline.
 
     Attributes:
         exclude_classes: Cityscapes class names to discard. Defaults to sky,
@@ -55,6 +57,8 @@ class segformer_module:
         model_name: HuggingFace model id. Must be a SegFormer trained on
             Cityscapes (19-class label space).
         stage: 'keypoints' or 'matches' — see above.
+        seg_cache_dir: Directory the dense per-pixel class maps are cached
+            to, one file per (model_name, image).
     """
 
     # Shared across all instances: (model_name, device) -> (processor, model)
@@ -68,6 +72,7 @@ class segformer_module:
         exclude_classes=None,
         model_name='nvidia/segformer-b0-finetuned-cityscapes-512-1024',
         stage='keypoints',
+        seg_cache_dir='aux/seg_cache',
         **args,
     ):
         if stage not in ('keypoints', 'matches'):
@@ -94,6 +99,9 @@ class segformer_module:
             CITYSCAPES_LABEL2ID[c] for c in self.exclude_classes if c in CITYSCAPES_LABEL2ID
         )
         self.model_name = model_name
+        self.seg_cache_dir = seg_cache_dir
+        self._processor = None
+        self._model = None
 
         classes_tag = '_'.join(c.replace(' ', '') for c in self.exclude_classes)
         stage_tag = 'matches_' if stage == 'matches' else ''
@@ -118,6 +126,10 @@ class segformer_module:
 
         self._processor, self._model = cached
 
+    def _seg_cache_path(self, img_path: str) -> str:
+        stem = os.path.splitext(os.path.basename(img_path))[0]
+        return os.path.join(self.seg_cache_dir, self.model_name.replace('/', '_'), stem + '.pt')
+
     def _get_seg_map(self, img_path: str, W: int, H: int) -> torch.Tensor:
         cache_key = (self.model_name, img_path)
         cache = segformer_module._SEGMAP_CACHE
@@ -125,26 +137,33 @@ class segformer_module:
             cache.move_to_end(cache_key)
             return cache[cache_key].to(self.device)
 
-        if self._model is None:
-            self._load_model()
+        cache_path = self._seg_cache_path(img_path)
+        if os.path.isfile(cache_path):
+            seg_map = torch.load(cache_path, map_location='cpu')
+        else:
+            if self._model is None:
+                self._load_model()
 
-        image = Image.open(img_path).convert('RGB')
-        inputs = self._processor(images=image, return_tensors='pt')
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            image = Image.open(img_path).convert('RGB')
+            inputs = self._processor(images=image, return_tensors='pt')
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        with torch.no_grad():
-            logits = self._model(**inputs).logits  # [1, C, h, w]
+            with torch.no_grad():
+                logits = self._model(**inputs).logits  # [1, C, h, w]
 
-        seg_map = torch.nn.functional.interpolate(
-            logits, size=(H, W), mode='bilinear', align_corners=False
-        ).argmax(dim=1).squeeze(0)
+            seg_map = torch.nn.functional.interpolate(
+                logits, size=(H, W), mode='bilinear', align_corners=False
+            ).argmax(dim=1).squeeze(0).cpu()
 
-        # Store on CPU so the cache never ties up VRAM
-        cache[cache_key] = seg_map.cpu()
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            torch.save(seg_map, cache_path)
+
+        # Store on CPU so the in-memory cache never ties up VRAM
+        cache[cache_key] = seg_map
         if len(cache) > _MASK_CACHE_MAX:
             cache.popitem(last=False)
 
-        return seg_map  # already on self.device from the computation above
+        return seg_map.to(self.device)
 
     def _get_keep_mask(self, img_path: str, W: int, H: int) -> torch.Tensor:
         seg_map = self._get_seg_map(img_path, W, H)
@@ -173,23 +192,20 @@ class segformer_module:
         W, H = Image.open(img_path).size
         keep_px = self._get_keep_mask(img_path, W, H)
 
-        kp = args['kp'][idx]           # [N, 2]  (x=col, y=row)
-        xs = kp[:, 0].long().clamp(0, W - 1)
-        ys = kp[:, 1].long().clamp(0, H - 1)
-        keep = keep_px[ys, xs]         # [N] bool
+        result = {'seg_mask': keep_px.cpu()}
 
-        result = {
-            'kp': kp[keep],
-            'kH': args['kH'][idx][keep],
-            'kr': args['kr'][idx][keep],
-        }
-
-        if 'desc' in args:
-            result['desc'] = args['desc'][idx][keep]
+        if 'kp' in args:
+            kp = args['kp'][idx]           # [N, 2]  (x=col, y=row)
+            xs = kp[:, 0].long().clamp(0, W - 1)
+            ys = kp[:, 1].long().clamp(0, H - 1)
+            result['keypt_mask'] = keep_px[ys, xs].cpu()  # [N] bool, non-destructive
 
         return result
 
     def _run_matches(self, **args):
+        if 'm_idx' not in args:
+            return {}
+
         img0_path, img1_path = args['img'][0], args['img'][1]
         kp0, kp1 = args['kp'][0], args['kp'][1]
 
@@ -205,10 +221,9 @@ class segformer_module:
         xs1 = kp1[m_idx[:, 1], 0].long().clamp(0, W1 - 1)
         ys1 = kp1[m_idx[:, 1], 1].long().clamp(0, H1 - 1)
 
-        keep = keep_px0[ys0, xs0] & keep_px1[ys1, xs1]  # [M] bool
+        seg_keep = (keep_px0[ys0, xs0] & keep_px1[ys1, xs1]).to(args['m_mask'].device)  # [M] bool
 
-        return {
-            'm_idx': m_idx[keep],
-            'm_val': args['m_val'][keep],
-            'm_mask': args['m_mask'][keep],
-        }
+        # Non-destructive: keep every match, append the segmentation verdict
+        # as a second column instead of overwriting/removing rows, so the
+        # pre-segmentation mask is still available.
+        return {'m_mask': torch.stack([args['m_mask'], seg_keep], dim=1)}

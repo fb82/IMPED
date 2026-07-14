@@ -227,6 +227,37 @@ class image_pairs:
     
         self.init_additional_image_pair_check(colmap_db_or_list, mode, colmap_req, colmap_min_matches)
 
+        if self.iter_base and self.additional_colmap_db is not None:
+            existing_names = {name for _, name in self.additional_colmap_db.get_images()}
+
+            if existing_names:
+                existing = [p for p in self.imgs if os.path.basename(p) in existing_names]
+                new = [p for p in self.imgs if os.path.basename(p) not in existing_names]
+
+                print(f"Total imgs: {len(self.imgs)}")
+                print(f"Existing: {len(existing)}")
+                print(f"New: {len(new)}")
+
+                def gen_pairs():
+                    if mode == 'include':
+                        for i in range(len(existing)):
+                            for j in range(i + 1, len(existing)):
+                                yield existing[i], existing[j]
+
+                    for n in new:
+                        for e in existing:
+                            yield n, e
+
+                    for i in range(len(new)):
+                        for j in range(i + 1, len(new)):
+                            yield new[i], new[j]
+
+                self.imgs = list(gen_pairs())
+                self.iter_base = False
+                self.add_path = ''
+                self.check_img = False
+                self.k = 0
+
         if self.iter_base:
             self.len = (len(self.imgs) * (len(self.imgs) - 1)) // 2
         else:

@@ -10,6 +10,7 @@ import h5py
 import pycolmap
 import torch
 
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import enable_quadtree, run_pairs, run_close_pairs, split_images, merge_hdf5
 
 project_root = Path(__file__).parent.resolve()
@@ -31,7 +32,10 @@ for p in extra_paths:
             sys.path.insert(0, str(p))
 
 
-from descriptors import deep_descriptor_module, patch_module
+from descriptors import deep_descriptor_module, patch_module, salad_module
+from similarity import cosine_similarity_module, l2_similarity_module
+from confidence import conf_module
+from image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
 from matchers import (
     aspanformer_module,
@@ -1117,8 +1121,8 @@ def pipeline_ssma(
                 smnn_module(),
             ],
         ]),
-        segformer_module(stage='matches'),
         magsac_module(),
+        segformer_module(stage='matches'),
         to_colmap_module(db=chunk_db),
     ]
 
@@ -1132,6 +1136,68 @@ def pipeline_ssma(
         chunk_idx=chunk_idx,
         salad_cache=str(output_path / 'salad_descriptors.pt'),
     )
+
+
+def pipeline_ssma_mst(
+    n_chunks=1,
+    chunk_idx=0,
+    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
+    output_folder='.',
+    threshold=0.99,
+):
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: pipeline_ssma_mst  [chunk {chunk_idx} of {n_chunks}]")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    chunk_db = str(output_path / f'ssma_mst_chunk_{chunk_idx}.db')
+    pairs_path = str(output_path / f'ssma_mst_pairs_{chunk_idx}.pt')
+
+
+    coarse_pipeline = [
+        salad_module(),
+        cosine_similarity_module(),
+        conf_module(threshold=threshold, out_path=pairs_path),
+    ]
+    run_pairs(
+        coarse_pipeline,
+        images_folder,
+        db_name=str(output_path / f'ssma_mst_global_desc_{chunk_idx}.hdf5'),
+    )
+
+    pairs = torch.load(pairs_path)
+
+    if n_chunks > 1:
+        pairs = list(image_pairs(pairs, check_img=False, chunk_id=chunk_idx, n_chunk=n_chunks))
+
+    pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                segformer_module(),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                segformer_module(),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                segformer_module(),
+                smnn_module(),
+            ],
+        ]),
+        magsac_module(),
+        segformer_module(stage='matches'),
+        to_colmap_module(db=chunk_db),
+    ]
+
+    run_pairs(pipeline, pairs, db_name=str(output_path / f'ssma_mst_matches_{chunk_idx}.hdf5'))
 
 
 def pipeline44():
@@ -1240,3 +1306,315 @@ def pipeline44():
             os.remove(name_db)
 
     print("pipeline44: ALL ASSERTIONS PASSED")
+
+
+def pipeline45():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs = '../data/ET'
+    colmap_db = f'{name_example}_colmap.db'
+    name_db = f'database_{name_example}.hdf5'
+
+    for f in [colmap_db, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        smnn_module(),
+        magsac_module(),
+        to_colmap_module(db=colmap_db),
+    ]
+    run_pairs(pipeline, imgs, db_name=name_db)
+
+    # A fresh pipeline (and to_colmap_module instance) for the second run:
+    # finalize() closes the underlying sqlite connection, so the same
+    # to_colmap_module instance can't be finalized twice.
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        smnn_module(),
+        magsac_module(),
+        to_colmap_module(db=colmap_db),
+    ]
+
+    start_incremental = time.time()
+    run_pairs(pipeline, imgs, db_name=name_db, force=True)
+    end_incremental = time.time()
+
+    print(f"Execution time re-running on a fully-known dataset (all pairs skipped): {end_incremental - start_incremental} seconds")
+
+    for f in [colmap_db, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+def pipeline46():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    img_names = {f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))}
+
+    pipeline = [salad_module()]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    shapes = set()
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for name in img_names:
+            assert name in root, f"No cached entry for {name}"
+            assert 'salad' in root[name], f"No salad output for {name}"
+            data = pickled_hdf5.pickled_hdf5.from_numpy(root[name]['salad']['data'][()])
+            assert 'global_desc' in data, f"'global_desc' missing for {name}"
+            shapes.add(tuple(data['global_desc'].shape))
+
+    assert len(shapes) == 1, f"Inconsistent global_desc shapes across images: {shapes}"
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline46: ALL ASSERTIONS PASSED")
+
+
+def pipeline47():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+
+    pipeline = [salad_module(), cosine_similarity_module()]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    n_pairs = 0
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for i in range(len(img_names)):
+            for j in range(i + 1, len(img_names)):
+                im0, im1 = img_names[i], img_names[j]
+                assert im0 in root and im1 in root[im0], f"No cached pair entry for ({im0}, {im1})"
+                assert 'cosine_similarity' in root[im0][im1]['salad'], f"No cosine_similarity output for ({im0}, {im1})"
+                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['salad']['cosine_similarity']['data'][()])
+                assert 'pair_sim' in data, f"'pair_sim' missing for ({im0}, {im1})"
+                sim = data['pair_sim']
+                assert -1.0 - 1e-4 <= sim <= 1.0 + 1e-4, f"pair_sim {sim} out of [-1, 1] for ({im0}, {im1})"
+                n_pairs += 1
+
+    n_expected = len(img_names) * (len(img_names) - 1) // 2
+    assert n_pairs == n_expected, f"Expected {n_expected} pairs, checked {n_pairs}"
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline47: ALL ASSERTIONS PASSED")
+
+
+def pipeline48():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+
+    pipeline = [salad_module(), l2_similarity_module()]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    n_pairs = 0
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for i in range(len(img_names)):
+            for j in range(i + 1, len(img_names)):
+                im0, im1 = img_names[i], img_names[j]
+                assert im0 in root and im1 in root[im0], f"No cached pair entry for ({im0}, {im1})"
+                assert 'l2_similarity' in root[im0][im1]['salad'], f"No l2_similarity output for ({im0}, {im1})"
+                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['salad']['l2_similarity']['data'][()])
+                assert 'pair_sim' in data, f"'pair_sim' missing for ({im0}, {im1})"
+                sim = data['pair_sim']
+                assert sim <= 1e-4, f"pair_sim {sim} should be <= 0 (negative L2 distance) for ({im0}, {im1})"
+                n_pairs += 1
+
+    n_expected = len(img_names) * (len(img_names) - 1) // 2
+    assert n_pairs == n_expected, f"Expected {n_expected} pairs, checked {n_pairs}"
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline48: ALL ASSERTIONS PASSED")
+
+
+def pipeline49():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    threshold = 0.5
+    pairs_path = f"{name_example}_pairs.pt"
+    name_db = f"database_{name_example}.hdf5"
+
+    for f in [pairs_path, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    pipeline = [salad_module(), cosine_similarity_module(), conf_module(threshold=threshold, out_path=pairs_path)]
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+
+    expected = set()
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for i in range(len(img_names)):
+            for j in range(i + 1, len(img_names)):
+                im0, im1 = img_names[i], img_names[j]
+                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['salad']['cosine_similarity']['data'][()])
+                sim = data['pair_sim']
+                # conf_module doesn't cache its own output (see conf_module docstring),
+                # so re-derive the expected decision straight from the cached pair_sim.
+                if sim > threshold:
+                    expected.add((im0, im1))
+
+    saved_pairs = torch.load(pairs_path)
+    saved_names = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in saved_pairs}
+    expected_names = {tuple(sorted(p)) for p in expected}
+
+    assert saved_names == expected_names, \
+        f"conf_module's saved pairs don't match threshold={threshold} applied to pair_sim"
+
+    for f in [pairs_path, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("pipeline49: ALL ASSERTIONS PASSED")
+
+
+def pipeline50():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    name_db = f"database_{name_example}.hdf5"
+    pairs_path_high = f"{name_example}_pairs_high.pt"
+    pairs_path_low = f"{name_example}_pairs_low.pt"
+
+    for f in [name_db, pairs_path_high, pairs_path_low]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    # First pass with a strict threshold, reusing the same hdf5 (so global_desc
+    # and pair_sim get cached). This is the scenario conf_module's
+    # add_to_cache=False guards: a second pass with a looser threshold must
+    # NOT reuse the first pass's pair_conf decisions.
+    pipeline_high = [salad_module(), cosine_similarity_module(), conf_module(threshold=0.5, out_path=pairs_path_high)]
+    run_pairs(pipeline_high, imgs_dir, db_name=name_db)
+    pairs_high = torch.load(pairs_path_high)
+
+    pipeline_low = [salad_module(), cosine_similarity_module(), conf_module(threshold=-1.0, out_path=pairs_path_low)]
+    run_pairs(pipeline_low, imgs_dir, db_name=name_db)
+    pairs_low = torch.load(pairs_path_low)
+
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+    n_total = len(img_names) * (len(img_names) - 1) // 2
+
+    assert len(pairs_low) == n_total, \
+        f"threshold=-1.0 should accept every pair (cosine similarity >= -1), got {len(pairs_low)} of {n_total}"
+    assert len(pairs_high) <= len(pairs_low), \
+        "a stricter threshold must not accept more pairs than a looser one on a re-run"
+
+    names_high = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in pairs_high}
+    names_low = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in pairs_low}
+    assert names_high <= names_low, \
+        "pairs accepted at the high threshold must still be accepted at the low one"
+
+    for f in [name_db, pairs_path_high, pairs_path_low]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("pipeline50: ALL ASSERTIONS PASSED")
+
+
+def pipeline51():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    seg_kp = segformer_module()
+    seg_mt = segformer_module(stage='matches')
+
+    pipeline = [
+        dog_module(),
+        patch_module(),
+        deep_descriptor_module(),
+        seg_kp,
+        smnn_module(),
+        magsac_module(),
+        seg_mt,
+    ]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    db = pickled_hdf5.pickled_hdf5(name_db, mode='r')
+    keys = db.get_keys()
+
+    kp_keys = [k for k in keys if f'/{seg_kp.get_id()}/data' in k]
+    assert len(kp_keys) > 0, "No cached entries for the keypoints-stage segformer module"
+
+    for k in kp_keys:
+        data, found = db.get(k)
+        assert found, f"Missing cached entry for {k}"
+        assert 'seg_mask' in data, f"'seg_mask' missing at {k}"
+        assert data['seg_mask'].dtype == torch.bool, f"'seg_mask' should be boolean at {k}"
+        if 'keypt_mask' in data:
+            assert data['keypt_mask'].dtype == torch.bool, f"'keypt_mask' should be boolean at {k}"
+
+    mt_keys = [k for k in keys if f'/{seg_mt.get_id()}/data' in k]
+    assert len(mt_keys) > 0, "No cached entries for the matches-stage segformer module"
+
+    for k in mt_keys:
+        data, found = db.get(k)
+        assert found, f"Missing cached entry for {k}"
+        assert 'm_mask' in data, f"'m_mask' missing at {k}"
+        m_mask = data['m_mask']
+        assert m_mask.ndim == 2 and m_mask.shape[1] == 2, \
+            f"'m_mask' expected shape [M, 2] (non-destructive, extra segmentation column), got {tuple(m_mask.shape)} at {k}"
+        assert m_mask.dtype == torch.bool, f"'m_mask' should be boolean at {k}"
+
+    db.close()
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline51: ALL ASSERTIONS PASSED")
