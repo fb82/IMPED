@@ -32,8 +32,9 @@ for p in extra_paths:
             sys.path.insert(0, str(p))
 
 
-from descriptors import deep_descriptor_module, patch_module, salad_module
-from similarity import cosine_similarity_module, l2_similarity_module
+from descriptors import deep_descriptor_module, patch_module
+from global_descriptors import salad_module, standard_descriptor_module
+from similarity import cosine_similarity_module, l2_similarity_module, standard_similarity_module
 from confidence import conf_module
 from image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
@@ -1618,3 +1619,134 @@ def pipeline51():
         os.remove(name_db)
 
     print("pipeline51: ALL ASSERTIONS PASSED")
+
+
+def pipeline52():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    img_names = {f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))}
+
+    pipeline = [standard_descriptor_module()]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for name in img_names:
+            assert name in root, f"No cached entry for {name}"
+            assert 'standard' in root[name], f"No standard_descriptor output for {name}"
+            data = pickled_hdf5.pickled_hdf5.from_numpy(root[name]['standard']['data'][()])
+            assert 'global_desc' in data, f"'global_desc' missing for {name}"
+
+            global_desc = data['global_desc']
+            assert 'kp' in global_desc and 'desc' in global_desc, \
+                f"'global_desc' should have 'kp' and 'desc' for {name}"
+
+            kp, desc = global_desc['kp'], global_desc['desc']
+            assert kp.ndim == 2 and kp.shape[1] == 2, f"'kp' expected shape [N, 2], got {tuple(kp.shape)} for {name}"
+            assert desc.ndim == 2 and desc.shape[1] == 128, \
+                f"'desc' expected shape [N, 128], got {tuple(desc.shape)} for {name}"
+            assert kp.shape[0] == desc.shape[0], \
+                f"'kp' and 'desc' should have the same N, got {kp.shape[0]} vs {desc.shape[0]} for {name}"
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline52: ALL ASSERTIONS PASSED")
+
+
+def pipeline53():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+
+    pipeline = [standard_descriptor_module(), standard_similarity_module()]
+    name_db = f"database_{name_example}.hdf5"
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    n_pairs = 0
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for i in range(len(img_names)):
+            for j in range(i + 1, len(img_names)):
+                im0, im1 = img_names[i], img_names[j]
+                assert im0 in root and im1 in root[im0], f"No cached pair entry for ({im0}, {im1})"
+                assert 'standard_similarity' in root[im0][im1]['standard'], \
+                    f"No standard_similarity output for ({im0}, {im1})"
+                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['standard']['standard_similarity']['data'][()])
+                assert 'pair_sim' in data, f"'pair_sim' missing for ({im0}, {im1})"
+                sim = data['pair_sim']
+                assert sim >= 0.0, f"pair_sim {sim} should be a non-negative match count for ({im0}, {im1})"
+                n_pairs += 1
+
+    n_expected = len(img_names) * (len(img_names) - 1) // 2
+    assert n_pairs == n_expected, f"Expected {n_expected} pairs, checked {n_pairs}"
+
+    if os.path.exists(name_db):
+        os.remove(name_db)
+
+    print("pipeline53: ALL ASSERTIONS PASSED")
+
+
+def pipeline54():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    imgs_dir = '../data/ET'
+    threshold = 5.0
+    pairs_path = f"{name_example}_pairs.pt"
+    name_db = f"database_{name_example}.hdf5"
+
+    for f in [pairs_path, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    # Same swap the todo describes: standard_descriptor_module +
+    # standard_similarity_module in place of salad_module +
+    # cosine_similarity_module, feeding the same conf_module unchanged.
+    pipeline = [standard_descriptor_module(), standard_similarity_module(), conf_module(threshold=threshold, out_path=pairs_path)]
+    run_pairs(pipeline, imgs_dir, db_name=name_db)
+
+    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+
+    expected = set()
+    with h5py.File(name_db, 'r') as f:
+        root = f['pickled']
+        for i in range(len(img_names)):
+            for j in range(i + 1, len(img_names)):
+                im0, im1 = img_names[i], img_names[j]
+                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['standard']['standard_similarity']['data'][()])
+                sim = data['pair_sim']
+                # conf_module doesn't cache its own output (see conf_module docstring),
+                # so re-derive the expected decision straight from the cached pair_sim.
+                if sim > threshold:
+                    expected.add((im0, im1))
+
+    saved_pairs = torch.load(pairs_path)
+    saved_names = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in saved_pairs}
+    expected_names = {tuple(sorted(p)) for p in expected}
+
+    assert saved_names == expected_names, \
+        f"conf_module's saved pairs don't match threshold={threshold} applied to pair_sim"
+
+    for f in [pairs_path, name_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("pipeline54: ALL ASSERTIONS PASSED")
