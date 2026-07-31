@@ -1717,9 +1717,7 @@ def pipeline54():
         if os.path.exists(f):
             os.remove(f)
 
-    # Same swap the todo describes: standard_descriptor_module +
-    # standard_similarity_module in place of salad_module +
-    # cosine_similarity_module, feeding the same conf_module unchanged.
+    
     pipeline = [standard_descriptor_module(), standard_similarity_module(), conf_module(threshold=threshold, out_path=pairs_path)]
     run_pairs(pipeline, imgs_dir, db_name=name_db)
 

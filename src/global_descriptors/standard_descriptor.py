@@ -1,55 +1,28 @@
-import concurrent.futures
 import os
+import tempfile
 
 import cv2
-import numpy as np
 import torch
 
 from core import device as global_device, set_args
+from descriptors.sift_module import sift_module
+from detectors.dog_module import dog_module
 
 
-def _compute_one(img_path, size):
-    detector = cv2.SIFT_create()
-
-    im = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    im = cv2.resize(im, (size, size), interpolation=cv2.INTER_AREA)
-
-    kp, desc = detector.detectAndCompute(im, None)
-
-    if desc is None:
-        desc = np.zeros((0, 128), dtype=np.float32)
-        pts = np.zeros((0, 2), dtype=np.float32)
-    else:
-        pts = np.array([k.pt for k in kp], dtype=np.float32)
-
-    return {
-        'kp': torch.tensor(pts, dtype=torch.float),
-        'desc': torch.tensor(desc, dtype=torch.float),
-    }
-
-
-def compute_standard_descriptors(imgs, size=128, n_jobs=None):
+def compute_standard_descriptors(imgs):
     """
     Bulk-computes standard (SIFT) global descriptors for a list of image
-    paths, keyed by path. n_jobs=None (default) runs sequentially, matching
-    standard_descriptor_module.run() one image at a time; n_jobs=-1 or an
-    int > 1 parallelizes across a process pool (one worker per CPU when -1)
-
+    paths, keyed by path.
     """
-    if n_jobs is None or n_jobs == 1:
-        return {img: _compute_one(img, size) for img in imgs}
-
-    workers = os.cpu_count() if n_jobs == -1 else n_jobs
-    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(_compute_one, imgs, [size] * len(imgs)))
-
-    return dict(zip(imgs, results))
+    module = standard_descriptor_module(add_to_cache=False)
+    return {img: module.run(idx=0, img=[img])['global_desc'] for img in imgs}
 
 
 class standard_descriptor_module:
     """
     A single-image module computing a classical (SIFT-based) global
-    descriptor per image.
+    descriptor per image, by chaining the DoG detector and SIFT descriptor
+    modules and packaging their output under 'global_desc'.
     """
     def __init__(self, **args):
         self.single_image = True
@@ -70,6 +43,9 @@ class standard_descriptor_module:
 
         self.id_string, self.args = set_args('standard', args, self.args)
 
+        self.detector = dog_module(device=self.device, add_to_cache=False)
+        self.descriptor = sift_module(device=self.device, add_to_cache=False)
+
 
     def get_id(self):
         return self.id_string
@@ -80,10 +56,24 @@ class standard_descriptor_module:
 
 
     def run(self, **args):
-        desc = _compute_one(args['img'][args['idx']], self.args['size'])
+        img = args['img'][args['idx']]
+        size = self.args['size']
+
+        im = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+        im = cv2.resize(im, (size, size), interpolation=cv2.INTER_AREA)
+
+        fd, resized_path = tempfile.mkstemp(suffix='.png')
+        os.close(fd)
+        try:
+            cv2.imwrite(resized_path, im)
+
+            det = self.detector.run(idx=0, img=[resized_path])
+            desc = self.descriptor.run(idx=0, img=[resized_path], kp=[det['kp']], kH=[det['kH']])
+        finally:
+            os.remove(resized_path)
 
         global_desc = {
-            'kp': desc['kp'].to(self.device),
+            'kp': det['kp'].to(self.device),
             'desc': desc['desc'].to(self.device),
         }
 
