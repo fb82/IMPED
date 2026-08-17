@@ -124,6 +124,7 @@ pycolmap==4.0.2
 pydantic==2.13.3
 pydantic_core==2.46.3
 Pygments==2.20.0
+pyvis==0.3.2
 pyparsing==3.3.2
 PySocks==1.7.1
 python-dateutil==2.9.0.post0

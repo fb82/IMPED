@@ -11,7 +11,7 @@ import pycolmap
 import torch
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import enable_quadtree, run_pairs, run_close_pairs, split_images, merge_hdf5
+from core import enable_quadtree, run_pairs, run_close_pairs, run_transitive_pairs, split_images, merge_hdf5, resolve_image_folder
 
 project_root = Path(__file__).parent.resolve()
 
@@ -36,6 +36,7 @@ from descriptors import deep_descriptor_module, patch_module
 from global_descriptors import salad_module, standard_descriptor_module
 from similarity import cosine_similarity_module, l2_similarity_module, standard_similarity_module
 from confidence import conf_module
+from transitive_initial_selection import percentage_module
 from image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
 from matchers import (
@@ -75,6 +76,7 @@ from ensemble import (
 from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module
 from segmentators import segformer_module
 from visualization import (
+    live_pair_graph,
     show_homography_module,
     show_kpts_module,
     show_matches_module,
@@ -1199,6 +1201,209 @@ def pipeline_ssma_mst(
     ]
 
     run_pairs(pipeline, pairs, db_name=str(output_path / f'ssma_mst_matches_{chunk_idx}.hdf5'))
+
+
+def pipeline_ssma_transitive(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='.',
+    seed_percentage=0.1,
+    max_rounds=None,
+    threshold=0.99,
+):
+    print("\n \n")
+    print("=" * 50)
+    print("Running: pipeline_ssma_transitive")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    pairs_path = str(output_path / 'ssma_transitive_pairs.pt')
+
+    imgs = sorted(resolve_image_folder(images_folder))
+
+    coarse_pipeline = [
+        standard_descriptor_module(),
+        standard_similarity_module(),
+        conf_module(threshold=threshold, out_path=pairs_path),
+    ]
+
+    live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'))
+
+    # on_round only fires after a round finishes, so pairs confirmed before
+    # the first call are the seed round (blue); anything after is transitive
+    # closure (green)
+    first_round_done = [False]
+
+    def on_pair(pair, pipe_data):
+        live.add_pair(*pair, conf=pipe_data.get('pair_sim'), transitive=first_round_done[0])
+
+    def on_candidates(scored, threshold):
+        for sim, pair in scored:
+            live.add_rejected_pair(*pair, conf=sim)
+
+    def on_round(graph, n_round, n_new):
+        first_round_done[0] = True
+
+    try:
+        run_transitive_pairs(
+            coarse_pipeline,
+            images_folder,
+            percentage_module(percentage=seed_percentage),
+            max_rounds=max_rounds,
+            db_name=str(output_path / 'ssma_transitive_global_desc.hdf5'),
+            on_pair=on_pair,
+            on_candidates=on_candidates,
+            on_round=on_round,
+        )
+    finally:
+        live.stop()
+
+    pairs = torch.load(pairs_path)
+    print(f"pipeline_ssma_transitive: {len(pairs)} pairs confirmed via transitive closure")
+
+
+def pipeline_et_transitive_live(
+    imgs_dir='../data/ET',
+    output_folder='.',
+    seed_percentage=0.1,
+    max_rounds=None,
+    threshold=-1.0,
+):
+    """
+    Runs run_transitive_pairs on the ET dataset, visualizing the pair graph
+    live and interactively with pyvis (visualization.live_pair_graph): opens
+    live_pair_graph.html in the browser once, and the tab auto-refreshes to
+    pick up new edges as pairs get confirmed.
+
+    Uses salad_module + l2_similarity_module: l2_similarity_module's
+    'pair_sim' is the *negative* L2 distance between two SALAD embeddings —
+    0 for identical, more negative the further apart — so it is NOT bounded
+    to [0, 1]; `threshold` and the values on the graph's edges are negative
+    numbers here (more negative threshold = more lenient).
+    """
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    pairs_path = str(output_path / f'{name_example}_pairs.pt')
+
+    # same resolution run_transitive_pairs uses internally (_resolve_and_sort_imgs
+    # -> resolve_image_folder), so the node set here matches exactly what it'll
+    # reference in pairs — a naive extension filter here could disagree with it
+    # and leave edges pointing at nodes the graph never got
+    imgs = sorted(resolve_image_folder(imgs_dir))
+
+    conf = conf_module(threshold=threshold, out_path=pairs_path)
+    coarse_pipeline = [
+        salad_module(),
+        l2_similarity_module(),
+        conf,
+    ]
+
+    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
+
+    # on_round only fires after a round finishes, so pairs confirmed before
+    # the first call are the seed round (blue); anything after is transitive
+    # closure (green)
+    first_round_done = [False]
+
+    def on_pair(pair, pipe_data):
+        # candidates are only ever run through the pipeline once already known
+        # to score above threshold (see on_candidates below for the rejected
+        # ones), so this is always a confirmation in practice
+        live.add_pair(*pair, conf=pipe_data.get('pair_sim'), transitive=first_round_done[0])
+
+    def on_candidates(scored, threshold):
+        # draws every scored pair red/dashed regardless of threshold, so the
+        # graph reads as complete from round 1 (which scores every possible
+        # pair) — add_pair() upgrades a pair to blue/green once it's actually
+        # confirmed, whether that's this round or a later one
+        for sim, pair in scored:
+            live.add_rejected_pair(*pair, conf=sim)
+
+    def on_round(graph, n_round, n_new):
+        first_round_done[0] = True
+
+    try:
+        run_transitive_pairs(
+            coarse_pipeline,
+            imgs_dir,
+            percentage_module(percentage=seed_percentage),
+            max_rounds=max_rounds,
+            db_name=str(output_path / f'{name_example}_global_desc.hdf5'),
+            on_pair=on_pair,
+            on_candidates=on_candidates,
+            on_round=on_round,
+        )
+    finally:
+        # always stop the auto-refresh, even if the run above raises, so the
+        # open tab doesn't keep reloading forever on a page nothing updates
+        live.stop()
+
+    pairs = torch.load(pairs_path)
+    print(f"{name_example}: {len(pairs)} pairs confirmed via transitive closure")
+
+
+def pipeline_et_run_pairs_live(
+    imgs_dir='../data/ET',
+    output_folder='.',
+    threshold=-1.0,
+):
+    """
+    Same live pyvis visualization as pipeline_et_transitive_live, but driven
+    by plain run_pairs instead of run_transitive_pairs: run_pairs has no
+    threshold pre-filtering or rounds, so it runs `pipeline` on every pair
+    in the dataset unconditionally, in a single pass — every edge is known
+    (and colored) by the end. `on_pair`'s `pipe_data` already carries
+    conf_module's own decision ('pair_conf': 0.0 if rejected, otherwise the
+    kept similarity), so that alone decides blue (add_pair) vs red
+    (add_rejected_pair) — no need for run_transitive_pairs' on_candidates
+    hook, which doesn't exist here. There's no round concept either, so
+    every confirmed edge stays blue (no green/transitive edges).
+    """
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    pairs_path = str(output_path / f'{name_example}_pairs.pt')
+
+    imgs = sorted(resolve_image_folder(imgs_dir))
+
+    coarse_pipeline = [
+        salad_module(),
+        l2_similarity_module(),
+        conf_module(threshold=threshold, out_path=pairs_path),
+    ]
+
+    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
+
+    def on_pair(pair, pipe_data):
+        sim = pipe_data.get('pair_sim')
+        if pipe_data.get('pair_conf'):
+            live.add_pair(*pair, conf=sim)
+        else:
+            live.add_rejected_pair(*pair, conf=sim)
+
+    try:
+        run_pairs(
+            coarse_pipeline,
+            imgs_dir,
+            db_name=str(output_path / f'{name_example}.hdf5'),
+            on_pair=on_pair,
+        )
+    finally:
+        live.stop()
+
+    pairs = torch.load(pairs_path)
+    print(f"{name_example}: {len(pairs)} pairs confirmed")
 
 
 def pipeline44():

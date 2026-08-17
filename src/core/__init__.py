@@ -6,10 +6,12 @@ from .pipeline import (
     run_pipeline,
     run_pairs,
     run_close_pairs as run_close_pairs,
+    run_transitive_pairs as run_transitive_pairs,
     finalize_pipeline,
     go_iter,
     split_images,
     merge_hdf5,
+    resolve_image_folder,
 )
 from .geometry import (
     laf2homo, 

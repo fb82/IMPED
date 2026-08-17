@@ -1,7 +1,10 @@
+import itertools
 import os
 import time
 
+import cv2
 import h5py
+import networkx as nx
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -42,7 +45,7 @@ def resolve_image_folder(folder):
     return imgs
 
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, on_pair=None):
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
     if isinstance(imgs, str):
@@ -54,7 +57,9 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
         if add_path:
             imgs = [(os.path.join(add_path, p0), os.path.join(add_path, p1)) for p0, p1 in imgs]
         for pair in go_iter(imgs, msg='          processed pairs'):
-            run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+            pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+            if on_pair is not None:
+                on_pair(pair, pipe_data)
         finalize_pipeline(pipeline)
         return
 
@@ -82,12 +87,69 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
         msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
         tqdm.write(msg) if show_progress else print(msg)
         try:
-            run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+            pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+            if on_pair is not None:
+                on_pair(pair, pipe_data)
         except Exception as e:
             tqdm.write(f'  skipping pair ({img0}, {img1}): {e}') if show_progress else print(f'  skipping pair ({img0}, {img1}): {e}')
 
     finalize_pipeline(pipeline)
 
+
+
+def _cached_single_image(db, module, img):
+    """
+    Runs a single-image module on one image, caching the result under the
+    same key run_pipeline would use if `module` were the first entry of a
+    pipeline (pipe_name starts at '/') — so a later run_pairs() call on a
+    pipeline starting with the same module reuses this cached entry instead
+    of recomputing it.
+    """
+    data_key = f'/{os.path.basename(img)}//{module.get_id()}/data'
+
+    out, found = db.get(data_key)
+    if not found:
+        start_time = time.time()
+        out = module.run(idx=0, img=[img])
+        out['running_time'] = time.time() - start_time
+        if module.add_to_cache:
+            db.add(data_key, out)
+    elif 'running_time' not in out:
+        # repairs entries cached before 'running_time' was tracked here, so
+        # run_pipeline's unconditional del/access on this key doesn't crash
+        # when it later re-reads this same cache entry.
+        out['running_time'] = 0.0
+        if module.add_to_cache:
+            db.add(data_key, out)
+
+    return out
+
+
+def _cached_pair_similarity(db, descriptor, similarity, img_a, img_b, desc_a, desc_b):
+    """
+    Runs a pair similarity module on one pair, caching the result under the
+    same key run_pipeline would use for `similarity` as the second entry of
+    a pipeline starting with `descriptor` — so a later run_pairs() call on
+    that same pipeline reuses this cached 'pair_sim' instead of recomputing
+    it (e.g. a costly BFMatcher pass for standard_similarity_module).
+    """
+    im0 = os.path.basename(img_a)
+    im1 = os.path.basename(img_b)
+    data_key = f'/{im0}/{im1}//{descriptor.get_id()}/{similarity.get_id()}/data'
+
+    out, found = db.get(data_key)
+    if not found:
+        start_time = time.time()
+        out = similarity.run(global_desc=[desc_a, desc_b])
+        out['running_time'] = time.time() - start_time
+        if similarity.add_to_cache:
+            db.add(data_key, out)
+    elif 'running_time' not in out:
+        out['running_time'] = 0.0
+        if similarity.add_to_cache:
+            db.add(data_key, out)
+
+    return out['pair_sim']
 
 
 def _move_to_device(x, target_device):
@@ -473,6 +535,167 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
         colmap_db_or_list, mode, colmap_req, colmap_min_matches,
         n_chunks, chunk_idx, summary_lines=[f"Neighbours per image (n={n})"],
     )
+
+
+def run_transitive_pairs(pipeline, imgs, initial_selection_module, max_rounds=None, db_name='database.hdf5', db_mode='a',
+                          force=False, add_path='', on_round=None, on_pair=None, on_candidates=None):
+    """
+    Incrementally builds the pair list to run `pipeline` on, driven by the
+    global descriptor already present in `pipeline` (e.g. salad_module,
+    standard_descriptor_module, or any compatible module) and by transitive
+    closure over confirmed pairs.
+
+    `pipeline` must contain:
+    - a single-image module producing 'global_desc' (the global descriptor),
+    - a pair module consuming two 'global_desc' and producing 'pair_sim'
+      (the similarity module),
+    - a module exposing a `_table` list of (img0, img1) pairs confirmed so
+      far, updated as the pipeline runs (conf_module or compatible), and an
+      `args['threshold']` used below the same way conf_module uses it.
+
+    `initial_selection_module` decides which pairs to try in the first round, since that
+    round has no confirmed pairs yet to build candidates from and has to
+    pick out of every possible pair instead (e.g.
+    transitive_initial_selection.percentage_module, keeping the top
+    fraction of all pairs, or transitive_initial_selection.max_uses_module,
+    capping how many times any single image is paired). It must expose
+    `select(scored, threshold)`, with `scored` a list of (pair_sim, (a, b))
+    sorted by pair_sim descending, returning the list of (a, b) pairs to
+    try; it is expected to honor `threshold` itself and never return a pair
+    at or below it.
+
+    Global descriptors are computed once per image and cached in `db_name`
+    under the same key run_pairs() would use for that module, so later
+    rounds (and any other pipeline sharing the same db) reuse them instead
+    of recomputing. The descriptor module in use is printed to the terminal
+    before computing them.
+
+    Right after the global descriptors are computed, a networkx.Graph is
+    built with one node per image and no edges; every round adds an edge
+    per newly confirmed pair. The graph is what candidate generation reads
+    for transitive closure, it is passed to `on_round(graph, n_round, n_new)`
+    after every round if given, and it is returned at the end. For a live
+    view as the run progresses, see visualization.live_pair_graph and wire
+    it up via `on_pair`/`on_candidates` below instead. `on_pair(pair,
+    pipe_data)` if given is called right after
+    every single pair is run through `pipeline` (before the round's
+    confirmations are known), with `pipe_data` the dict run_pipeline built
+    for that pair (e.g. `pipe_data.get('pair_conf')` for conf_module's
+    output) — e.g. to feed visualization.live_pair_graph. Note that, given
+    the filtering below, `pipeline` is only ever run on pairs already known
+    to score above `threshold`, so on_pair effectively never sees a
+    rejected pair. `on_candidates(scored, threshold)` if given is called
+    once per round, right after ranking, with the full `scored` list before
+    that filtering — including the below-threshold pairs that never make it
+    to `pipeline` at all — e.g. to draw those as a distinct "considered but
+    rejected" edge in visualization.live_pair_graph.
+
+    Each round:
+    - If no pair has been confirmed yet, `initial_selection_module` picks which pairs
+      (out of every possible pair) to try.
+    - Otherwise, candidates are generated transitively from the confirmed
+      pairs (A-C whenever A-B and B-C are both confirmed, and A-C hasn't
+      been tried yet), and every one of them scoring above the conf_module
+      threshold is tried — there's no further cap here since transitive
+      closure candidates are already bounded by the confirmed graph.
+
+    Rounds repeat until a round tries no pairs (every remaining candidate,
+    seed or transitive, scores at or below threshold) or confirms no new
+    pair, or until `max_rounds` is reached (None runs until convergence).
+    """
+    cv2.setNumThreads(20)
+
+    imgs = _resolve_and_sort_imgs(imgs, add_path)
+
+    descriptor = next((m for m in pipeline if getattr(m, 'single_image', False)), None)
+    assert descriptor is not None, \
+        "pipeline must include a single-image global descriptor module (e.g. salad_module, standard_descriptor_module)"
+
+    conf = next((m for m in pipeline if hasattr(m, '_table')), None)
+    assert conf is not None, \
+        "pipeline must end with a conf_module (or compatible module exposing '_table')"
+
+    similarity = next((m for m in pipeline if m is not descriptor and m is not conf), None)
+    assert similarity is not None, \
+        "pipeline must include a pair similarity module consuming 'global_desc' (e.g. cosine_similarity_module, standard_similarity_module)"
+
+    desc_db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
+
+    print(f"run_transitive_pairs: computing global descriptors with '{descriptor.get_id()}'")
+    global_desc = {
+        img: _cached_single_image(desc_db, descriptor, img)['global_desc']
+        for img in go_iter(imgs, msg='computing global descriptors')
+    }
+
+    # run_pairs() below opens its own h5py.File handle on db_name each round;
+    # keeping this one open concurrently (same file, no SWMR) risks the other
+    # handle seeing stale/partial writes, so release it now.
+    desc_db.close()
+
+    graph = nx.Graph()
+    graph.add_nodes_from(imgs)
+
+    threshold = conf.args['threshold']
+    tried = set()
+
+    def rank(candidates):
+        sim_db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
+        scored = [
+            (
+                _cached_pair_similarity(sim_db, descriptor, similarity, a, b, global_desc[a], global_desc[b]),
+                (a, b),
+            )
+            for a, b in go_iter(candidates, msg='ranking candidate pairs')
+        ]
+        # released before run_pairs() opens its own handle on db_name below
+        sim_db.close()
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        if on_candidates is not None:
+            on_candidates(scored, threshold)
+        return scored
+
+    def candidates_first_round():
+        candidates = [
+            (imgs[i], imgs[j])
+            for i in range(len(imgs))
+            for j in range(i + 1, len(imgs))
+            if (imgs[i], imgs[j]) not in tried
+        ]
+        return initial_selection_module.select(rank(candidates), threshold)
+
+    def candidates_transitive():
+        candidates = set()
+        for b in graph.nodes:
+            for a, c in itertools.combinations(graph.neighbors(b), 2):
+                pair = (min(a, c), max(a, c))
+                if pair not in tried:
+                    candidates.add(pair)
+
+        return [pair for sim, pair in rank(list(candidates)) if sim > threshold]
+
+    n_rounds = 0
+    while max_rounds is None or n_rounds < max_rounds:
+        pairs = candidates_first_round() if graph.number_of_edges() == 0 else candidates_transitive()
+        if not pairs:
+            break
+
+        tried.update(pairs)
+        n_before = len(conf._table)
+        run_pairs(pipeline, pairs, db_name=db_name, db_mode=db_mode, force=force, on_pair=on_pair)
+        n_new = len(conf._table) - n_before
+        graph.add_edges_from(conf._table[n_before:])
+        n_rounds += 1
+
+        print(f"run_transitive_pairs: round {n_rounds}, {len(pairs)} pairs tried, {n_new} newly confirmed")
+
+        if on_round is not None:
+            on_round(graph, n_rounds, n_new)
+
+        if n_new == 0:
+            break
+
+    return graph
 
 
 def split_images(imgs, n_chunks, chunk_idx):
