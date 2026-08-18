@@ -16,6 +16,8 @@ Key features:
 - **Benchmarking tools** — built-in support for MegaDepth-1500, ScanNet-1500, IMC PhotoTourism, and planar datasets with standard pose and homography metrics.
 - **Incremental processing** — HDF5-backed caching avoids redundant computation across runs.
 - **Device-aware execution** — per-module CPU/GPU assignment with automatic tensor routing.
+- **Automatic pair selection** — `run_transitive_pairs()` avoids exhaustive pairwise matching on large datasets by scoring pairs with a cheap global descriptor and growing the match graph transitively.
+- **Live graph visualization** — watch pairs get confirmed in real time on an interactive, auto-refreshing graph view.
 
 For a quick tour of what is possible, browse `src/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
 
@@ -169,6 +171,50 @@ pipeline = [
 | `mode` | Pairing mode for `image_pairs` (default: `'exclude'`) |
 | `colmap_req` | Required COLMAP data type (default: `'geometry'`) |
 | `colmap_min_matches` | Minimum match count for COLMAP-based pairing |
+
+### Automatic pair selection with `run_transitive_pairs()`
+
+For datasets too large to match exhaustively, `run_transitive_pairs()` builds the pair list for a real matching pipeline automatically, using a cheap global-descriptor pass instead of brute-forcing every combination:
+
+1. A **global descriptor** module (`salad_module`, `standard_descriptor_module`) computes one embedding per image.
+2. A **similarity** module (`cosine_similarity_module`, `l2_similarity_module`, `standard_similarity_module`) scores every candidate pair from those embeddings.
+3. `conf_module` keeps the pairs scoring above a `threshold` and accumulates them.
+4. Since there's no confirmed graph yet to expand from, an **initial-selection** module (`transitive_initial_selection.percentage_module`, `.max_uses_module`) decides which pairs to try in the first round.
+5. Every later round grows the graph **transitively** — if A-B and B-C are confirmed, A-C is tried next — so most of the dataset never needs to be scored pairwise.
+
+```python
+coarse_pipeline = [
+    salad_module(),
+    l2_similarity_module(),
+    conf_module(threshold=-1.0, out_path='pairs.pt'),
+]
+
+run_transitive_pairs(coarse_pipeline, '../data/ET', percentage_module(percentage=0.1))
+```
+
+The confirmed pairs end up in `pairs.pt`, ready to feed a real matching pipeline via `run_pairs(real_pipeline, imgs, colmap_db_or_list=torch.load('pairs.pt'), mode='include')`.
+
+**Watching it live**: `visualization.live_pair_graph` renders the pair graph as an interactive, auto-refreshing HTML page (via pyvis/vis.js) while `run_transitive_pairs()` — or even a plain `run_pairs()` call — runs, using its `on_pair`/`on_candidates` hooks. Confirmed pairs appear as thick blue (first round) or green (transitive) edges labeled with their score; everything else shows as a thin dashed red edge. See `pipeline_et_transitive_live()` and `pipeline_et_run_pairs_live()` in `src/test_pipelines.py` for complete examples.
+
+### Nearest-neighbor pair selection with `run_close_pairs()`
+
+A simpler alternative to `run_transitive_pairs()` when you just want each image matched against its `n` most similar neighbours, no threshold or rounds involved. It ranks every image against every other using DINOv2 SALAD embeddings, keeps each image's top-`n` closest matches, and runs `pipeline` on the resulting pair list:
+
+```python
+run_close_pairs(pipeline, '../data/ET', n=10)
+```
+
+`salad_cache` optionally saves the computed embeddings to a `.pt` file so repeated runs (including different chunks in a distributed run, see below) don't recompute them.
+
+### Distributed / multi-machine processing
+
+Two independent ways to spread a run across machines, both used by copying the same script and images to each machine and giving every worker its own `chunk_idx`:
+
+- **Split the pair list** (`run_close_pairs(..., n_chunks=N, chunk_idx=i)`): every worker generates the same full, deterministic pair list, then only actually runs the pairs assigned to it round-robin — full coverage, no coordination needed. Point `colmap_db_or_list` at a COLMAP database shared between workers (e.g. on shared storage) to skip pairs another worker already computed.
+- **Split the image set** (`split_images(imgs, n_chunks, chunk_idx)`): divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group) and merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
+
+See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/merge path.
+
 ---
 
 ## Module Reference
@@ -185,11 +231,20 @@ pipeline = [
 ### Filters
 `magsac_module` · `poselib_module` · `adalam_module` · `gms_module` · `lpm_module` · `dtm_module` · `fcgnn_module` · `oanet_module` · `acne_module` · `mop_miho_ncc_module`
 
+### Segmentation
+`segformer_module` — SegFormer semantic segmentation (Cityscapes labels), flags keypoints/matches falling on specific classes
+
 ### Ensemble
 `image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pair_rot4` · `pair_pyramid` · `sampling_module`
 
+### Global Descriptors & Similarity
+`salad_module` · `standard_descriptor_module` · `cosine_similarity_module` · `l2_similarity_module` · `standard_similarity_module`
+
+### Pair Selection
+`conf_module` · `transitive_initial_selection.percentage_module` · `transitive_initial_selection.max_uses_module`
+
 ### Visualization
-`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module`
+`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` 
 
 ### COLMAP
 `to_colmap_module` · `from_colmap_module` · `merge_colmap_db` · `filter_colmap_reconstruction` · `align_colmap_models`
@@ -202,7 +257,7 @@ pipeline = [
 src/
 ├── core/
 │   ├── device.py              # Device setup, global flags
-│   ├── pipeline.py            # run_pipeline, run_pairs, finalize_pipeline
+│   ├── pipeline.py            # run_pipeline, run_pairs, run_transitive_pairs, finalize_pipeline
 │   ├── geometry.py            # Homography and LAF utilities
 │   └── utils.py               # Argument handling, serialization, math utils
 │
@@ -243,10 +298,29 @@ src/
 │   ├── dtm_module.py
 │   └── mop_miho_ncc_module.py
 │
+├── segmentators/
+│   └── segformer_module.py
+│
 ├── ensemble/
 │   ├── sampling.py
 │   ├── muxers.py
 │   └── pyramid.py
+│
+├── global_descriptors/
+│   ├── salad_module.py
+│   └── standard_descriptor.py
+│
+├── similarity/
+│   ├── cosine_similarity_module.py
+│   ├── l2_similarity_module.py
+│   └── standard_similarity_module.py
+│
+├── confidence/
+│   └── conf_module.py
+│
+├── transitive_initial_selection/
+│   ├── percentage_module.py
+│   └── max_uses_module.py
 │
 ├── colmap/
 │   ├── colmap_ext.py
@@ -264,7 +338,8 @@ src/
 │   ├── show_matches.py
 │   ├── show_homography.py
 │   ├── show_patches.py
-│   └── colorize.py
+│   ├── colorize.py
+│   └── live_pair_graph.py     # interactive live pair-graph viewer
 │
 └── image_pairs.py             # image_pairs iterator
 ```
@@ -278,6 +353,8 @@ src/
 - COLMAP integration supports exporting features and matches, importing COLMAP keypoints back into the pipeline, using COLMAP databases for pair selection, and merging results across computation paths.
 - The `imgs` argument to `run_pairs()` accepts either a directory path or an explicit list of image paths.
 - Results are cached in HDF5 format; set `force=True` to reprocess from scratch.
+- The `on_pair(pair, pipe_data)` hook on `run_pairs()`/`run_transitive_pairs()`, and `run_transitive_pairs()`'s extra `on_candidates(scored, threshold)`, aren't limited to `live_pair_graph` — any callback with a matching signature works, so custom progress tracking or logging can be wired in the same way.
+- `segformer_module` never removes keypoints or matches — it only annotates them (`keypt_mask`, an extra column on `m_mask`) as falling on an specific semantic class, so the original, unfiltered data stays available to any module placed after it.
 
 ---
 
