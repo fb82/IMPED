@@ -10,47 +10,15 @@ class live_pair_graph:
     Interactive, incrementally-updated visualisation of the pair graph built
     by core.run_transitive_pairs, using pyvis (vis.js): draggable/zoomable
     nodes, hover tooltips, click-to-highlight neighbours.
-
-    There's no push channel to an already-open browser tab, so "live" here
-    means: every add_pair() rewrites `save_to` and the page reloads itself
-    every `refresh_seconds` (a plain <meta http-equiv="refresh"> tag), so a
-    tab left open on `save_to` picks up new edges automatically. Call
-    stop() once the run is over to write a final version without that tag,
-    so the tab settles instead of refreshing forever.
-
-    Node positions come from nx.spring_layout, recomputed on every
-    add_pair() but seeded from the previous layout (`pos=self.pos`) so
-    connected nodes are actually pulled together as edges arrive, without
-    the wholesale reshuffle a from-scratch layout (or vis.js physics
-    restarting on every reload) would cause.
-
-    add_pair(a, b, conf=...) labels the edge with `conf` (2 decimals) and
-    shows the full value in the hover tooltip; pass conf=None to leave the
-    edge unlabeled. `transitive=False` (the default) colors it blue and
-    thick — a pair confirmed by a transitive_initial_selection module in the first round;
-    `transitive=True` colors it green and thick — a pair confirmed by
-    transitive closure in a later round. Also clears any red placeholder
-    add_rejected_pair had drawn for the same pair, so it doesn't linger
-    underneath.
-
-    add_rejected_pair(a, b, conf=...) draws a thin dashed red edge instead —
-    for a pair that's been scored but isn't (yet, or ever) confirmed, so the
-    graph reads as complete from early on: every pair gets an edge as soon
-    as its similarity is known, red by default, upgraded to blue/green only
-    once actually confirmed. These don't affect node layout (only confirmed
-    pairs, via add_pair, do).
-
-    Usage: pass an instance's `add_pair` method as `on_pair` to
-    core.run_pairs / core.run_transitive_pairs, and call stop() after it
-    returns.
     """
     def __init__(self, imgs, save_to='live_pair_graph.html', refresh_seconds=2, open_browser=True):
         self.graph = nx.Graph()
         self.graph.add_nodes_from(imgs)
-        self.rejected = {}  
+        self.rejected = {}
         self.save_to = save_to
         self.refresh_seconds = refresh_seconds
         self.stopped = False
+        self.first_round_done = False
 
         self.pos = {n: (x * 1000, y * 1000) for n, (x, y) in nx.spring_layout(self.graph).items()}
 
@@ -73,6 +41,21 @@ class live_pair_graph:
             return  
         self.rejected[key] = conf
         self._redraw()
+
+    def on_pair(self, pair, pipe_data):
+        img_a, img_b = pair
+        conf = pipe_data.get('pair_sim')
+        if pipe_data.get('pair_conf', True):
+            self.add_pair(img_a, img_b, conf=conf, transitive=self.first_round_done)
+        else:
+            self.add_rejected_pair(img_a, img_b, conf=conf)
+
+    def on_candidates(self, scored, threshold):
+        for sim, pair in scored:
+            self.add_rejected_pair(*pair, conf=sim)
+
+    def on_round(self, graph, n_round, n_new):
+        self.first_round_done = True
 
     def stop(self):
         self.stopped = True
