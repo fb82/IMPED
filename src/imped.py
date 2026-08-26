@@ -39,9 +39,9 @@ warnings.filterwarnings('ignore')
 torch.backends.cudnn.enabled = False
 
 if __name__ == '__main__':
+
     with torch.inference_mode():
-        test_pipelines.pipeline_et_run_pairs_live()
-        test_pipelines.pipeline_et_transitive_live()
+        test_pipelines.pipeline_ssma_transitive()
 
     print('done!')
 

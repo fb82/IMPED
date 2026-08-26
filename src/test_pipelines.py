@@ -1089,283 +1089,6 @@ def pipeline43():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
-def pipeline_ssma(
-    n_chunks=1,
-    chunk_idx=0,
-    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
-    output_folder='.',
-    n_close=10,
-):
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: pipeline_ssma  [chunk {chunk_idx} of {n_chunks}]")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    chunk_db = str(output_path / f'ssma_chunk_{chunk_idx}.db')
-
-    pipeline = [
-        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-            [
-                deep_joined_module(what='aliked'),
-                segformer_module(),
-                lightglue_module(what='aliked'),
-            ],
-            [
-                deep_joined_module(what='superpoint'),
-                segformer_module(),
-                lightglue_module(what='superpoint'),
-            ],
-            [
-                dog_module(),
-                patch_module(),
-                deep_descriptor_module(),
-                segformer_module(),
-                smnn_module(),
-            ],
-        ]),
-        magsac_module(),
-        segformer_module(stage='matches'),
-        to_colmap_module(db=chunk_db),
-    ]
-
-    run_close_pairs(
-        pipeline,
-        images_folder,
-        n=n_close,
-        db_name=None,
-        colmap_db_or_list=chunk_db,
-        n_chunks=n_chunks,
-        chunk_idx=chunk_idx,
-        salad_cache=str(output_path / 'salad_descriptors.pt'),
-    )
-
-
-def pipeline_ssma_mst(
-    n_chunks=1,
-    chunk_idx=0,
-    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
-    output_folder='.',
-    threshold=0.99,
-):
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: pipeline_ssma_mst  [chunk {chunk_idx} of {n_chunks}]")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    chunk_db = str(output_path / f'ssma_mst_chunk_{chunk_idx}.db')
-    pairs_path = str(output_path / f'ssma_mst_pairs_{chunk_idx}.pt')
-
-
-    coarse_pipeline = [
-        salad_module(),
-        cosine_similarity_module(),
-        conf_module(threshold=threshold, out_path=pairs_path),
-    ]
-    run_pairs(
-        coarse_pipeline,
-        images_folder,
-        db_name=str(output_path / f'ssma_mst_global_desc_{chunk_idx}.hdf5'),
-    )
-
-    pairs = torch.load(pairs_path)
-
-    if n_chunks > 1:
-        pairs = list(image_pairs(pairs, check_img=False, chunk_id=chunk_idx, n_chunk=n_chunks))
-
-    pipeline = [
-        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-            [
-                deep_joined_module(what='aliked'),
-                segformer_module(),
-                lightglue_module(what='aliked'),
-            ],
-            [
-                deep_joined_module(what='superpoint'),
-                segformer_module(),
-                lightglue_module(what='superpoint'),
-            ],
-            [
-                dog_module(),
-                patch_module(),
-                deep_descriptor_module(),
-                segformer_module(),
-                smnn_module(),
-            ],
-        ]),
-        magsac_module(),
-        segformer_module(stage='matches'),
-        to_colmap_module(db=chunk_db),
-    ]
-
-    run_pairs(pipeline, pairs, db_name=str(output_path / f'ssma_mst_matches_{chunk_idx}.hdf5'))
-
-
-def pipeline_ssma_transitive(
-    images_folder='/home/colombo/Shared/imgs',
-    output_folder='.',
-    seed_percentage=0.1,
-    max_rounds=None,
-    threshold=0.99,
-):
-    print("\n \n")
-    print("=" * 50)
-    print("Running: pipeline_ssma_transitive")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    pairs_path = str(output_path / 'ssma_transitive_pairs.pt')
-
-    imgs = sorted(resolve_image_folder(images_folder))
-
-    coarse_pipeline = [
-        standard_descriptor_module(),
-        standard_similarity_module(),
-        percentage_module(percentage=seed_percentage),
-        conf_module(threshold=threshold, out_path=pairs_path),
-    ]
-
-    live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'))
-
-    try:
-        run_pairs(
-            coarse_pipeline,
-            images_folder,
-            max_rounds=max_rounds,
-            db_name=str(output_path / 'ssma_transitive_global_desc.hdf5'),
-            on_pair=live.on_pair,
-            on_candidates=live.on_candidates,
-            on_round=live.on_round,
-        )
-    finally:
-        live.stop()
-
-    pairs = torch.load(pairs_path)
-    print(f"pipeline_ssma_transitive: {len(pairs)} pairs confirmed via transitive closure")
-
-
-def pipeline_et_transitive_live(
-    imgs_dir='../data/ET',
-    output_folder='.',
-    seed_percentage=0.1,
-    max_rounds=None,
-    threshold=-1.0,
-):
-    """
-    Runs a transitive pipeline (core.run_pairs with a transitive-selection
-    module from the `transitive` package in it) on the ET dataset,
-    visualizing the pair graph live and interactively with pyvis
-    (visualization.live_pair_graph): opens
-    live_pair_graph.html in the browser once, and the tab auto-refreshes to
-    pick up new edges as pairs get confirmed.
-
-    Uses salad_module + l2_similarity_module: l2_similarity_module's
-    'pair_sim' is the *negative* L2 distance between two SALAD embeddings —
-    0 for identical, more negative the further apart — so it is NOT bounded
-    to [0, 1]; `threshold` and the values on the graph's edges are negative
-    numbers here (more negative threshold = more lenient).
-    """
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    pairs_path = str(output_path / f'{name_example}_pairs.pt')
-
-    # same resolution run_pairs's transitive branch uses internally
-    # (_resolve_and_sort_imgs -> resolve_image_folder), so the node set here
-    # matches exactly what it'll reference in pairs — a naive extension
-    # filter here could disagree with it and leave edges pointing at nodes
-    # the graph never got
-    imgs = sorted(resolve_image_folder(imgs_dir))
-
-    conf = conf_module(threshold=threshold, out_path=pairs_path)
-    coarse_pipeline = [
-        salad_module(),
-        l2_similarity_module(),
-        percentage_module(percentage=seed_percentage),
-        conf,
-    ]
-
-    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
-
-    try:
-        run_pairs(
-            coarse_pipeline,
-            imgs_dir,
-            max_rounds=max_rounds,
-            db_name=str(output_path / f'{name_example}_global_desc.hdf5'),
-            on_pair=live.on_pair,
-            on_candidates=live.on_candidates,
-            on_round=live.on_round,
-        )
-    finally:
-        # always stop the auto-refresh, even if the run above raises, so the
-        # open tab doesn't keep reloading forever on a page nothing updates
-        live.stop()
-
-    pairs = torch.load(pairs_path)
-    print(f"{name_example}: {len(pairs)} pairs confirmed via transitive closure")
-
-
-def pipeline_et_run_pairs_live(
-    imgs_dir='../data/ET',
-    output_folder='.',
-    threshold=-1.0,
-):
-    """
-    Same live pyvis visualization as pipeline_et_transitive_live, but driven
-    by a plain (non-transitive) run_pairs pipeline: run_pairs has no
-    threshold pre-filtering or rounds here, so it runs `pipeline` on every
-    pair in the dataset unconditionally, in a single pass — every edge is
-    known (and colored) by the end. live.on_pair reads `pipe_data`'s
-    conf_module decision ('pair_conf': 0.0 if rejected, otherwise the kept
-    similarity) to pick blue (add_pair) vs red (add_rejected_pair) — no need
-    for on_candidates here, since run_pairs never calls it outside a
-    transitive pipeline. There's no round concept either (on_round is never
-    called), so every confirmed edge stays blue (no green/transitive edges).
-    """
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    pairs_path = str(output_path / f'{name_example}_pairs.pt')
-
-    imgs = sorted(resolve_image_folder(imgs_dir))
-
-    coarse_pipeline = [
-        salad_module(),
-        l2_similarity_module(),
-        conf_module(threshold=threshold, out_path=pairs_path),
-    ]
-
-    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
-
-    try:
-        run_pairs(
-            coarse_pipeline,
-            imgs_dir,
-            db_name=str(output_path / f'{name_example}.hdf5'),
-            on_pair=live.on_pair,
-        )
-    finally:
-        live.stop()
-
-    pairs = torch.load(pairs_path)
-    print(f"{name_example}: {len(pairs)} pairs confirmed")
-
-
 def pipeline44():
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
@@ -1438,9 +1161,6 @@ def pipeline44():
         f"Expected {n_intra0 + n_intra1} pairs after merge, got {len(pairs_before)}"
     print(f"  [OK] merge produced {len(pairs_before)} intra-chunk pairs")
 
-    # Run on all images — each image in chunk0 has its intra-chunk pairs done
-    # but not its cross-chunk pairs; this verifies partial-pair images get
-    # their remaining pairs computed and are not skipped entirely
     pipeline = [
         dog_module(),
         patch_module(),
@@ -1498,9 +1218,6 @@ def pipeline45():
     ]
     run_pairs(pipeline, imgs, db_name=name_db)
 
-    # A fresh pipeline (and to_colmap_module instance) for the second run:
-    # finalize() closes the underlying sqlite connection, so the same
-    # to_colmap_module instance can't be finalized twice.
     pipeline = [
         dog_module(),
         patch_module(),
@@ -1661,8 +1378,6 @@ def pipeline49():
                 im0, im1 = img_names[i], img_names[j]
                 data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['salad']['cosine_similarity']['data'][()])
                 sim = data['pair_sim']
-                # conf_module doesn't cache its own output (see conf_module docstring),
-                # so re-derive the expected decision straight from the cached pair_sim.
                 if sim > threshold:
                     expected.add((im0, im1))
 
@@ -1695,10 +1410,6 @@ def pipeline50():
         if os.path.exists(f):
             os.remove(f)
 
-    # First pass with a strict threshold, reusing the same hdf5 (so global_desc
-    # and pair_sim get cached). This is the scenario conf_module's
-    # add_to_cache=False guards: a second pass with a looser threshold must
-    # NOT reuse the first pass's pair_conf decisions.
     pipeline_high = [salad_module(), cosine_similarity_module(), conf_module(threshold=0.5, out_path=pairs_path_high)]
     run_pairs(pipeline_high, imgs_dir, db_name=name_db)
     pairs_high = torch.load(pairs_path_high)
@@ -1896,8 +1607,6 @@ def pipeline54():
                 im0, im1 = img_names[i], img_names[j]
                 data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['standard']['standard_similarity']['data'][()])
                 sim = data['pair_sim']
-                # conf_module doesn't cache its own output (see conf_module docstring),
-                # so re-derive the expected decision straight from the cached pair_sim.
                 if sim > threshold:
                     expected.add((im0, im1))
 
@@ -1933,7 +1642,6 @@ def pipeline55(output_folder='.'):
             os.remove(f)
 
     imgs = sorted(resolve_image_folder(imgs_dir))
-    img_names = [os.path.basename(p) for p in imgs]
 
     run_pairs([salad_module(), cosine_similarity_module()], imgs_dir, db_name=name_db)
 
@@ -1966,4 +1674,172 @@ def pipeline55(output_folder='.'):
 
     print(f"{name_example}: {len(seed_confirmed_names)} pairs confirmed "
           f"over {graph.number_of_nodes()} images")
+
+
+def pipeline_ssma(
+    n_chunks=1,
+    chunk_idx=0,
+    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
+    output_folder='.',
+    n_close=10,
+):
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: pipeline_ssma  [chunk {chunk_idx} of {n_chunks}]")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    chunk_db = str(output_path / f'ssma_chunk_{chunk_idx}.db')
+
+    pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                segformer_module(),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                segformer_module(),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                segformer_module(),
+                smnn_module(),
+            ],
+        ]),
+        magsac_module(),
+        segformer_module(stage='matches'),
+        to_colmap_module(db=chunk_db),
+    ]
+
+    run_close_pairs(
+        pipeline,
+        images_folder,
+        n=n_close,
+        db_name=None,
+        colmap_db_or_list=chunk_db,
+        n_chunks=n_chunks,
+        chunk_idx=chunk_idx,
+        salad_cache=str(output_path / 'salad_descriptors.pt'),
+    )
+
+
+
+def pipeline_ssma_transitive(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='.',
+    max_rounds=None,
+    threshold=0.99,
+):
+    print("\n \n")
+    print("=" * 50)
+    print("Running: pipeline_ssma_transitive")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    pairs_path = str(output_path / 'ssma_transitive_pairs.pt')
+    kfc_pairs_path = str(output_path / 'ssma_transitive_kfc_pairs.pt')
+    match_db = str(output_path / 'ssma_transitive.db')
+
+    imgs = sorted(resolve_image_folder(images_folder))
+
+    pipeline = [
+        salad_module(),
+        cosine_similarity_module(add_to_cache=False),
+        conf_module(threshold=threshold, out_path=pairs_path),
+        kfc_module(threshold=threshold, out_path=kfc_pairs_path),
+        pipeline_muxer_module(add_to_cache=False, pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked', add_to_cache=False),
+                segformer_module(add_to_cache=False),
+                lightglue_module(what='aliked', add_to_cache=False),
+            ],
+            [
+                deep_joined_module(what='superpoint', add_to_cache=False),
+                segformer_module(add_to_cache=False),
+                lightglue_module(what='superpoint', add_to_cache=False),
+            ],
+            [
+                dog_module(add_to_cache=False),
+                patch_module(add_to_cache=False),
+                deep_descriptor_module(add_to_cache=False),
+                segformer_module(add_to_cache=False),
+                smnn_module(add_to_cache=False),
+            ],
+        ]),
+        magsac_module(add_to_cache=False),
+        segformer_module(stage='matches', add_to_cache=False),
+        to_colmap_module(db=match_db, add_to_cache=False),
+    ]
+
+    live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'))
+
+    try:
+        run_pairs(
+            pipeline,
+            images_folder,
+            max_rounds=max_rounds,
+            db_name=str(output_path / 'ssma_transitive.hdf5'),
+            on_pair=live.on_pair,
+            on_candidates=live.on_candidates,
+            on_round=live.on_round,
+        )
+    finally:
+        live.stop()
+
+    pairs = torch.load(pairs_path)
+    print(f"pipeline_ssma_transitive: {len(pairs)} pairs confirmed and matched via transitive closure")
+
+
+def pipeline_et_transitive_live(
+    imgs_dir='../data/ET',
+    output_folder='.',
+    seed_percentage=0.1,
+    max_rounds=None,
+    threshold=-1.0,
+):
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    pairs_path = str(output_path / f'{name_example}_pairs.pt')
+
+
+    imgs = sorted(resolve_image_folder(imgs_dir))
+
+    conf = conf_module(threshold=threshold, out_path=pairs_path)
+    coarse_pipeline = [
+        salad_module(),
+        l2_similarity_module(),
+        percentage_module(percentage=seed_percentage),
+        conf,
+    ]
+
+    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
+
+    try:
+        run_pairs(
+            coarse_pipeline,
+            imgs_dir,
+            max_rounds=max_rounds,
+            db_name=str(output_path / f'{name_example}_global_desc.hdf5'),
+            on_pair=live.on_pair,
+            on_candidates=live.on_candidates,
+            on_round=live.on_round,
+        )
+    finally:
+        live.stop()
+
+    pairs = torch.load(pairs_path)
+    print(f"{name_example}: {len(pairs)} pairs confirmed via transitive closure")
 
