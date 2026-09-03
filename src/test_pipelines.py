@@ -1749,6 +1749,8 @@ def pipeline_ssma_transitive(
 
     imgs = sorted(resolve_image_folder(images_folder))
 
+    seg_cache_dir = str(output_path / 'seg_cache')
+
     pipeline = [
         salad_module(),
         cosine_similarity_module(add_to_cache=False),
@@ -1756,25 +1758,25 @@ def pipeline_ssma_transitive(
         kfc_module(threshold=threshold, out_path=kfc_pairs_path),
         pipeline_muxer_module(add_to_cache=False, pipe_gather=pipe_union, pipeline=[
             [
-                deep_joined_module(what='aliked', add_to_cache=False),
-                segformer_module(add_to_cache=False),
+                deep_joined_module(what='aliked'),
+                segformer_module(seg_cache_dir=seg_cache_dir),
                 lightglue_module(what='aliked', add_to_cache=False),
             ],
             [
-                deep_joined_module(what='superpoint', add_to_cache=False),
-                segformer_module(add_to_cache=False),
+                deep_joined_module(what='superpoint'),
+                segformer_module(seg_cache_dir=seg_cache_dir),
                 lightglue_module(what='superpoint', add_to_cache=False),
             ],
             [
-                dog_module(add_to_cache=False),
-                patch_module(add_to_cache=False),
-                deep_descriptor_module(add_to_cache=False),
-                segformer_module(add_to_cache=False),
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                segformer_module(seg_cache_dir=seg_cache_dir),
                 smnn_module(add_to_cache=False),
             ],
         ]),
         magsac_module(add_to_cache=False),
-        segformer_module(stage='matches', add_to_cache=False),
+        segformer_module(stage='matches', add_to_cache=True, seg_cache_dir=seg_cache_dir),
         to_colmap_module(db=match_db, add_to_cache=False),
     ]
 

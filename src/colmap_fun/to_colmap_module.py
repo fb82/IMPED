@@ -235,6 +235,14 @@ class to_colmap_module:
         pipe_old['kr'] = [kr_old0, kr_old1]
         pipe_old['w'] = [w_old0, w_old1]
 
+        if 'm_mask' in args and args['m_mask'].dim() > 1:
+            args['m_mask'] = args['m_mask'].all(dim=1)
+
+        MIN_MATCHES_FOR_EXPORT = 8
+        n_matches = args['m_idx'].shape[0] if 'm_idx' in args else 0
+        if n_matches < MIN_MATCHES_FOR_EXPORT:
+            return {}
+
         # ---------------- NEW FEATURES ----------------
         w0 = kpts_as_colmap(0, **args)
         w1 = kpts_as_colmap(1, **args)

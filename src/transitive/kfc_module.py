@@ -1,7 +1,10 @@
+import time
+
 import networkx as nx
 import torch
 
 from core import set_args
+from core.pipeline import go_iter
 
 
 class kfc_module:
@@ -44,30 +47,46 @@ class kfc_module:
         if not scored:
             return []
 
+        print(f"kfc_module: selecting from {len(scored)} scored pairs")
+
+        start_time = time.time()
         graph = nx.Graph()
-        for sim, (a, b) in scored:
+        for sim, (a, b) in go_iter(scored, msg='kfc: building main graph'):
             graph.add_edge(a, b, weight=sim)
+        print(f"kfc_module: built main graph ({graph.number_of_nodes()} nodes, "
+              f"{graph.number_of_edges()} edges) in {time.time() - start_time:.1f}s")
 
         max_sim = max(sim for sim, _ in scored)
 
+        start_time = time.time()
         complementary = nx.Graph()
-        for sim, (a, b) in scored:
+        for sim, (a, b) in go_iter(scored, msg='kfc: building complementary graph'):
             complementary.add_edge(a, b, weight=max_sim - sim)
+        print(f"kfc_module: built complementary graph in {time.time() - start_time:.1f}s")
 
-
+        start_time = time.time()
         best_tree_edges = {
             frozenset(e) for e in nx.minimum_spanning_tree(complementary, weight='weight').edges()
         }
+        print(f"kfc_module: computed primary MST ({len(best_tree_edges)} edges) "
+              f"in {time.time() - start_time:.1f}s")
 
+        start_time = time.time()
         remainder = complementary.copy()
         remainder.remove_edges_from(tuple(e) for e in best_tree_edges)
+        print(f"kfc_module: built remainder graph in {time.time() - start_time:.1f}s")
 
+        start_time = time.time()
         backup_tree_edges = {
             frozenset(e) for e in nx.minimum_spanning_tree(remainder, weight='weight').edges()
         }
+        print(f"kfc_module: computed backup MST ({len(backup_tree_edges)} edges) "
+              f"in {time.time() - start_time:.1f}s")
 
-    
-        return [
+        selected = [
             (a, b) for sim, (a, b) in scored
             if frozenset((a, b)) in best_tree_edges or frozenset((a, b)) in backup_tree_edges
         ]
+        print(f"kfc_module: selected {len(selected)} pairs")
+
+        return selected

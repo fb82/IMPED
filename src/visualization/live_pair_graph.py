@@ -1,8 +1,11 @@
 import os
+import time
 import webbrowser
 
 import networkx as nx
 from pyvis.network import Network
+
+MAX_VISUALIZED_CANDIDATES = 5000
 
 
 class live_pair_graph:
@@ -19,6 +22,7 @@ class live_pair_graph:
         self.refresh_seconds = refresh_seconds
         self.stopped = False
         self.first_round_done = False
+        self._last_redraw_time = 0.0
 
         self.pos = {n: (x * 1000, y * 1000) for n, (x, y) in nx.spring_layout(self.graph).items()}
 
@@ -51,6 +55,10 @@ class live_pair_graph:
             self.add_rejected_pair(img_a, img_b, conf=conf)
 
     def on_candidates(self, scored, threshold):
+        if len(scored) > MAX_VISUALIZED_CANDIDATES:
+            print(f"live_pair_graph: skipping visualization of {len(scored)} candidates "
+                  f"(over the {MAX_VISUALIZED_CANDIDATES} cap) - only confirmed pairs will be shown")
+            return
         for sim, pair in scored:
             self.add_rejected_pair(*pair, conf=sim)
 
@@ -59,9 +67,15 @@ class live_pair_graph:
 
     def stop(self):
         self.stopped = True
-        self._redraw()
+        self._redraw(force=True)
 
-    def _redraw(self):
+    def _redraw(self, force=False):
+        if not force and time.time() - self._last_redraw_time < self.refresh_seconds:
+            return
+        self._last_redraw_time = time.time()
+        self._do_redraw()
+
+    def _do_redraw(self):
         net = Network(height='90vh', width='100%', notebook=False)
         net.from_nx(self.graph)
         for node in net.nodes:

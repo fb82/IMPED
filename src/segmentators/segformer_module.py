@@ -127,8 +127,8 @@ class segformer_module:
         self._processor, self._model = cached
 
     def _seg_cache_path(self, img_path: str) -> str:
-        stem = os.path.splitext(os.path.basename(img_path))[0]
-        return os.path.join(self.seg_cache_dir, self.model_name.replace('/', '_'), stem + '.pt')
+        name = os.path.basename(img_path)
+        return os.path.join(self.seg_cache_dir, self.model_name.replace('/', '_'), name + '.pt')
 
     def _get_seg_map(self, img_path: str, W: int, H: int) -> torch.Tensor:
         cache_key = (self.model_name, img_path)
@@ -153,7 +153,7 @@ class segformer_module:
 
             seg_map = torch.nn.functional.interpolate(
                 logits, size=(H, W), mode='bilinear', align_corners=False
-            ).argmax(dim=1).squeeze(0).cpu()
+            ).argmax(dim=1).squeeze(0).cpu().to(torch.uint8)
 
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             torch.save(seg_map, cache_path)

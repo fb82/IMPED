@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 
 import h5py
 import numpy as np
@@ -127,7 +128,8 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
                 if pipe_data.get('continue'):
                     keep_going = True
             except Exception as e:
-                tqdm.write(f'  skipping pair ({img0}, {img1}): {e}') if show_progress else print(f'  skipping pair ({img0}, {img1}): {e}')
+                msg = f'  skipping pair ({img0}, {img1}): {e}\n{traceback.format_exc()}'
+                tqdm.write(msg) if show_progress else print(msg)
 
         db.close()
 
