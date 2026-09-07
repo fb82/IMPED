@@ -1,5 +1,6 @@
-import torch
+import os
 
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import set_args
 
 
@@ -16,11 +17,14 @@ class conf_module:
 
     Every kept pair is also accumulated in an in-memory table as the
     pipeline runs; at finalize() that list of (img0, img1) pairs is saved to
-    `out_path`. This is the piece that replaces run_mst_pairs: running
-    [salad_module, a similarity module, conf_module] through run_pairs over
-    the full image set builds this list, and a second, real matching
-    pipeline can then be run only on those pairs via
-    `run_pairs(real_pipeline, imgs, colmap_db_or_list=torch.load(out_path), mode='include')`.
+    the HDF5 store at `out_path` (one entry per pair, keyed by the two image
+    basenames), in the same way pairwise_benchmark_module logs its stats.
+    Read it back with `conf_module.load_pairs(out_path)`. This is the piece
+    that replaces run_mst_pairs: running [salad_module, a similarity module,
+    conf_module] through run_pairs over the full image set builds this store,
+    and a second, real matching pipeline can then be run only on those pairs
+    via
+    `run_pairs(real_pipeline, imgs, colmap_db_or_list=conf_module.load_pairs(out_path), mode='include')`.
 
     'pair_conf' is not cached by default (`add_to_cache=False`), even though
     the pipeline's normal per-pair caching would happily do so: the decision
@@ -39,7 +43,7 @@ class conf_module:
         self.args = {
             'id_more': '',
             'threshold': 0.5,
-            'out_path': 'conf_pairs.pt',
+            'out_path': 'conf_pairs.hdf5',
         }
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -48,6 +52,18 @@ class conf_module:
 
         self._table = []
         self._n_seen = 0
+
+
+    @staticmethod
+    def load_pairs(out_path, id_string='conf'):
+        """Read back the list of (img0, img1) pairs stored by conf_module."""
+        aux_hdf5 = pickled_hdf5.pickled_hdf5(out_path, mode='r', label_prefix='pickled/' + id_string)
+        pairs = []
+        for key in aux_hdf5.get_keys():
+            val, is_found = aux_hdf5.get(key)
+            if is_found: pairs.append(tuple(val))
+        aux_hdf5.close()
+        return pairs
 
 
     def get_id(self):
@@ -69,6 +85,10 @@ class conf_module:
 
 
     def finalize(self):
-        torch.save(self._table, self.args['out_path'])
+        aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['out_path'], mode='a', label_prefix='pickled/' + self.id_string)
+        for img0, img1 in self._table:
+            data_key = '/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
+            aux_hdf5.add(data_key, (img0, img1))
+        aux_hdf5.close()
         print(f"conf_module: {len(self._table)} pairs above threshold={self.args['threshold']} "
               f"(of {self._n_seen} seen), saved to {self.args['out_path']}")

@@ -55,6 +55,7 @@ class to_colmap_module:
             'sampling_offset': 0,
             'commit_every_pairs': 10,
             'reprocess_pairs': True,
+            'min_matches_for_export': 8,
         }
         self.device =  torch.device(global_device)
         if 'device' in args:
@@ -238,7 +239,7 @@ class to_colmap_module:
         if 'm_mask' in args and args['m_mask'].dim() > 1:
             args['m_mask'] = args['m_mask'].all(dim=1)
 
-        MIN_MATCHES_FOR_EXPORT = 8
+        MIN_MATCHES_FOR_EXPORT = self.args['min_matches_for_export']
         n_matches = args['m_idx'].shape[0] if 'm_idx' in args else 0
         if n_matches < MIN_MATCHES_FOR_EXPORT:
             return {}

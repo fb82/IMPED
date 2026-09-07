@@ -1,5 +1,7 @@
 __version__ = "0.1.0"
 
+from . import kornia_compat as kornia_compat  
+
 from .device import device, pipe_color, show_progress, enable_quadtree
 
 from .pipeline import (

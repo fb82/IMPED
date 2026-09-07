@@ -1358,7 +1358,7 @@ def pipeline49():
 
     imgs_dir = '../data/ET'
     threshold = 0.5
-    pairs_path = f"{name_example}_pairs.pt"
+    pairs_path = f"{name_example}_pairs.hdf5"
     name_db = f"database_{name_example}.hdf5"
 
     for f in [pairs_path, name_db]:
@@ -1381,7 +1381,7 @@ def pipeline49():
                 if sim > threshold:
                     expected.add((im0, im1))
 
-    saved_pairs = torch.load(pairs_path)
+    saved_pairs = conf_module.load_pairs(pairs_path)
     saved_names = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in saved_pairs}
     expected_names = {tuple(sorted(p)) for p in expected}
 
@@ -1403,8 +1403,8 @@ def pipeline50():
 
     imgs_dir = '../data/ET'
     name_db = f"database_{name_example}.hdf5"
-    pairs_path_high = f"{name_example}_pairs_high.pt"
-    pairs_path_low = f"{name_example}_pairs_low.pt"
+    pairs_path_high = f"{name_example}_pairs_high.hdf5"
+    pairs_path_low = f"{name_example}_pairs_low.hdf5"
 
     for f in [name_db, pairs_path_high, pairs_path_low]:
         if os.path.exists(f):
@@ -1412,11 +1412,11 @@ def pipeline50():
 
     pipeline_high = [salad_module(), cosine_similarity_module(), conf_module(threshold=0.5, out_path=pairs_path_high)]
     run_pairs(pipeline_high, imgs_dir, db_name=name_db)
-    pairs_high = torch.load(pairs_path_high)
+    pairs_high = conf_module.load_pairs(pairs_path_high)
 
     pipeline_low = [salad_module(), cosine_similarity_module(), conf_module(threshold=-1.0, out_path=pairs_path_low)]
     run_pairs(pipeline_low, imgs_dir, db_name=name_db)
-    pairs_low = torch.load(pairs_path_low)
+    pairs_low = conf_module.load_pairs(pairs_path_low)
 
     img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
     n_total = len(img_names) * (len(img_names) - 1) // 2
@@ -1586,7 +1586,7 @@ def pipeline54():
 
     imgs_dir = '../data/ET'
     threshold = 5.0
-    pairs_path = f"{name_example}_pairs.pt"
+    pairs_path = f"{name_example}_pairs.hdf5"
     name_db = f"database_{name_example}.hdf5"
 
     for f in [pairs_path, name_db]:
@@ -1610,7 +1610,7 @@ def pipeline54():
                 if sim > threshold:
                     expected.add((im0, im1))
 
-    saved_pairs = torch.load(pairs_path)
+    saved_pairs = conf_module.load_pairs(pairs_path)
     saved_names = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in saved_pairs}
     expected_names = {tuple(sorted(p)) for p in expected}
 
@@ -1743,7 +1743,7 @@ def pipeline_ssma_transitive(
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    pairs_path = str(output_path / 'ssma_transitive_pairs.pt')
+    pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
     kfc_pairs_path = str(output_path / 'ssma_transitive_kfc_pairs.pt')
     match_db = str(output_path / 'ssma_transitive.db')
 
@@ -1774,6 +1774,9 @@ def pipeline_ssma_transitive(
                 segformer_module(seg_cache_dir=seg_cache_dir),
                 smnn_module(add_to_cache=False),
             ],
+            [
+                loma_module(add_to_cache=False),
+            ],
         ]),
         magsac_module(add_to_cache=False),
         segformer_module(stage='matches', add_to_cache=True, seg_cache_dir=seg_cache_dir),
@@ -1795,7 +1798,7 @@ def pipeline_ssma_transitive(
     finally:
         live.stop()
 
-    pairs = torch.load(pairs_path)
+    pairs = conf_module.load_pairs(pairs_path)
     print(f"pipeline_ssma_transitive: {len(pairs)} pairs confirmed and matched via transitive closure")
 
 
@@ -1814,7 +1817,7 @@ def pipeline_et_transitive_live(
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    pairs_path = str(output_path / f'{name_example}_pairs.pt')
+    pairs_path = str(output_path / f'{name_example}_pairs.hdf5')
 
 
     imgs = sorted(resolve_image_folder(imgs_dir))
@@ -1842,6 +1845,6 @@ def pipeline_et_transitive_live(
     finally:
         live.stop()
 
-    pairs = torch.load(pairs_path)
+    pairs = conf_module.load_pairs(pairs_path)
     print(f"{name_example}: {len(pairs)} pairs confirmed via transitive closure")
 

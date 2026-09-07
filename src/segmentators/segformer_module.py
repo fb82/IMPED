@@ -7,7 +7,7 @@ from PIL import Image
 
 from core import device as global_device
 
-_MASK_CACHE_MAX = 128  # CPU seg maps kept in memory; at ~1 MB each this caps usage at ~128 MB
+_MASK_CACHE_MAX = 128  
 
 
 CITYSCAPES_LABEL2ID = {
@@ -73,6 +73,7 @@ class segformer_module:
         model_name='nvidia/segformer-b0-finetuned-cityscapes-512-1024',
         stage='keypoints',
         seg_cache_dir='aux/seg_cache',
+        segmap_cache_max=_MASK_CACHE_MAX,
         **args,
     ):
         if stage not in ('keypoints', 'matches'):
@@ -100,6 +101,7 @@ class segformer_module:
         )
         self.model_name = model_name
         self.seg_cache_dir = seg_cache_dir
+        self.segmap_cache_max = segmap_cache_max
         self._processor = None
         self._model = None
 
@@ -160,7 +162,7 @@ class segformer_module:
 
         # Store on CPU so the in-memory cache never ties up VRAM
         cache[cache_key] = seg_map
-        if len(cache) > _MASK_CACHE_MAX:
+        if len(cache) > self.segmap_cache_max:
             cache.popitem(last=False)
 
         return seg_map.to(self.device)
