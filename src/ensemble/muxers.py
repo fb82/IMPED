@@ -70,6 +70,67 @@ def pair_rot4(pair, cache_path='tmp_imgs', force=False, **dummy_args):
         yield (pair[0], new_img), [torch.eye(3, device=device, dtype=torch.float), warp_matrix], {}
 
 
+def pair_resize(pair, cache_path='tmp_imgs', force=False, max_len=255, interpolation=cv2.INTER_AREA, **dummy_args):
+    """
+    A generator yielding a single downscaled copy of an image pair.
+
+    Each image is resized so that its longest side is at most `max_len`
+    pixels; an image already within the limit is passed through untouched.
+    For every image the 3x3 warp mapping resized-image coordinates back to
+    the original frame is returned, so anything computed on the small images
+    (keypoints, F, ...) lands back in the original coordinate system once the
+    image_muxer unwarps it.
+
+    Meant for cheap "global" comparisons - e.g. a low-resolution SIFT +
+    RANSAC match count used as a pair similarity score - where matching at
+    full resolution would be wasteful.
+
+    Args:
+        pair (list): Paths to the [Reference Image, Target Image].
+        cache_path (str): Folder to store the resized .jpg/.png files.
+        force (bool): If True, re-resizes and overwrites existing cached images.
+        max_len (int): Maximum length (in pixels) of the longest image side.
+        interpolation (int): OpenCV interpolation flag for downscaling.
+
+    Yields:
+        tuple: ((img0, img1), [warp0, warp1], {}) where each warp maps
+            resized-image coordinates to the original image.
+    """
+    os.makedirs(cache_path, exist_ok=True)
+
+    out_pair = []
+    warps = []
+    for p in pair:
+        w, h = Image.open(p).size
+        scale = min(1.0, max_len / max(w, h))
+
+        warp = torch.eye(3, device=device, dtype=torch.float)
+
+        if scale >= 1.0:
+            out_pair.append(p)
+            warps.append(warp)
+            continue
+
+        nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+
+        img_name, img_ext = os.path.splitext(os.path.split(p)[1])
+        new_img = os.path.join(cache_path, f'{img_name}_resize{max_len}{img_ext}')
+
+        if not os.path.isfile(new_img) or force:
+            im = cv2.imread(p, cv2.IMREAD_UNCHANGED)
+            im = cv2.resize(im, (nw, nh), interpolation=interpolation)
+            cv2.imwrite(new_img, im)
+
+        # from resized to original
+        warp[0, 0] = w / nw
+        warp[1, 1] = h / nh
+
+        out_pair.append(new_img)
+        warps.append(warp)
+
+    yield (out_pair[0], out_pair[1]), [warps[0], warps[1]], {}
+
+
 def pipe_max_matches(pipe_block):
     """
     Selects the single best result from a collection of matching attempts.

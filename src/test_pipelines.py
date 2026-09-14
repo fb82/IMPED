@@ -3,6 +3,7 @@ import sys
 import time
 import shutil
 import subprocess
+from functools import partial
 from pathlib import Path
 import inspect
 
@@ -33,11 +34,15 @@ for p in extra_paths:
             sys.path.insert(0, str(p))
 
 
-from descriptors import deep_descriptor_module, patch_module
-from global_descriptors import salad_module, standard_descriptor_module
-from similarity import cosine_similarity_module, l2_similarity_module, standard_similarity_module
+from descriptors import deep_descriptor_module, patch_module, sift_module
+from global_descriptors import salad_module
+from similarity import (
+    cosine_similarity_module,
+    l2_similarity_module,
+    n_matches_similarity_module,
+)
 from confidence import conf_module
-from transitive import percentage_module, kfc_module
+from transitive import percentage_module, kfc_module, transitive_module
 from image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
 from matchers import (
@@ -68,6 +73,7 @@ from colmap_fun import (
 from ensemble import (
     image_muxer_module,
     pair_pyramid,
+    pair_resize,
     pair_rot4,
     pipe_max_matches,
     pipe_union,
@@ -1497,133 +1503,6 @@ def pipeline51():
     print("pipeline51: ALL ASSERTIONS PASSED")
 
 
-def pipeline52():
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    imgs_dir = '../data/ET'
-    img_names = {f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))}
-
-    pipeline = [standard_descriptor_module()]
-    name_db = f"database_{name_example}.hdf5"
-    if os.path.exists(name_db):
-        os.remove(name_db)
-
-    run_pairs(pipeline, imgs_dir, db_name=name_db)
-
-    with h5py.File(name_db, 'r') as f:
-        root = f['pickled']
-        for name in img_names:
-            assert name in root, f"No cached entry for {name}"
-            assert 'standard' in root[name], f"No standard_descriptor output for {name}"
-            data = pickled_hdf5.pickled_hdf5.from_numpy(root[name]['standard']['data'][()])
-            assert 'global_desc' in data, f"'global_desc' missing for {name}"
-
-            global_desc = data['global_desc']
-            assert 'kp' in global_desc and 'desc' in global_desc, \
-                f"'global_desc' should have 'kp' and 'desc' for {name}"
-
-            kp, desc = global_desc['kp'], global_desc['desc']
-            assert kp.ndim == 2 and kp.shape[1] == 2, f"'kp' expected shape [N, 2], got {tuple(kp.shape)} for {name}"
-            assert desc.ndim == 2 and desc.shape[1] == 128, \
-                f"'desc' expected shape [N, 128], got {tuple(desc.shape)} for {name}"
-            assert kp.shape[0] == desc.shape[0], \
-                f"'kp' and 'desc' should have the same N, got {kp.shape[0]} vs {desc.shape[0]} for {name}"
-
-    if os.path.exists(name_db):
-        os.remove(name_db)
-
-    print("pipeline52: ALL ASSERTIONS PASSED")
-
-
-def pipeline53():
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    imgs_dir = '../data/ET'
-    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
-
-    pipeline = [standard_descriptor_module(), standard_similarity_module()]
-    name_db = f"database_{name_example}.hdf5"
-    if os.path.exists(name_db):
-        os.remove(name_db)
-
-    run_pairs(pipeline, imgs_dir, db_name=name_db)
-
-    n_pairs = 0
-    with h5py.File(name_db, 'r') as f:
-        root = f['pickled']
-        for i in range(len(img_names)):
-            for j in range(i + 1, len(img_names)):
-                im0, im1 = img_names[i], img_names[j]
-                assert im0 in root and im1 in root[im0], f"No cached pair entry for ({im0}, {im1})"
-                assert 'standard_similarity' in root[im0][im1]['standard'], \
-                    f"No standard_similarity output for ({im0}, {im1})"
-                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['standard']['standard_similarity']['data'][()])
-                assert 'pair_sim' in data, f"'pair_sim' missing for ({im0}, {im1})"
-                sim = data['pair_sim']
-                assert sim >= 0.0, f"pair_sim {sim} should be a non-negative match count for ({im0}, {im1})"
-                n_pairs += 1
-
-    n_expected = len(img_names) * (len(img_names) - 1) // 2
-    assert n_pairs == n_expected, f"Expected {n_expected} pairs, checked {n_pairs}"
-
-    if os.path.exists(name_db):
-        os.remove(name_db)
-
-    print("pipeline53: ALL ASSERTIONS PASSED")
-
-
-def pipeline54():
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    imgs_dir = '../data/ET'
-    threshold = 5.0
-    pairs_path = f"{name_example}_pairs.hdf5"
-    name_db = f"database_{name_example}.hdf5"
-
-    for f in [pairs_path, name_db]:
-        if os.path.exists(f):
-            os.remove(f)
-
-    
-    pipeline = [standard_descriptor_module(), standard_similarity_module(), conf_module(threshold=threshold, out_path=pairs_path)]
-    run_pairs(pipeline, imgs_dir, db_name=name_db)
-
-    img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
-
-    expected = set()
-    with h5py.File(name_db, 'r') as f:
-        root = f['pickled']
-        for i in range(len(img_names)):
-            for j in range(i + 1, len(img_names)):
-                im0, im1 = img_names[i], img_names[j]
-                data = pickled_hdf5.pickled_hdf5.from_numpy(root[im0][im1]['standard']['standard_similarity']['data'][()])
-                sim = data['pair_sim']
-                if sim > threshold:
-                    expected.add((im0, im1))
-
-    saved_pairs = conf_module.load_pairs(pairs_path)
-    saved_names = {tuple(sorted((os.path.basename(a), os.path.basename(b)))) for a, b in saved_pairs}
-    expected_names = {tuple(sorted(p)) for p in expected}
-
-    assert saved_names == expected_names, \
-        f"conf_module's saved pairs don't match threshold={threshold} applied to pair_sim"
-
-    for f in [pairs_path, name_db]:
-        if os.path.exists(f):
-            os.remove(f)
-
-    print("pipeline54: ALL ASSERTIONS PASSED")
-
-
 def pipeline55(output_folder='.'):
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
@@ -1730,12 +1609,94 @@ def pipeline_ssma(
 
 
 
+def _ssma_transitive_match(name, images_folder, output_path, kfc_pairs_path, n_mst,
+                           max_iterations, min_matches, sim_quantile=0.0, sim_min=None):
+    """
+    Shared pass 2 of the SSMA runs: standalone KFC selection over the
+    similarity table left by pass 1, then the real SIFT + MAGSAC + COLMAP
+    matching pipeline driven over the transitive closure of those seeds by
+    run_pairs() (worklist non-empty and fewer than `max_iterations`
+    iterations).
+
+    `min_matches` gates confirmation on the pass-2 match result. `sim_min` /
+    `sim_quantile` gate which transitive candidates are queued at all, using
+    the pass-1 global-similarity table (`sim_quantile` is scale-independent,
+    so it works for both the SIFT and the SALAD variant) - see
+    transitive_module.
+    """
+    transitive_pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
+    match_db = str(output_path / 'ssma_transitive.db')
+
+    imgs = sorted(resolve_image_folder(images_folder))
+
+    seed_pairs = kfc_module.load_pairs(kfc_pairs_path)
+    sim_table = kfc_module.load_table(kfc_pairs_path)
+    print(f"{name}: {len(seed_pairs)} seed pairs selected")
+
+    if not seed_pairs:
+        print(f"{name}: no seed pairs, nothing to match")
+        return
+
+    transitive = transitive_module(
+        pairs=seed_pairs,
+        sim_table=sim_table,
+        threshold=min_matches,
+        sim_quantile=sim_quantile,
+        sim_min=sim_min,
+        out_path=transitive_pairs_path,
+    )
+    live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'), worklist=transitive)
+
+    match_pipeline = [
+        dog_module(),
+        sift_module(),
+        smnn_module(),
+        magsac_module(),
+        to_colmap_module(db=match_db),
+        transitive,
+        live,
+    ]
+
+    try:
+        run_pairs(
+            match_pipeline,
+            images_folder,
+            max_rounds=max_iterations,
+            db_name=str(output_path / 'ssma_transitive.hdf5'),
+        )
+    finally:
+        live.stop()
+
+    pairs = transitive_module.load_pairs(transitive_pairs_path)
+    print(f"{name}: {len(pairs)} pairs matched via transitive closure")
+
+
 def pipeline_ssma_transitive(
-    images_folder='/home/colombo/Shared/imgs',
+    images_folder='/home/colombo/Shared/test_kornia',
     output_folder='.',
-    max_rounds=None,
-    threshold=0.99,
+    max_len=255,
+    n_mst=2,
+    max_iterations=10,
+    min_matches=0,
+    sim_quantile=0.7,
+    sim_min=None,
 ):
+    """
+    Full split-SSMA run, SIFT global-similarity variant: two passes over
+    `images_folder`, back to back.
+
+    Pass 1 - global similarity. Every pair is compared: both images
+    downscaled so their longest side is <= `max_len` px (image_muxer +
+    pair_resize), SIFT + MAGSAC, inlier count stored as 'pair_sim'. This is
+    exhaustive (N*(N-1)/2 pairs) - accurate but heavy on large sets; use
+    pipeline_ssma_transitive_salad for a cheap global-descriptor pass 1
+    instead. kfc_module records the whole similarity table and, at finalize,
+    picks the seed pairs as `n_mst` successive maximum spanning trees.
+
+    Pass 2 - transitive closure (see _ssma_transitive_match). `sim_quantile`
+    (0..1) / `sim_min` drop weak transitive candidates using the pass-1
+    table, so not every pair ends up matched.
+    """
     print("\n \n")
     print("=" * 50)
     print("Running: pipeline_ssma_transitive")
@@ -1743,63 +1704,80 @@ def pipeline_ssma_transitive(
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
-    kfc_pairs_path = str(output_path / 'ssma_transitive_kfc_pairs.pt')
-    match_db = str(output_path / 'ssma_transitive.db')
+    kfc_pairs_path = str(output_path / 'ssma_kfc_pairs.hdf5')
 
-    imgs = sorted(resolve_image_folder(images_folder))
-
-    seg_cache_dir = str(output_path / 'seg_cache')
-
-    pipeline = [
-        salad_module(),
-        cosine_similarity_module(add_to_cache=False),
-        conf_module(threshold=threshold, out_path=pairs_path),
-        kfc_module(threshold=threshold, out_path=kfc_pairs_path),
-        pipeline_muxer_module(add_to_cache=False, pipe_gather=pipe_union, pipeline=[
-            [
-                deep_joined_module(what='aliked'),
-                segformer_module(seg_cache_dir=seg_cache_dir),
-                lightglue_module(what='aliked', add_to_cache=False),
-            ],
-            [
-                deep_joined_module(what='superpoint'),
-                segformer_module(seg_cache_dir=seg_cache_dir),
-                lightglue_module(what='superpoint', add_to_cache=False),
-            ],
-            [
+    # --- pass 1: SIFT global similarity + KFC seed selection ---
+    # Only the per-image detection (dog/sift on the downscaled copies) and the
+    # final per-pair 'pair_sim' scalar are cached. The per-pair match arrays
+    # (smnn/magsac) are NOT: on a large set they blow the cache up to tens of
+    # GB for data that is only used to produce one number per pair. The run
+    # still resumes at pair granularity from the cached 'pair_sim'.
+    global_pipeline = [
+        image_muxer_module(
+            pair_generator=partial(pair_resize, max_len=max_len),
+            pipe_gather=pipe_max_matches,
+            cache_path=str(output_path / 'ssma_resized'),
+            add_to_cache=False,
+            pipeline=[
                 dog_module(),
-                patch_module(),
-                deep_descriptor_module(),
-                segformer_module(seg_cache_dir=seg_cache_dir),
+                sift_module(),
                 smnn_module(add_to_cache=False),
+                magsac_module(add_to_cache=False),
             ],
-            [
-                loma_module(add_to_cache=False),
-            ],
-        ]),
-        magsac_module(add_to_cache=False),
-        segformer_module(stage='matches', add_to_cache=True, seg_cache_dir=seg_cache_dir),
-        to_colmap_module(db=match_db, add_to_cache=False),
+        ),
+        n_matches_similarity_module(),
+        kfc_module(out_path=kfc_pairs_path, n_mst=n_mst),
     ]
+    run_pairs(global_pipeline, images_folder, db_name=str(output_path / 'ssma_global_sim.hdf5'))
 
-    live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'))
+    _ssma_transitive_match('pipeline_ssma_transitive', images_folder, output_path,
+                           kfc_pairs_path, n_mst, max_iterations, min_matches,
+                           sim_quantile=sim_quantile, sim_min=sim_min)
 
-    try:
-        run_pairs(
-            pipeline,
-            images_folder,
-            max_rounds=max_rounds,
-            db_name=str(output_path / 'ssma_transitive.hdf5'),
-            on_pair=live.on_pair,
-            on_candidates=live.on_candidates,
-            on_round=live.on_round,
-        )
-    finally:
-        live.stop()
 
-    pairs = conf_module.load_pairs(pairs_path)
-    print(f"pipeline_ssma_transitive: {len(pairs)} pairs confirmed and matched via transitive closure")
+def pipeline_ssma_transitive_salad(
+    images_folder='/home/colombo/Shared/subset_ssma',
+    output_folder='.',
+    n_mst=2,
+    max_iterations=3,
+    min_matches=3,
+    sim_quantile=0.0,
+    sim_min=None,
+):
+    """
+    Full split-SSMA run, SALAD global-similarity variant.
+
+    Same as pipeline_ssma_transitive but pass 1 scores every pair with a
+    single SALAD global descriptor per image + cosine similarity, instead of
+    a downscaled SIFT + MAGSAC match. Still exhaustive (N*(N-1)/2 pairs) but
+    only one descriptor per image and a dot product per pair, so it scales to
+    large image sets. kfc_module then builds the same table + `n_mst`-MST
+    seed selection.
+
+    Pass 2 - transitive closure (see _ssma_transitive_match). `sim_quantile`
+    (0..1) / `sim_min` drop weak transitive candidates using the pass-1
+    cosine-similarity table, so not every pair ends up matched.
+    """
+    print("\n \n")
+    print("=" * 50)
+    print("Running: pipeline_ssma_transitive_salad")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    kfc_pairs_path = str(output_path / 'ssma_kfc_pairs.hdf5')
+
+    # --- pass 1: SALAD global-descriptor similarity + KFC seed selection ---
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(),
+        kfc_module(out_path=kfc_pairs_path, n_mst=n_mst),
+    ]
+    run_pairs(global_pipeline, images_folder, db_name=str(output_path / 'ssma_global_sim.hdf5'))
+
+    _ssma_transitive_match('pipeline_ssma_transitive_salad', images_folder, output_path,
+                           kfc_pairs_path, n_mst, max_iterations, min_matches,
+                           sim_quantile=sim_quantile, sim_min=sim_min)
 
 
 def pipeline_et_transitive_live(

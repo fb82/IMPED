@@ -62,6 +62,13 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
     instead. A non-transitive pipeline never sets 'continue', so the loop
     just runs once, exactly as before. `max_rounds`, `on_round` and
     `on_candidates` only apply to a transitive pipeline.
+
+    If `pipeline` instead contains a module with `is_transitive = True`
+    (transitive_module), run_pairs takes a simpler worklist path: it re-runs
+    `pipeline` over `module._pairs` while that list is non-empty and fewer
+    than `max_rounds` iterations have run, calling `module.finalize()` after
+    each iteration to let it drop the pairs just computed and append the next
+    transitive-closure candidates. Returns the module's confirmed-pair graph.
     """
     if isinstance(imgs, str):
         imgs = resolve_image_folder(imgs)
@@ -84,6 +91,49 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
             if hasattr(m, 'args') and 'db' in m.args:
                 colmap_db_or_list = m.args['db']
                 break
+
+    worklist_module = next((m for m in pipeline if getattr(m, 'is_transitive', False)), None)
+    if worklist_module is not None:
+        max_iterations = max_rounds if max_rounds is not None else 10 ** 9
+        n_iter = 0
+
+        while worklist_module._pairs and n_iter < max_iterations:
+            pairs = list(worklist_module._pairs)
+            if add_path:
+                pairs = [(os.path.join(add_path, a), os.path.join(add_path, b)) for a, b in pairs]
+
+            db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
+            total = len(pairs)
+
+            for k, pair in enumerate(go_iter(pairs, msg='          processed pairs')):
+                img0 = os.path.basename(pair[0])
+                img1 = os.path.basename(pair[1])
+
+                msg = f'iter {n_iter + 1}, pair {k + 1}/{total}: {img0} <-> {img1}'
+                tqdm.write(msg) if show_progress else print(msg)
+                try:
+                    pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+                    if on_pair is not None:
+                        on_pair(pair, pipe_data)
+                except Exception as e:
+                    msg = f'  skipping pair ({img0}, {img1}): {e}\n{traceback.format_exc()}'
+                    tqdm.write(msg) if show_progress else print(msg)
+
+            db.close()
+            n_iter += 1
+
+            worklist_module.finalize()
+
+            graph = getattr(worklist_module, '_graph', None)
+            n_todo = len(worklist_module._pairs)
+            if on_round is not None:
+                on_round(graph, n_iter, n_todo)
+            for m in pipeline:
+                if m is not worklist_module and hasattr(m, 'on_round'):
+                    m.on_round(graph, n_iter, n_todo)
+
+        finalize_pipeline([m for m in pipeline if m is not worklist_module])
+        return getattr(worklist_module, '_graph', None)
 
     transitive = None
     selection_module = next((m for m in pipeline if getattr(m, 'is_transitive_initial_selection', False)), None)
@@ -186,7 +236,7 @@ def _cached_pair_similarity(db, descriptor, similarity, img_a, img_b, desc_a, de
     same key run_pipeline would use for `similarity` as the second entry of
     a pipeline starting with `descriptor` — so a later run_pairs() call on
     that same pipeline reuses this cached 'pair_sim' instead of recomputing
-    it (e.g. a costly BFMatcher pass for standard_similarity_module).
+    it (e.g. a costly pairwise BFMatcher/similarity pass).
     """
     im0 = os.path.basename(img_a)
     im1 = os.path.basename(img_b)

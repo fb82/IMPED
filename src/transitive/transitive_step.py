@@ -31,7 +31,7 @@ class TransitiveRounds:
 
         self.descriptor = next((m for m in pipeline if getattr(m, 'single_image', False)), None)
         assert self.descriptor is not None, \
-            "pipeline must include a single-image global descriptor module (e.g. salad_module, standard_descriptor_module)"
+            "pipeline must include a single-image global descriptor module (e.g. salad_module)"
 
         self.conf = next((m for m in pipeline if hasattr(m, '_table')), None)
         assert self.conf is not None, \
@@ -42,7 +42,7 @@ class TransitiveRounds:
             None,
         )
         assert self.similarity is not None, \
-            "pipeline must include a pair similarity module consuming 'global_desc' (e.g. cosine_similarity_module, standard_similarity_module)"
+            "pipeline must include a pair similarity module consuming 'global_desc' (e.g. cosine_similarity_module, l2_similarity_module)"
 
         desc_db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
 
