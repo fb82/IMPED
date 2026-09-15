@@ -32,12 +32,25 @@ class kfc_module:
     full table with `kfc_module.load_table(out_path)`) to drive a second
     matching pipeline, e.g.
     `run_pairs(real_pipeline, imgs, colmap_db_or_list=kfc_module.load_pairs(out_path), mode='include')`.
+
+    For a caller in the same process that already holds a list/dict before
+    run_pairs() starts, pass them in as `pairs` / `table`: run()/finalize()
+    fill those same objects in place (never reassign them), so the caller's
+    variables have the selection and the full table right after run_pairs()
+    returns, with no need to go through `out_path` at all.
+
+        pp, tt = [], {}
+        run_pairs([..., kfc_module(pairs=pp, table=tt, out_path=..., n_mst=2)], imgs, ...)
+        # pp now holds the selected (img0, img1) pairs, tt the full {(img0, img1): pair_sim} table
     """
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False
         self.pass_through = True
         self.add_to_cache = False
+
+        pairs = args.pop('pairs', None)
+        table = args.pop('table', None)
 
         self.args = {
             'id_more': '',
@@ -47,8 +60,8 @@ class kfc_module:
 
         self.id_string, self.args = set_args('kfc', args, self.args)
 
-        self._table = {}
-        self._selected = []
+        self._table = table if table is not None else {}
+        self.selected = pairs if pairs is not None else []
         self._n_seen = 0
 
     @staticmethod
@@ -128,7 +141,10 @@ class kfc_module:
         return self.select_pairs(self._table, self.args['n_mst'])
 
     def finalize(self):
-        self._selected = self._select()
+        # mutate the list in place (never reassign it) so that if `pairs` was
+        # passed in at construction, the caller's own list object also ends
+        # up holding the selection - not just self.selected.
+        self.selected[:] = self._select()
 
         if os.path.exists(self.args['out_path']):
             os.remove(self.args['out_path'])
@@ -137,11 +153,11 @@ class kfc_module:
         for (img0, img1), sim in self._table.items():
             data_key = '/table/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
             aux_hdf5.add(data_key, (img0, img1, sim))
-        for img0, img1 in self._selected:
+        for img0, img1 in self.selected:
             data_key = '/pairs/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
             aux_hdf5.add(data_key, (img0, img1))
         aux_hdf5.close()
 
         print(f"kfc_module: {len(self._table)} pairs recorded (of {self._n_seen} seen), "
-              f"{len(self._selected)} selected over {self.args['n_mst']} MST(s), "
+              f"{len(self.selected)} selected over {self.args['n_mst']} MST(s), "
               f"saved to {self.args['out_path']}")

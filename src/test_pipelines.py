@@ -1609,18 +1609,20 @@ def pipeline_ssma(
 
 
 
-def _ssma_transitive_match(name, images_folder, output_path, kfc_pairs_path, n_mst,
+def _ssma_transitive_match(name, images_folder, output_path, seed_pairs, sim_table,
                            max_iterations, min_matches, sim_quantile=0.0, sim_min=None):
     """
-    Shared pass 2 of the SSMA runs: standalone KFC selection over the
-    similarity table left by pass 1, then the real SIFT + MAGSAC + COLMAP
-    matching pipeline driven over the transitive closure of those seeds by
-    run_pairs() (worklist non-empty and fewer than `max_iterations`
-    iterations).
+    Shared pass 2 of the SSMA runs: the real SIFT + MAGSAC + COLMAP matching
+    pipeline driven over the transitive closure of `seed_pairs` by
+    run_pairs() (it loops while the worklist is non-empty; transitive_module
+    itself empties it once `max_iterations` is reached). `seed_pairs` and
+    `sim_table` are the same objects pass 1's kfc_module was given via its
+    `pairs`/`table` args - already filled in place by the time run_pairs()
+    for pass 1 returned, no file read needed.
 
     `min_matches` gates confirmation on the pass-2 match result. `sim_min` /
     `sim_quantile` gate which transitive candidates are queued at all, using
-    the pass-1 global-similarity table (`sim_quantile` is scale-independent,
+    `sim_table` (pass-1 global similarity; `sim_quantile` is scale-independent,
     so it works for both the SIFT and the SALAD variant) - see
     transitive_module.
     """
@@ -1629,8 +1631,6 @@ def _ssma_transitive_match(name, images_folder, output_path, kfc_pairs_path, n_m
 
     imgs = sorted(resolve_image_folder(images_folder))
 
-    seed_pairs = kfc_module.load_pairs(kfc_pairs_path)
-    sim_table = kfc_module.load_table(kfc_pairs_path)
     print(f"{name}: {len(seed_pairs)} seed pairs selected")
 
     if not seed_pairs:
@@ -1643,6 +1643,7 @@ def _ssma_transitive_match(name, images_folder, output_path, kfc_pairs_path, n_m
         threshold=min_matches,
         sim_quantile=sim_quantile,
         sim_min=sim_min,
+        max_iterations=max_iterations,
         out_path=transitive_pairs_path,
     )
     live = live_pair_graph(imgs, save_to=str(output_path / 'ssma_transitive_graph.html'), worklist=transitive)
@@ -1661,14 +1662,12 @@ def _ssma_transitive_match(name, images_folder, output_path, kfc_pairs_path, n_m
         run_pairs(
             match_pipeline,
             images_folder,
-            max_rounds=max_iterations,
             db_name=str(output_path / 'ssma_transitive.hdf5'),
         )
     finally:
         live.stop()
 
-    pairs = transitive_module.load_pairs(transitive_pairs_path)
-    print(f"{name}: {len(pairs)} pairs matched via transitive closure")
+    print(f"{name}: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
 
 
 def pipeline_ssma_transitive(
@@ -1712,6 +1711,8 @@ def pipeline_ssma_transitive(
     # (smnn/magsac) are NOT: on a large set they blow the cache up to tens of
     # GB for data that is only used to produce one number per pair. The run
     # still resumes at pair granularity from the cached 'pair_sim'.
+    seed_pairs = []
+    sim_table = {}
     global_pipeline = [
         image_muxer_module(
             pair_generator=partial(pair_resize, max_len=max_len),
@@ -1726,12 +1727,13 @@ def pipeline_ssma_transitive(
             ],
         ),
         n_matches_similarity_module(),
-        kfc_module(out_path=kfc_pairs_path, n_mst=n_mst),
+        kfc_module(pairs=seed_pairs, table=sim_table, out_path=kfc_pairs_path, n_mst=n_mst),
     ]
     run_pairs(global_pipeline, images_folder, db_name=str(output_path / 'ssma_global_sim.hdf5'))
+    # seed_pairs / sim_table are already filled in place by kfc_module - no file read needed
 
     _ssma_transitive_match('pipeline_ssma_transitive', images_folder, output_path,
-                           kfc_pairs_path, n_mst, max_iterations, min_matches,
+                           seed_pairs, sim_table, max_iterations, min_matches,
                            sim_quantile=sim_quantile, sim_min=sim_min)
 
 
@@ -1768,15 +1770,18 @@ def pipeline_ssma_transitive_salad(
     kfc_pairs_path = str(output_path / 'ssma_kfc_pairs.hdf5')
 
     # --- pass 1: SALAD global-descriptor similarity + KFC seed selection ---
+    seed_pairs = []
+    sim_table = {}
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(out_path=kfc_pairs_path, n_mst=n_mst),
+        kfc_module(pairs=seed_pairs, table=sim_table, out_path=kfc_pairs_path, n_mst=n_mst),
     ]
     run_pairs(global_pipeline, images_folder, db_name=str(output_path / 'ssma_global_sim.hdf5'))
+    # seed_pairs / sim_table are already filled in place by kfc_module - no file read needed
 
     _ssma_transitive_match('pipeline_ssma_transitive_salad', images_folder, output_path,
-                           kfc_pairs_path, n_mst, max_iterations, min_matches,
+                           seed_pairs, sim_table, max_iterations, min_matches,
                            sim_quantile=sim_quantile, sim_min=sim_min)
 
 

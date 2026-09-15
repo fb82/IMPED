@@ -65,10 +65,11 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
     If `pipeline` instead contains a module with `is_transitive = True`
     (transitive_module), run_pairs takes a simpler worklist path: it re-runs
-    `pipeline` over `module._pairs` while that list is non-empty and fewer
-    than `max_rounds` iterations have run, calling `module.finalize()` after
-    each iteration to let it drop the pairs just computed and append the next
-    transitive-closure candidates. Returns the module's confirmed-pair graph.
+    `pipeline` over `module.pp` while that list is non-empty, calling
+    `module.finalize()` after each iteration to let it drop the pairs just
+    computed and append the next transitive-closure candidates (or empty the
+    list once its own iteration cap is reached). Returns the module's
+    confirmed-pair graph.
     """
     if isinstance(imgs, str):
         imgs = resolve_image_folder(imgs)
@@ -94,11 +95,8 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
 
     worklist_module = next((m for m in pipeline if getattr(m, 'is_transitive', False)), None)
     if worklist_module is not None:
-        max_iterations = max_rounds if max_rounds is not None else 10 ** 9
-        n_iter = 0
-
-        while worklist_module._pairs and n_iter < max_iterations:
-            pairs = list(worklist_module._pairs)
+        while worklist_module.pp:
+            pairs = list(worklist_module.pp)
             if add_path:
                 pairs = [(os.path.join(add_path, a), os.path.join(add_path, b)) for a, b in pairs]
 
@@ -109,7 +107,7 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
                 img0 = os.path.basename(pair[0])
                 img1 = os.path.basename(pair[1])
 
-                msg = f'iter {n_iter + 1}, pair {k + 1}/{total}: {img0} <-> {img1}'
+                msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
                 tqdm.write(msg) if show_progress else print(msg)
                 try:
                     pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
@@ -120,17 +118,7 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
                     tqdm.write(msg) if show_progress else print(msg)
 
             db.close()
-            n_iter += 1
-
             worklist_module.finalize()
-
-            graph = getattr(worklist_module, '_graph', None)
-            n_todo = len(worklist_module._pairs)
-            if on_round is not None:
-                on_round(graph, n_iter, n_todo)
-            for m in pipeline:
-                if m is not worklist_module and hasattr(m, 'on_round'):
-                    m.on_round(graph, n_iter, n_todo)
 
         finalize_pipeline([m for m in pipeline if m is not worklist_module])
         return getattr(worklist_module, '_graph', None)

@@ -84,7 +84,7 @@ class live_pair_graph:
         if self.worklist is None:
             return
         pending = {}
-        for a, b in getattr(self.worklist, '_pairs', []):
+        for a, b in getattr(self.worklist, 'pp', []):
             if not self._known(a, b):
                 continue
             key = (min(a, b), max(a, b))
@@ -92,7 +92,7 @@ class live_pair_graph:
                 continue
             pending[key] = None
         self.pending = pending
-        self.first_round_done = getattr(self.worklist, '_round', 0) > 0
+        self.first_round_done = getattr(self.worklist, 'iter', 0) > 0
         self._redraw()
 
     def on_pair(self, pair, pipe_data):
@@ -102,7 +102,7 @@ class live_pair_graph:
         transitive = self.first_round_done
         keep = pipe_data.get('pair_conf', True)
         if self.worklist is not None:
-            transitive = getattr(self.worklist, '_round', 0) > 0
+            transitive = getattr(self.worklist, 'iter', 0) > 0
             th = self.worklist.args.get('threshold') if hasattr(self.worklist, 'args') else None
             if 'pair_conf' not in pipe_data and conf is not None and th is not None:
                 keep = conf > th
