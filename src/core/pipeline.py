@@ -43,33 +43,20 @@ def resolve_image_folder(folder):
     return imgs
 
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, on_pair=None, max_rounds=None, on_round=None, on_candidates=None):
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, on_pair=None):
     """
     Runs `pipeline` on pairs built from `imgs`.
 
-    If `pipeline` contains a transitive-selection module (from the
-    `transitive` package, e.g. percentage_module, max_uses_module — anything
-    with `is_transitive_initial_selection = True`), this becomes a transitive
-    pipeline: rather than running once over every possible pair, the loop
-    below keeps re-running `pipeline` on a freshly built pair list for as
-    long as running it comes back with `pipe_data['continue']` True. That key
-    is set by the selection module itself every time it runs as part of
-    `pipeline` (see percentage_module.run() / max_uses_module.run()) — the
-    first time round there's no confirmed pair yet, so `transitive` (see
-    transitive.transitive_step.TransitiveRounds) builds the
-    pair list via the selection module's own `select()`; every round after
-    that it's rebuilt via transitive closure over pairs confirmed so far
-    instead. A non-transitive pipeline never sets 'continue', so the loop
-    just runs once, exactly as before. `max_rounds`, `on_round` and
-    `on_candidates` only apply to a transitive pipeline.
-
-    If `pipeline` instead contains a module with `is_transitive = True`
-    (transitive_module), run_pairs takes a simpler worklist path: it re-runs
+    If `pipeline` contains a module with `is_transitive = True`
+    (transitive_module), run_pairs takes a worklist path: it re-runs
     `pipeline` over `module.pp` while that list is non-empty, calling
     `module.finalize()` after each iteration to let it drop the pairs just
     computed and append the next transitive-closure candidates (or empty the
     list once its own iteration cap is reached). Returns the module's
     confirmed-pair graph.
+
+    Otherwise it just runs once over every pair built from `imgs` (or the
+    explicit list of pairs passed in).
     """
     if isinstance(imgs, str):
         imgs = resolve_image_folder(imgs)
@@ -123,70 +110,35 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
         finalize_pipeline([m for m in pipeline if m is not worklist_module])
         return getattr(worklist_module, '_graph', None)
 
-    transitive = None
-    selection_module = next((m for m in pipeline if getattr(m, 'is_transitive_initial_selection', False)), None)
-    if selection_module is not None:
-        from transitive.transitive_step import TransitiveRounds
-        transitive = TransitiveRounds(pipeline, imgs, selection_module, add_path, db_name, db_mode, on_candidates)
+    pairs = image_pairs(
+        imgs,
+        add_path=add_path,
+        colmap_db_or_list=colmap_db_or_list,
+        mode=mode,
+        colmap_req=colmap_req,
+        colmap_min_matches=colmap_min_matches,
+    )
 
-    n_round = 0
-    keep_going = not (transitive is not None and max_rounds is not None and max_rounds <= 0)
+    db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
+    total = len(pairs)
 
-    while keep_going:
-        if transitive is not None:
-            pairs = transitive.next_pairs()
-            if not pairs:
-                break
-        else:
-            pairs = image_pairs(
-                imgs,
-                add_path=add_path,
-                colmap_db_or_list=colmap_db_or_list,
-                mode=mode,
-                colmap_req=colmap_req,
-                colmap_min_matches=colmap_min_matches,
-            )
+    for k, pair in enumerate(go_iter(pairs, msg='          processed pairs')):
+        img0 = os.path.basename(pair[0])
+        img1 = os.path.basename(pair[1])
 
-
-        db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
-
-        keep_going = False
-        total = len(pairs)
-
-        for k, pair in enumerate(go_iter(pairs, msg='          processed pairs')):
-            img0 = os.path.basename(pair[0])
-            img1 = os.path.basename(pair[1])
-
-            msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
+        msg = f'pair {k + 1}/{total}: {img0} <-> {img1}'
+        tqdm.write(msg) if show_progress else print(msg)
+        try:
+            pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
+            if on_pair is not None:
+                on_pair(pair, pipe_data)
+        except Exception as e:
+            msg = f'  skipping pair ({img0}, {img1}): {e}\n{traceback.format_exc()}'
             tqdm.write(msg) if show_progress else print(msg)
-            try:
-                pipe_data, _ = run_pipeline(pair, pipeline, db, force=force, show_progress=True)
-                if on_pair is not None:
-                    on_pair(pair, pipe_data)
-                if pipe_data.get('continue'):
-                    keep_going = True
-            except Exception as e:
-                msg = f'  skipping pair ({img0}, {img1}): {e}\n{traceback.format_exc()}'
-                tqdm.write(msg) if show_progress else print(msg)
 
-        db.close()
-
-        n_round += 1
-
-        if transitive is not None:
-            n_new = transitive.round_done(n_round)
-            if on_round is not None:
-                on_round(transitive.graph, n_round, n_new)
-            if n_new == 0:
-                keep_going = False
-
-        if max_rounds is not None and n_round >= max_rounds:
-            keep_going = False
+    db.close()
 
     finalize_pipeline(pipeline)
-
-    if transitive is not None:
-        return transitive.graph
 
 
 
@@ -616,23 +568,6 @@ def run_close_pairs(pipeline, imgs, n=10, db_name='database.hdf5', db_mode='a', 
         pipeline, imgs, pair_list, db_name, db_mode, force, add_path,
         colmap_db_or_list, mode, colmap_req, colmap_min_matches,
         n_chunks, chunk_idx, summary_lines=[f"Neighbours per image (n={n})"],
-    )
-
-
-def run_transitive_pairs(pipeline, imgs, initial_selection_module, max_rounds=None, db_name='database.hdf5', db_mode='a',
-                          force=False, add_path='', on_round=None, on_pair=None, on_candidates=None):
-    """
-    Deprecated: put `initial_selection_module` inside `pipeline` (it must be
-    one of the `transitive` package's modules) and call run_pairs() directly
-    instead — run_pairs() detects it and runs the same transitive logic (see
-    run_pairs()'s docstring and transitive.transitive_step.TransitiveRounds).
-    Kept here only so old call sites that still pass the selection module as
-    a separate argument keep working.
-    """
-    return run_pairs(
-        [*pipeline, initial_selection_module], imgs,
-        db_name=db_name, db_mode=db_mode, force=force, add_path=add_path,
-        on_pair=on_pair, max_rounds=max_rounds, on_round=on_round, on_candidates=on_candidates,
     )
 
 

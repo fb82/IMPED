@@ -42,7 +42,7 @@ from similarity import (
     n_matches_similarity_module,
 )
 from confidence import conf_module
-from transitive import percentage_module, kfc_module, transitive_module
+from transitive import kfc_module, transitive_module
 from image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
 from matchers import (
@@ -1513,46 +1513,43 @@ def pipeline55(output_folder='.'):
     output_path.mkdir(parents=True, exist_ok=True)
 
     imgs_dir = '../data/ET'
-    pairs_path = str(output_path / f'{name_example}_pairs.pt')
+    kfc_pairs_path = str(output_path / f'{name_example}_kfc_pairs.hdf5')
+    transitive_pairs_path = str(output_path / f'{name_example}_transitive_pairs.hdf5')
     name_db = str(output_path / f'database_{name_example}.hdf5')
 
-    for f in [pairs_path, name_db]:
+    for f in [kfc_pairs_path, transitive_pairs_path, name_db]:
         if os.path.exists(f):
             os.remove(f)
 
     imgs = sorted(resolve_image_folder(imgs_dir))
 
-    run_pairs([salad_module(), cosine_similarity_module()], imgs_dir, db_name=name_db)
+    # pass 1: global similarity + KFC seed selection
+    seed_pairs = []
+    sim_table = {}
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(),
+        kfc_module(pairs=seed_pairs, table=sim_table, out_path=kfc_pairs_path, n_mst=2),
+    ]
+    run_pairs(global_pipeline, imgs_dir, db_name=name_db)
 
-    threshold = 0.7
+    # pass 2: transitive closure over the seed pairs
+    transitive = transitive_module(pairs=seed_pairs, sim_table=sim_table, out_path=transitive_pairs_path)
+    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'), worklist=transitive)
 
-    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
-
-    seed_confirmed = []
-
-    def on_pair(pair, pipe_data):
-        live.on_pair(pair, pipe_data)
-        if not live.first_round_done:
-            seed_confirmed.append(tuple(os.path.basename(p) for p in pair))
-
-    pipeline = [salad_module(), cosine_similarity_module(), kfc_module(threshold=threshold, out_path=pairs_path)]
+    match_pipeline = [salad_module(), cosine_similarity_module(), transitive, live]
 
     try:
-        graph = run_pairs(
-            pipeline, imgs_dir, db_name=name_db,
-            on_pair=on_pair, on_candidates=live.on_candidates, on_round=live.on_round,
-        )
+        run_pairs(match_pipeline, imgs_dir, db_name=name_db)
     finally:
         live.stop()
 
-    seed_confirmed_names = {tuple(sorted(p)) for p in seed_confirmed}
-
-    for f in [pairs_path, name_db]:
+    for f in [kfc_pairs_path, transitive_pairs_path, name_db]:
         if os.path.exists(f):
             os.remove(f)
 
-    print(f"{name_example}: {len(seed_confirmed_names)} pairs confirmed "
-          f"over {graph.number_of_nodes()} images")
+    print(f"{name_example}: {transitive._graph.number_of_edges()} pairs confirmed "
+          f"over {transitive._graph.number_of_nodes()} images")
 
 
 def pipeline_ssma(
@@ -1785,49 +1782,4 @@ def pipeline_ssma_transitive_salad(
                            sim_quantile=sim_quantile, sim_min=sim_min)
 
 
-def pipeline_et_transitive_live(
-    imgs_dir='../data/ET',
-    output_folder='.',
-    seed_percentage=0.1,
-    max_rounds=None,
-    threshold=-1.0,
-):
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    pairs_path = str(output_path / f'{name_example}_pairs.hdf5')
-
-
-    imgs = sorted(resolve_image_folder(imgs_dir))
-
-    conf = conf_module(threshold=threshold, out_path=pairs_path)
-    coarse_pipeline = [
-        salad_module(),
-        l2_similarity_module(),
-        percentage_module(percentage=seed_percentage),
-        conf,
-    ]
-
-    live = live_pair_graph(imgs, save_to=str(output_path / f'{name_example}.html'))
-
-    try:
-        run_pairs(
-            coarse_pipeline,
-            imgs_dir,
-            max_rounds=max_rounds,
-            db_name=str(output_path / f'{name_example}_global_desc.hdf5'),
-            on_pair=live.on_pair,
-            on_candidates=live.on_candidates,
-            on_round=live.on_round,
-        )
-    finally:
-        live.stop()
-
-    pairs = conf_module.load_pairs(pairs_path)
-    print(f"{name_example}: {len(pairs)} pairs confirmed via transitive closure")
 
