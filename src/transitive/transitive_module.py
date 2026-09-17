@@ -14,18 +14,30 @@ class transitive_module:
     Like kfc_module, it takes its list by reference: pass the same `pairs`
     list kfc_module was given (already filled with the seed pairs by the
     time pass 1's run_pairs() returns) and finalize() keeps mutating that
-    same list in place - here called `pp`, as in the loop it drives:
-    `while pp: run_pipeline(...)`. run_pairs() detects this module by
-    `is_transitive = True` and, instead of a single pass, keeps re-running
-    the pipeline while `pp` is non-empty.
+    same list in place - here called `pp`. Put it in the match pipeline like
+    any other module, and drive the loop from outside:
+
+        transitive = transitive_module(pairs=seed_pairs, ...)
+        pipeline = [..., transitive, ...]
+        while transitive.pp:
+            run_pairs(pipeline, list(transitive.pp), db_name=...)
+
+    run_pairs() calls finalize_pipeline(pipeline) at the end of every call,
+    which calls transitive.finalize() same as any other module: it drops the
+    pairs computed in that iteration from `pp` and appends the not-yet-tried
+    transitive-closure candidates (a-c for each confirmed a-b, b-c) - unless
+    `iter` has reached `max_iterations`, in which case it empties `pp`
+    instead, which ends the caller's while loop.
+
+    finalize() also sets `self.args['continue']` to whether `pp` is still
+    non-empty after this round. Other modules placed after `transitive` in
+    the pipeline (e.g. to_colmap_module, live_pair_graph) can be given a
+    `worklist=transitive` reference and check `worklist.args['continue']` in
+    their own finalize() to skip their real teardown (closing a db, stopping
+    a live view) until the closure is actually done.
 
     Each run() records the pair just matched and, when its match count
-    clears `threshold`, adds it to the confirmed graph. finalize() is called
-    once per iteration by run_pairs(): it drops the pairs computed in that
-    iteration from `pp` and appends the not-yet-tried transitive-closure
-    candidates (a-c for each confirmed a-b, b-c) - unless `iter` has reached
-    `max_iterations`, in which case it empties `pp` instead, which stops
-    run_pairs()'s loop.
+    clears `threshold`, adds it to the confirmed graph.
 
     Two independent gates keep the closure from growing to the full graph:
 
@@ -44,8 +56,6 @@ class transitive_module:
       precedence when given. With neither set, every candidate is queued
       (previous behaviour).
     """
-    is_transitive = True
-
     def __init__(self, **args):
         self.single_image = False
         self.pipeliner = False
@@ -82,6 +92,7 @@ class transitive_module:
         self._graph = nx.Graph()
         self._tried = {frozenset(p) for p in self.pp}
         self._computed_this_round = set()
+        self.pair_round = {}
         self.iter = 0
         self._n_skipped_low_sim = 0
 
@@ -148,6 +159,9 @@ class transitive_module:
         ]
         self.iter += 1
 
+        for p in self._computed_this_round:
+            self.pair_round[frozenset(p)] = self.iter
+
         if self.iter >= self.args['max_iterations']:
             self.pp[:] = []
             new_pairs = []
@@ -167,6 +181,7 @@ class transitive_module:
             self.pp.extend(new_pairs)
 
         self._computed_this_round = set()
+        self.args['continue'] = bool(self.pp)
 
         self._save()
         print(f"transitive_module: iteration {self.iter}, "

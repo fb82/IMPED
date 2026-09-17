@@ -1,5 +1,4 @@
 import os
-import time
 import webbrowser
 
 import networkx as nx
@@ -14,17 +13,22 @@ class live_pair_graph:
     by a transitive run_pairs() pipeline, using pyvis (vis.js):
     draggable/zoomable nodes, hover tooltips, click-to-highlight neighbours.
 
-    Two ways to drive it:
+    Drop the instance straight into the match pipeline, after `transitive`
+    (see transitive_module). Its run() records every pair the pipeline
+    processes into `self.graph`/`self.rejected`/`self.pending`, and always
+    redraws (recomputes the layout and rewrites the HTML) once per round, in
+    finalize() - called automatically by finalize_pipeline() right after
+    `transitive.finalize()`, so it always sees that round's final state.
+    Edges are coloured using `transitive.pair_round`, which round
+    confirmed each pair.
 
-    * as callbacks - pass `on_pair` / `on_candidates` / `on_round` to
-      run_pairs(); or
-    * as a pass-through pipeline module - drop the instance straight into the
-      pipeline list. Its run() records every pair the pipeline processes, and
-      when it is given a `worklist` (the transitive_module instance) it also
-      redraws the pairs still on that module's worklist after each pair, so
-      the picture tracks the modified list at every transitive iteration.
+    `redraw_every` additionally redraws every N confirmed/rejected pairs
+    within a round, for finer-grained feedback on long rounds; `None`
+    (default when a `worklist` is given) disables it, leaving only the
+    once-per-round redraw. Without a `worklist` there is no notion of
+    "round" at all, so `redraw_every` defaults to 1 (redraw on every pair).
     """
-    def __init__(self, imgs, save_to='live_pair_graph.html', refresh_seconds=2, open_browser=True, worklist=None):
+    def __init__(self, imgs, save_to='live_pair_graph.html', open_browser=True, worklist=None, redraw_every=None):
         self.single_image = False
         self.pipeliner = False
         self.pass_through = True
@@ -36,15 +40,13 @@ class live_pair_graph:
         self.rejected = {}
         self.pending = {}
         self.save_to = save_to
-        self.refresh_seconds = refresh_seconds
-        self.stopped = False
-        self.first_round_done = False
         self.worklist = worklist
-        self._last_redraw_time = 0.0
+        self.redraw_every = redraw_every if redraw_every is not None else (None if worklist is not None else 1)
+        self._pairs_since_redraw = 0
 
         self.pos = {n: (x * 1000, y * 1000) for n, (x, y) in nx.spring_layout(self.graph).items()}
 
-        self._redraw()
+        self._do_redraw()
         if open_browser:
             webbrowser.open('file://' + os.path.abspath(save_to))
 
@@ -54,15 +56,24 @@ class live_pair_graph:
     def _known(self, img_a, img_b):
         return img_a in self.graph and img_b in self.graph
 
-    def add_pair(self, img_a, img_b, conf=None, transitive=False):
+    def _maybe_redraw(self, relayout):
+        if self.redraw_every is None:
+            return
+        self._pairs_since_redraw += 1
+        if self._pairs_since_redraw < self.redraw_every:
+            return
+        self._pairs_since_redraw = 0
+        if relayout:
+            self._recompute_layout()
+        self._do_redraw()
+
+    def add_pair(self, img_a, img_b, conf=None):
         if not self._known(img_a, img_b):
             return
-        self.graph.add_edge(img_a, img_b, conf=conf, transitive=transitive)
+        self.graph.add_edge(img_a, img_b, conf=conf)
         self.rejected.pop((min(img_a, img_b), max(img_a, img_b)), None)
         self.pending.pop((min(img_a, img_b), max(img_a, img_b)), None)
-        seed = {n: (x / 1000, y / 1000) for n, (x, y) in self.pos.items()}
-        self.pos = {n: (x * 1000, y * 1000) for n, (x, y) in nx.spring_layout(self.graph, pos=seed).items()}
-        self._redraw()
+        self._maybe_redraw(relayout=True)
 
     def add_rejected_pair(self, img_a, img_b, conf=None):
         if not self._known(img_a, img_b):
@@ -74,13 +85,9 @@ class live_pair_graph:
             return
         self.rejected[key] = conf
         self.pending.pop(key, None)
-        self._redraw()
+        self._maybe_redraw(relayout=False)
 
     def sync_worklist(self):
-        """Refresh the 'pending' edges from the worklist module's current
-        list of pairs still to do (everything not already confirmed or
-        rejected), so the drawing reflects the list after the last
-        transitive_module.finalize()."""
         if self.worklist is None:
             return
         pending = {}
@@ -92,23 +99,19 @@ class live_pair_graph:
                 continue
             pending[key] = None
         self.pending = pending
-        self.first_round_done = getattr(self.worklist, 'iter', 0) > 0
-        self._redraw()
 
     def on_pair(self, pair, pipe_data):
         img_a, img_b = pair
         conf = pipe_data.get('pair_sim')
 
-        transitive = self.first_round_done
         keep = pipe_data.get('pair_conf', True)
         if self.worklist is not None:
-            transitive = getattr(self.worklist, 'iter', 0) > 0
             th = self.worklist.args.get('threshold') if hasattr(self.worklist, 'args') else None
             if 'pair_conf' not in pipe_data and conf is not None and th is not None:
                 keep = conf > th
 
         if keep:
-            self.add_pair(img_a, img_b, conf=conf, transitive=transitive)
+            self.add_pair(img_a, img_b, conf=conf)
         else:
             self.add_rejected_pair(img_a, img_b, conf=conf)
 
@@ -121,7 +124,6 @@ class live_pair_graph:
             self.add_rejected_pair(*pair, conf=sim)
 
     def on_round(self, graph, n_round, n_new):
-        self.first_round_done = True
         self.sync_worklist()
 
     def run(self, **pipe_data):
@@ -130,17 +132,20 @@ class live_pair_graph:
         return {}
 
     def finalize(self):
+        if self.worklist is not None:
+            self._recompute_layout()
+            self._do_redraw()
+            self._pairs_since_redraw = 0
+            if self.worklist.args.get('continue', False):
+                return
         self.stop()
 
     def stop(self):
-        self.stopped = True
-        self._redraw(force=True)
-
-    def _redraw(self, force=False):
-        if not force and time.time() - self._last_redraw_time < self.refresh_seconds:
-            return
-        self._last_redraw_time = time.time()
         self._do_redraw()
+
+    def _recompute_layout(self):
+        seed = {n: (x / 1000, y / 1000) for n, (x, y) in self.pos.items()}
+        self.pos = {n: (x * 1000, y * 1000) for n, (x, y) in nx.spring_layout(self.graph, pos=seed).items()}
 
     def _do_redraw(self):
         net = Network(height='90vh', width='100%', notebook=False)
@@ -153,12 +158,15 @@ class live_pair_graph:
             node['fixed'] = False
 
         for edge in net.edges:
-            edge['color'] = '#2ca02c' if edge.get('transitive') else '#1f77b4'  # green vs blue
+            iteration = None
+            if self.worklist is not None:
+                iteration = self.worklist.pair_round.get(frozenset((edge['from'], edge['to'])))
+            edge['color'] = '#2ca02c' if iteration and iteration > 1 else '#1f77b4'  # green vs blue
             edge['width'] = 4
             conf = edge.get('conf')
             if conf is not None:
                 edge['label'] = f'{conf:.2f}'
-                edge['title'] = f'conf: {conf:.4f}'
+                edge['title'] = f'conf: {conf:.4f}' + (f' — round {iteration}' if iteration else '')
 
         for (img_a, img_b), conf in self.pending.items():
             if not self._known(img_a, img_b):
@@ -194,11 +202,3 @@ class live_pair_graph:
         }
         """)
         net.write_html(self.save_to, notebook=False, open_browser=False)
-
-        if not self.stopped:
-            with open(self.save_to, 'r') as f:
-                html = f.read()
-            refresh_tag = f'<meta http-equiv="refresh" content="{self.refresh_seconds}">'
-            html = html.replace('<head>', f'<head>\n    {refresh_tag}', 1)
-            with open(self.save_to, 'w') as f:
-                f.write(html)

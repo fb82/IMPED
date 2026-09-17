@@ -129,6 +129,10 @@ class to_colmap_module:
     # =========================================================
 
     def finalize(self):
+        worklist = self.args.get('worklist')
+        if worklist is not None and worklist.args.get('continue', False):
+            return
+
         self._flush_db()
         self.db.commit()
         self.db.close()

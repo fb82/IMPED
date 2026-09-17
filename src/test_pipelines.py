@@ -3,7 +3,6 @@ import sys
 import time
 import shutil
 import subprocess
-from functools import partial
 from pathlib import Path
 import inspect
 
@@ -13,7 +12,7 @@ import pycolmap
 import torch
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import enable_quadtree, run_pairs, run_close_pairs, split_images, merge_hdf5, resolve_image_folder
+from core import enable_quadtree, run_pairs, split_images, merge_hdf5, resolve_image_folder
 
 project_root = Path(__file__).parent.resolve()
 
@@ -1539,10 +1538,8 @@ def pipeline55(output_folder='.'):
 
     match_pipeline = [salad_module(), cosine_similarity_module(), transitive, live]
 
-    try:
-        run_pairs(match_pipeline, imgs_dir, db_name=name_db)
-    finally:
-        live.stop()
+    while transitive.pp:
+        run_pairs(match_pipeline, list(transitive.pp), db_name=name_db)
 
     for f in [kfc_pairs_path, transitive_pairs_path, name_db]:
         if os.path.exists(f):
@@ -1552,64 +1549,9 @@ def pipeline55(output_folder='.'):
           f"over {transitive._graph.number_of_nodes()} images")
 
 
-def pipeline_ssma(
-    n_chunks=1,
-    chunk_idx=0,
-    images_folder='/home/colombo/Documenti/newest/IMPED/data/imgs_orig/',
-    output_folder='.',
-    n_close=10,
-):
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: pipeline_ssma  [chunk {chunk_idx} of {n_chunks}]")
-
-    output_path = Path(output_folder)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    chunk_db = str(output_path / f'ssma_chunk_{chunk_idx}.db')
-
-    pipeline = [
-        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-            [
-                deep_joined_module(what='aliked'),
-                segformer_module(),
-                lightglue_module(what='aliked'),
-            ],
-            [
-                deep_joined_module(what='superpoint'),
-                segformer_module(),
-                lightglue_module(what='superpoint'),
-            ],
-            [
-                dog_module(),
-                patch_module(),
-                deep_descriptor_module(),
-                segformer_module(),
-                smnn_module(),
-            ],
-        ]),
-        magsac_module(),
-        segformer_module(stage='matches'),
-        to_colmap_module(db=chunk_db),
-    ]
-
-    run_close_pairs(
-        pipeline,
-        images_folder,
-        n=n_close,
-        db_name=None,
-        colmap_db_or_list=chunk_db,
-        n_chunks=n_chunks,
-        chunk_idx=chunk_idx,
-        salad_cache=str(output_path / 'salad_descriptors.pt'),
-    )
-
-
-
 def pipeline_ssma_transitive(
     images_folder='/home/colombo/Shared/test_kornia',
     output_folder='.',
-    max_len=255,
     n_mst=2,
     max_iterations=10,
     min_matches=0,
@@ -1621,8 +1563,9 @@ def pipeline_ssma_transitive(
     `images_folder`, back to back.
 
     Pass 1 - global similarity. Every pair is compared: both images
-    downscaled so their longest side is <= `max_len` px (image_muxer +
-    pair_resize), SIFT + MAGSAC, inlier count stored as 'pair_sim'. This is
+    downscaled so their longest side is <= 255 px (image_muxer +
+    pair_resize's default `max_len`), SIFT + MAGSAC, inlier count stored as
+    'pair_sim'. This is
     exhaustive (N*(N-1)/2 pairs) - accurate but heavy on large sets; use
     pipeline_ssma_transitive_salad for a cheap global-descriptor pass 1
     instead. kfc_module records the whole similarity table and, at finalize,
@@ -1651,7 +1594,11 @@ def pipeline_ssma_transitive(
     sim_table = {}
     global_pipeline = [
         image_muxer_module(
-            pair_generator=partial(pair_resize, max_len=max_len),
+            # to override pair_resize's defaults (e.g. max_len), wrap it with
+            # functools.partial instead, since image_muxer_module always calls
+            # pair_generator with just (pair, cache_path, force, pipe_data):
+            # pair_generator=partial(pair_resize, max_len=128),
+            pair_generator=pair_resize,
             pipe_gather=pipe_max_matches,
             cache_path=str(output_path / 'ssma_resized'),
             add_to_cache=False,
@@ -1669,13 +1616,13 @@ def pipeline_ssma_transitive(
     # seed_pairs / sim_table are already filled in place by kfc_module - no file read needed
 
     # --- pass 2: transitive closure ---
-    # Real SIFT + MAGSAC + COLMAP matching pipeline driven over the
-    # transitive closure of `seed_pairs` by run_pairs() (it loops while the
-    # worklist is non-empty; transitive_module itself empties it once
-    # `max_iterations` is reached). `sim_min` / `sim_quantile` gate which
-    # transitive candidates are queued at all, using `sim_table` (pass-1
-    # global similarity). `min_matches` gates confirmation on the pass-2
-    # match result.
+    # Real SIFT + MAGSAC + COLMAP matching pipeline, one run_pairs() call per
+    # round over transitive.pp; transitive.finalize() then drops the pairs
+    # just matched and appends the next round's candidates, emptying pp once
+    # `max_iterations` is reached, which ends the while loop below.
+    # `sim_min` / `sim_quantile` gate which transitive candidates are queued
+    # at all, using `sim_table` (pass-1 global similarity). `min_matches`
+    # gates confirmation on the pass-2 match result.
     transitive_pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
     match_db = str(output_path / 'ssma_transitive.db')
 
@@ -1703,19 +1650,13 @@ def pipeline_ssma_transitive(
         sift_module(),
         smnn_module(),
         magsac_module(),
-        to_colmap_module(db=match_db),
         transitive,
+        to_colmap_module(db=match_db, worklist=transitive),
         live,
     ]
 
-    try:
-        run_pairs(
-            match_pipeline,
-            images_folder,
-            db_name=str(output_path / 'ssma_transitive.hdf5'),
-        )
-    finally:
-        live.stop()
+    while transitive.pp:
+        run_pairs(match_pipeline, list(transitive.pp), db_name=str(output_path / 'ssma_transitive.hdf5'))
 
     print(f"pipeline_ssma_transitive: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
 
@@ -1764,13 +1705,13 @@ def pipeline_ssma_transitive_salad(
     # seed_pairs / sim_table are already filled in place by kfc_module - no file read needed
 
     # --- pass 2: transitive closure ---
-    # Real SIFT + MAGSAC + COLMAP matching pipeline driven over the
-    # transitive closure of `seed_pairs` by run_pairs() (it loops while the
-    # worklist is non-empty; transitive_module itself empties it once
-    # `max_iterations` is reached). `sim_min` / `sim_quantile` gate which
-    # transitive candidates are queued at all, using `sim_table` (pass-1
-    # global similarity). `min_matches` gates confirmation on the pass-2
-    # match result.
+    # Real SIFT + MAGSAC + COLMAP matching pipeline, one run_pairs() call per
+    # round over transitive.pp; transitive.finalize() then drops the pairs
+    # just matched and appends the next round's candidates, emptying pp once
+    # `max_iterations` is reached, which ends the while loop below.
+    # `sim_min` / `sim_quantile` gate which transitive candidates are queued
+    # at all, using `sim_table` (pass-1 global similarity). `min_matches`
+    # gates confirmation on the pass-2 match result.
     transitive_pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
     match_db = str(output_path / 'ssma_transitive.db')
 
@@ -1798,19 +1739,13 @@ def pipeline_ssma_transitive_salad(
         sift_module(),
         smnn_module(),
         magsac_module(),
-        to_colmap_module(db=match_db),
         transitive,
+        to_colmap_module(db=match_db, worklist=transitive),
         live,
     ]
 
-    try:
-        run_pairs(
-            match_pipeline,
-            images_folder,
-            db_name=str(output_path / 'ssma_transitive.hdf5'),
-        )
-    finally:
-        live.stop()
+    while transitive.pp:
+        run_pairs(match_pipeline, list(transitive.pp), db_name=str(output_path / 'ssma_transitive.hdf5'))
 
     print(f"pipeline_ssma_transitive_salad: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
 
