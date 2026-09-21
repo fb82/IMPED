@@ -146,17 +146,18 @@ class kfc_module:
         # up holding the selection - not just self.selected.
         self.selected[:] = self._select()
 
-        if os.path.exists(self.args['out_path']):
-            os.remove(self.args['out_path'])
+        if self.args['out_path'] is not None:
+            if os.path.exists(self.args['out_path']):
+                os.remove(self.args['out_path'])
 
-        aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['out_path'], mode='a', label_prefix='pickled/' + self.id_string)
-        for (img0, img1), sim in self._table.items():
-            data_key = '/table/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
-            aux_hdf5.add(data_key, (img0, img1, sim))
-        for img0, img1 in self.selected:
-            data_key = '/pairs/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
-            aux_hdf5.add(data_key, (img0, img1))
-        aux_hdf5.close()
+            aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['out_path'], mode='a', label_prefix='pickled/' + self.id_string)
+            for (img0, img1), sim in self._table.items():
+                data_key = '/table/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
+                aux_hdf5.add(data_key, (img0, img1, sim))
+            for img0, img1 in self.selected:
+                data_key = '/pairs/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
+                aux_hdf5.add(data_key, (img0, img1))
+            aux_hdf5.close()
 
         print(f"kfc_module: {len(self._table)} pairs recorded (of {self._n_seen} seen), "
               f"{len(self.selected)} selected over {self.args['n_mst']} MST(s), "

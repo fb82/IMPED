@@ -84,7 +84,7 @@ class to_colmap_module:
 
         # ---------------- DB BATCH BUFFER (NEW) ----------------
         self._db_buffer = {
-            "keypoints": [],
+            "keypoints": {},
             "matches": [],
             "two_view": []
         }
@@ -129,12 +129,13 @@ class to_colmap_module:
     # =========================================================
 
     def finalize(self):
+        self._flush_db()
+        self.db.commit()
+
         worklist = self.args.get('worklist')
         if worklist is not None and worklist.args.get('continue', False):
             return
 
-        self._flush_db()
-        self.db.commit()
         self.db.close()
 
         if self.aux_hdf5 is not None:
@@ -147,7 +148,7 @@ class to_colmap_module:
     # =========================================================
 
     def _flush_db(self):
-        for image_id, pts in self._db_buffer["keypoints"]:
+        for image_id, pts in self._db_buffer["keypoints"].items():
             self.db.update_keypoints(image_id, pts)
 
         for i1, i2, m_idx in self._db_buffer["matches"]:
@@ -159,10 +160,15 @@ class to_colmap_module:
         self.db.commit()
 
         self._db_buffer = {
-            "keypoints": [],
+            "keypoints": {},
             "matches": [],
             "two_view": []
         }
+
+    def _get_keypoints(self, image_id):
+        if image_id in self._db_buffer["keypoints"]:
+            return self._db_buffer["keypoints"][image_id]
+        return self.db.get_keypoints(image_id)
 
     # =========================================================
     # MAIN PIPELINE
@@ -211,7 +217,7 @@ class to_colmap_module:
 
         pipe_old = {}
 
-        kp_old0 = self.db.get_keypoints(im_ids[0])
+        kp_old0 = self._get_keypoints(im_ids[0])
         if kp_old0 is None:
             w_old0 = torch.zeros((0, 6), device=self.device)
             kp_old0 = torch.zeros((0, 2), device=self.device)
@@ -219,7 +225,7 @@ class to_colmap_module:
             w_old0 = torch.tensor(kp_old0, device=self.device)
             kp_old0 = torch.tensor(kp_old0[:, :2], device=self.device)
 
-        kp_old1 = self.db.get_keypoints(im_ids[1])
+        kp_old1 = self._get_keypoints(im_ids[1])
         if kp_old1 is None:
             w_old1 = torch.zeros((0, 6), device=self.device)
             kp_old1 = torch.zeros((0, 2), device=self.device)
@@ -285,8 +291,8 @@ class to_colmap_module:
         # DB WRITE (BUFFERED)
         # ====================================================
 
-        self._db_buffer["keypoints"].append((im_ids[0], pts0))
-        self._db_buffer["keypoints"].append((im_ids[1], pts1))
+        self._db_buffer["keypoints"][im_ids[0]] = pts0
+        self._db_buffer["keypoints"][im_ids[1]] = pts1
 
         if not self.args['only_keypoints']:
             m_idx = pipe_out['m_idx'].to('cpu').numpy()

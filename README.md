@@ -16,8 +16,9 @@ Key features:
 - **Benchmarking tools** — built-in support for MegaDepth-1500, ScanNet-1500, IMC PhotoTourism, and planar datasets with standard pose and homography metrics.
 - **Incremental processing** — HDF5-backed caching avoids redundant computation across runs.
 - **Device-aware execution** — per-module CPU/GPU assignment with automatic tensor routing.
-- **Automatic pair selection** — a transitive pipeline (a `transitive` package module inside a regular `run_pairs()` pipeline) avoids exhaustive pairwise matching on large datasets by scoring pairs with a cheap global descriptor and growing the match graph transitively.
-- **Live graph visualization** — watch pairs get confirmed in real time on an interactive, auto-refreshing graph view.
+- **Automatic pair selection** — a transitive pipeline (`transitive.kfc_module` + `transitive.transitive_module`, driven by a plain `while` loop around `run_pairs()`) avoids exhaustive pairwise matching on large datasets by scoring pairs with a cheap global descriptor and growing the match graph transitively.
+- **Live graph visualization** — watch pairs get confirmed round by round on an interactive graph view.
+- **Incremental 3D reconstruction** — `reconstruct_module` runs COLMAP's incremental mapper once per round of a transitive pipeline, continuing from the previous round's model and reconstructing in the background while the next round matches.
 
 For a quick tour of what is possible, browse `src/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
 
@@ -174,59 +175,65 @@ pipeline = [
 
 ### Automatic pair selection with a transitive pipeline
 
-For datasets too large to match exhaustively, a **transitive pipeline** builds the pair list for a real matching pipeline automatically, using a cheap global-descriptor pass instead of brute-forcing every combination. It's just a regular pipeline passed to `run_pairs()`:
+For datasets too large to match exhaustively, a **transitive pipeline** builds the pair list for a real matching pipeline automatically: a cheap global-descriptor pass scores every candidate pair, `kfc_module` picks a well-connected seed set from that score table, and `transitive_module` grows the match graph transitively from there — if A-B and B-C are confirmed, A-C is tried next — so most of the dataset never needs to be scored pairwise.
 
-1. A **global descriptor** module (`salad_module`, `standard_descriptor_module`) computes one embedding per image.
-2. A **similarity** module (`cosine_similarity_module`, `l2_similarity_module`, `standard_similarity_module`) scores every candidate pair from those embeddings.
-3. An **initial-selection** module (`transitive.percentage_module`, `.max_uses_module`, `.kfc_module`) — this is what marks the pipeline as transitive. Since there's no confirmed graph yet to expand from, it decides which pairs to try in the first round.
-4. `conf_module` keeps the pairs scoring above a `threshold` and accumulates them — except with `kfc_module` (see below), which needs no `conf_module` at all.
-5. Every later round grows the graph **transitively** — if A-B and B-C are confirmed, A-C is tried next — so most of the dataset never needs to be scored pairwise. This only ever has new pairs to find with `percentage_module`/`max_uses_module`, though: both deliberately hold back some already-above-threshold pairs in the seed round (a percentage cap, a per-image cap) for later rounds to pick up. `kfc_module` never holds anything back — it always converges in exactly one round (see below).
+Pass 1 — global similarity, computed exhaustively but cheaply (one descriptor per image, or a downscaled SIFT pass):
 
 ```python
-coarse_pipeline = [
-    salad_module(),
-    l2_similarity_module(),
-    percentage_module(percentage=0.1),
-    conf_module(threshold=-1.0, out_path='pairs.pt'),
-]
-
-run_pairs(coarse_pipeline, '../data/ET')
-```
-
-`run_pairs()` detects the `percentage_module`/`max_uses_module` in `coarse_pipeline` and drives the round-by-round transitive-closure logic for you (see `transitive.transitive_step.TransitiveRounds` for the algorithm) instead of running once over every possible pair. `max_rounds`, `on_round` and `on_candidates` are extra `run_pairs()` keyword arguments that only apply to a transitive pipeline.
-
-`kfc_module` adapts Keypoint Filtering by Coverage (Bellavia et al., 2022) to seed selection: it keeps every pair above `threshold`, plus whatever extra (even below-threshold) pairs two overlapping maximum-spanning-tree passes over the similarity graph need to guarantee every image stays connected. Unlike `percentage_module`/`max_uses_module`, those extra pairs score *below* `threshold` on purpose — so a separate `conf_module` re-checking that same threshold would just silently discard them again, undoing the whole point. `kfc_module` therefore confirms every pair it selects itself (it keeps its own `_table`, exactly like `conf_module`), so a `kfc_module`-driven pipeline needs no `conf_module` at all:
-
-```python
-coarse_pipeline = [
+current_pairs = []
+sim_table = {}
+global_pipeline = [
     salad_module(),
     cosine_similarity_module(),
-    kfc_module(threshold=0.99, out_path='pairs.pt'),
+    kfc_module(pairs=current_pairs, table=sim_table, out_path='kfc_pairs.hdf5', n_mst=2),
 ]
-
-run_pairs(coarse_pipeline, '../data/ET')
+run_pairs(global_pipeline, '../data/ET', db_name='database_global.hdf5')
 ```
 
-The confirmed pairs end up in `pairs.pt`, ready to feed a real matching pipeline via `run_pairs(real_pipeline, imgs, colmap_db_or_list=torch.load('pairs.pt'), mode='include')`.
+`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs`/`sim_table` are filled in place, so they're ready as soon as `run_pairs()` returns — no file read needed.
 
-**Watching it live**: `visualization.live_pair_graph` renders the pair graph as an interactive, auto-refreshing HTML page (via pyvis/vis.js) while a transitive `run_pairs()` call — or even a plain one — runs, using its `on_pair`/`on_candidates` hooks. Confirmed pairs appear as thick blue (first round) or green (transitive) edges labeled with their score; everything else shows as a thin dashed red edge. See `pipeline_et_transitive_live()` and `pipeline_et_run_pairs_live()` in `src/test_pipelines.py` for complete examples.
-
-### Nearest-neighbor pair selection with `run_close_pairs()`
-
-A simpler alternative to a transitive pipeline when you just want each image matched against its `n` most similar neighbours, no threshold or rounds involved. It ranks every image against every other using DINOv2 SALAD embeddings, keeps each image's top-`n` closest matches, and runs `pipeline` on the resulting pair list:
+Pass 2 — the real matching pipeline, driven round by round:
 
 ```python
-run_close_pairs(pipeline, '../data/ET', n=10)
+transitive = transitive_module(pairs=current_pairs, sim_table=sim_table, threshold=0, max_iterations=10)
+match_pipeline = [
+    dog_module(), sift_module(), smnn_module(), magsac_module(),
+    transitive,
+    to_colmap_module(db='match.db', worklist=transitive),
+]
+
+while current_pairs:
+    run_pairs(match_pipeline, current_pairs, db_name='database_match.hdf5')
 ```
 
-`salad_cache` optionally saves the computed embeddings to a `.pt` file so repeated runs (including different chunks in a distributed run, see below) don't recompute them.
+`transitive` is placed in the pipeline like any other module — `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation) and `sim_min`/`sim_quantile` (pass-1 similarity, to skip weak transitive candidates without ever matching them). The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
+
+Other modules placed after `transitive` can take a `worklist=transitive` reference and check `worklist.args['continue']` in their own `finalize()` — set by `transitive.finalize()` to whether another round is coming — to defer expensive teardown (closing a database, stopping a live view) until the closure is actually done, instead of doing it after every round. `to_colmap_module` and `live_pair_graph` both do this already.
+
+**Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round — or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round — rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline55()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/test_pipelines.py` for complete examples.
+
+### Incremental 3D reconstruction with `reconstruct_module`
+
+`reconstruct_module` runs COLMAP's incremental mapper (`pycolmap.incremental_mapping`) once per round of a transitive pipeline, continuing from the previous round's model instead of starting over: the first round reconstructs from scratch, every later round feeds the previous round's output back in as `input_path`, so newly confirmed matches — and pairs the mapper skipped the first time — extend the existing reconstruction rather than triggering a full rebuild. When COLMAP returns several disconnected sub-models, the one with the most registered images is kept.
+
+Placed right after `to_colmap_module` (same `db`, so it always reads that round's committed matches) and given the same `worklist=transitive`, each round's reconstruction runs in a background thread while the next round's matching proceeds — `finalize()` only blocks when it needs to start a new round's reconstruction and the previous one hasn't finished yet, since it needs that output to continue from:
+
+```python
+match_pipeline = [
+    dog_module(), sift_module(), smnn_module(), magsac_module(),
+    transitive,
+    to_colmap_module(db='match.db', worklist=transitive, no_unmatched=False),
+    reconstruct_module(db='match.db', images='../data/ET', output='model', worklist=transitive),
+]
+```
+
+`no_unmatched=False` is required on `to_colmap_module` in this setup: COLMAP refuses to continue from a previous model if an image's keypoint count in the database changed, and the default `no_unmatched=True` grows each image's keypoint set every time a new pair is matched. Storing every keypoint keeps the count fixed from the first round.
+
+Without a `worklist`, it runs synchronously at the end of a single, non-transitive `run_pairs()` call — the same module works for both kinds of pipeline.
 
 ### Distributed / multi-machine processing
 
-Two independent ways to spread a run across machines, both used by copying the same script and images to each machine and giving every worker its own `chunk_idx`:
-
-- **Split the pair list** (`run_close_pairs(..., n_chunks=N, chunk_idx=i)`): every worker generates the same full, deterministic pair list, then only actually runs the pairs assigned to it round-robin — full coverage, no coordination needed. Point `colmap_db_or_list` at a COLMAP database shared between workers (e.g. on shared storage) to skip pairs another worker already computed.
-- **Split the image set** (`split_images(imgs, n_chunks, chunk_idx)`): divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group) and merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
+Split the image set across machines with `split_images(imgs, n_chunks, chunk_idx)`: it divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group), copying the same script and images to each machine and giving every worker its own `chunk_idx`, then merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
 
 See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/merge path.
 
@@ -256,13 +263,16 @@ See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/
 `salad_module` · `standard_descriptor_module` · `cosine_similarity_module` · `l2_similarity_module` · `standard_similarity_module`
 
 ### Pair Selection
-`conf_module` · `transitive.percentage_module` · `transitive.max_uses_module` · `transitive.kfc_module`
+`conf_module` · `transitive.kfc_module` · `transitive.transitive_module`
 
 ### Visualization
 `show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` 
 
 ### COLMAP
 `to_colmap_module` · `from_colmap_module` · `merge_colmap_db` · `filter_colmap_reconstruction` · `align_colmap_models`
+
+### 3D Reconstruction
+`reconstruct.reconstruct_module`
 
 ---
 
@@ -272,7 +282,7 @@ See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/
 src/
 ├── core/
 │   ├── device.py              # Device setup, global flags
-│   ├── pipeline.py            # run_pipeline, run_pairs (incl. transitive pipelines), finalize_pipeline
+│   ├── pipeline.py            # run_pipeline, run_pairs, finalize_pipeline
 │   ├── geometry.py            # Homography and LAF utilities
 │   └── utils.py               # Argument handling, serialization, math utils
 │
@@ -334,16 +344,17 @@ src/
 │   └── conf_module.py
 │
 ├── transitive/
-│   ├── percentage_module.py
-│   ├── max_uses_module.py
-│   ├── kfc_module.py          # Keypoint Filtering by Coverage (Bellavia et al., 2022), adapted for seed selection
-│   └── transitive_step.py     # round-by-round transitive-closure logic, invoked by run_pairs
+│   ├── kfc_module.py           # Keypoint Filtering by Coverage (Bellavia et al., 2022), seed pair selection
+│   └── transitive_module.py    # round-by-round transitive-closure driver
 │
-├── colmap/
+├── colmap_fun/
 │   ├── colmap_ext.py
 │   ├── to_colmap_module.py
 │   ├── from_colmap_module.py
 │   └── merge_colmap.py
+│
+├── reconstruct/
+│   └── reconstruct_module.py   # incremental COLMAP reconstruction, round by round
 │
 ├── benchmark/
 │   ├── datasets.py            # MegaDepth, ScanNet, IMC, planar dataset setup
@@ -370,7 +381,7 @@ src/
 - COLMAP integration supports exporting features and matches, importing COLMAP keypoints back into the pipeline, using COLMAP databases for pair selection, and merging results across computation paths.
 - The `imgs` argument to `run_pairs()` accepts either a directory path or an explicit list of image paths.
 - Results are cached in HDF5 format; set `force=True` to reprocess from scratch.
-- The `on_pair(pair, pipe_data)` hook on `run_pairs()`, and its extra `on_candidates(scored, threshold)` hook for transitive pipelines, aren't limited to `live_pair_graph` — any callback with a matching signature works, so custom progress tracking or logging can be wired in the same way.
+- `run_pairs()` is fully generic: it has no special handling for transitive pipelines, `live_pair_graph`, or `reconstruct_module` — it just runs `pipeline` once over the given pairs and calls `finalize_pipeline(pipeline)`. All the round-by-round behaviour lives in the modules themselves (`transitive_module.finalize()`) and in the `while` loop the caller writes around `run_pairs()`.
 - `segformer_module` never removes keypoints or matches — it only annotates them (`keypt_mask`, an extra column on `m_mask`) as falling on an specific semantic class, so the original, unfiltered data stays available to any module placed after it.
 
 ---
