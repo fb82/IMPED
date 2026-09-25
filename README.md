@@ -212,6 +212,16 @@ Other modules placed after `transitive` can take a `worklist=transitive` referen
 
 **Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round — or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round — rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline55()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/test_pipelines.py` for complete examples.
 
+### Global descriptors
+
+A **global descriptor** is one embedding vector per image, computed once and reused for every pair that image is part of — the cheap alternative to matching keypoints between every pair directly. `salad_module` computes it with DINOv2-SALAD Izquierdo & Civera, "Optimal Transport Aggregation for Visual Place Recognition", adapted from [serizba/salad](https://github.com/serizba/salad): each image is resized to 322×322 and passed once through a DINOv2 backbone plus a SALAD aggregation head, giving a single embedding cached per image (`global_desc`) — no pair-specific computation at all.
+
+Two pair-level modules turn a pair of global descriptors into a single `pair_sim` score: `cosine_similarity_module` (cosine similarity) and `l2_similarity_module` (negative L2 distance, so higher is still "more similar", same sign convention as the cosine version). Both are what feeds `kfc_module`/`conf_module` in a transitive pipeline (see below), and both cache their result per pair like any other module.
+
+`n_matches_similarity_module` produces the same `pair_sim` output from a different source — the number of RANSAC inliers surviving a real (if downscaled) SIFT + MAGSAC pass — so it can be dropped into the same `kfc_module` pipeline as a similarity source when a real geometric check is affordable for the whole dataset, instead of a learned global descriptor. `pipeline_ssma_transitive` uses this variant; `pipeline_ssma_transitive_salad` and `full_pipeline_ssma` use SALAD's cosine similarity instead.
+
+**Computing the full similarity matrix instead of one pair at a time**: for very large datasets, scoring every pair one by one (N(N-1)/2 calls through `run_pairs`) is the bottleneck even though the global descriptor itself is computed only once per image — see `full_pipeline_ssma` for a worked example. `cosine_similarity_module(mode='table', table=sim_table)` sidesteps this: pass it just enough pairs to touch every image once (e.g. a chain `(img0,img1), (img1,img2), …`, N-1 pairs instead of N(N-1)/2), and instead of scoring pairs one at a time, it collects every image's descriptor as it's seen and computes the entire similarity matrix in one shot in `finalize()` (`descs @ descs.T`), filling `sim_table` — the same dict `kfc_module` reads — with every pair's score at once.
+
 ### Incremental 3D reconstruction with `reconstruct_module`
 
 `reconstruct_module` runs COLMAP's incremental mapper (`pycolmap.incremental_mapping`) once per round of a transitive pipeline, continuing from the previous round's model instead of starting over: the first round reconstructs from scratch, every later round feeds the previous round's output back in as `input_path`, so newly confirmed matches — and pairs the mapper skipped the first time — extend the existing reconstruction rather than triggering a full rebuild. When COLMAP returns several disconnected sub-models, the one with the most registered images is kept.
@@ -260,7 +270,7 @@ See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/
 `image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pair_rot4` · `pair_pyramid` · `sampling_module`
 
 ### Global Descriptors & Similarity
-`salad_module` · `standard_descriptor_module` · `cosine_similarity_module` · `l2_similarity_module` · `standard_similarity_module`
+`salad_module` · `cosine_similarity_module` · `l2_similarity_module` · `n_matches_similarity_module`
 
 ### Pair Selection
 `conf_module` · `transitive.kfc_module` · `transitive.transitive_module`
@@ -332,13 +342,12 @@ src/
 │   └── pyramid.py
 │
 ├── global_descriptors/
-│   ├── salad_module.py
-│   └── standard_descriptor.py
+│   └── salad_module.py
 │
 ├── similarity/
 │   ├── cosine_similarity_module.py
 │   ├── l2_similarity_module.py
-│   └── standard_similarity_module.py
+│   └── n_matches_similarity_module.py
 │
 ├── confidence/
 │   └── conf_module.py

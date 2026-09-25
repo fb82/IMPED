@@ -79,7 +79,7 @@ from ensemble import (
     pipeline_muxer_module,
     sampling_module,
 )
-from reconstruct import reconstruct_module
+from reconstruct import hierarchical_reconstruct_module, reconstruct_module
 from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module
 from segmentators import segformer_module
 from visualization import (
@@ -1583,6 +1583,61 @@ def pipeline56(output_folder='.'):
     assert model.num_points3D() > 0
 
     print(f"{name_example}: {model.num_reg_images()} images registered, {model.num_points3D()} points")
+
+
+def pipeline57(output_folder='.'):
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    imgs_dir = '../data/ET'
+    kfc_pairs_path = str(output_path / f'{name_example}_kfc_pairs.hdf5')
+    match_db = str(output_path / f'{name_example}.db')
+    model_dir = str(output_path / f'{name_example}_model')
+
+    for f in [kfc_pairs_path, match_db]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    current_pairs = []
+    sim_table = {}
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(),
+        kfc_module(pairs=current_pairs, table=sim_table, out_path=kfc_pairs_path, n_mst=2),
+    ]
+    run_pairs(global_pipeline, imgs_dir, db_name=str(output_path / f'{name_example}_global.hdf5'))
+
+    transitive = transitive_module(pairs=current_pairs, sim_table=sim_table, threshold=0, max_iterations=3)
+    hierarchical = hierarchical_reconstruct_module(
+        db=match_db, images=imgs_dir, output=model_dir, worklist=transitive,
+        overlap_threshold=1.1, align_max_error=1.0, align_min_inlier_ratio=0.5,
+    )
+
+    match_pipeline = [
+        dog_module(),
+        sift_module(),
+        smnn_module(),
+        magsac_module(),
+        transitive,
+        to_colmap_module(db=match_db, worklist=transitive, no_unmatched=False, only_matched=True),
+        hierarchical,
+    ]
+
+    while current_pairs:
+        run_pairs(match_pipeline, current_pairs, db_name=str(output_path / f'{name_example}_match.hdf5'))
+
+    models = [pycolmap.Reconstruction(str(Path(model_dir) / d)) for d in sorted(os.listdir(model_dir))]
+    best = max(models, key=lambda m: m.num_reg_images())
+    assert best.num_reg_images() >= 3, f"only {best.num_reg_images()} images registered"
+    assert best.num_points3D() > 0
+
+    print(f"{name_example}: {len(models)} model(s), best has {best.num_reg_images()} images, {best.num_points3D()} points")
+    print(f"{name_example}: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
 
 
 def pipeline_ssma_transitive(

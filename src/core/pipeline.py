@@ -164,14 +164,8 @@ def _move_to_device(x, target_device):
 
 
 def _align_pipe_data_device(pipe_data, target_device):
-    tensor_keys = [
-        'warp', 'kp', 'kH', 'kr', 'desc',
-        'm_idx', 'm_val', 'm_mask',
-        'F', 'E', 'H'
-    ]
-    for k in tensor_keys:
-        if k in pipe_data:
-            pipe_data[k] = _move_to_device(pipe_data[k], target_device)
+    for k in pipe_data:
+        pipe_data[k] = _move_to_device(pipe_data[k], target_device)
 
 
 def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/', show_progress=False):  
