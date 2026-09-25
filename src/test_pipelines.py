@@ -6,6 +6,12 @@ import subprocess
 from pathlib import Path
 import inspect
 
+project_root = Path(__file__).parent.resolve()
+external_root = project_root.parent / "external"
+
+if str(external_root) not in sys.path:
+    sys.path.insert(0, str(external_root))
+
 import h5py
 import networkx as nx
 import pycolmap
@@ -14,15 +20,13 @@ import torch
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import enable_quadtree, run_pairs, split_images, merge_hdf5, resolve_image_folder
 
-project_root = Path(__file__).parent.resolve()
-
 extra_paths = [
-    project_root / "r2d2",
-    project_root / "mast3r",
-    project_root / "matchformer",
-    project_root / "aspanformer" / "src",
-    project_root / "miho" / "src",
-    project_root / "gsm" 
+    external_root / "r2d2",
+    external_root / "mast3r",
+    external_root / "matchformer",
+    external_root / "aspanformer" / "src",
+    external_root / "miho" / "src",
+    external_root / "gsm"
 ]
 
 
@@ -90,6 +94,9 @@ from visualization import (
     show_patches_module,
 )
 
+OUTPUT_DIR = 'output_tests'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 
 def pipeline1():
     name_example = inspect.currentframe().f_code.co_name
@@ -111,7 +118,7 @@ def pipeline1():
             show_matches_module(id_moreFalse='only', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
         ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -127,7 +134,7 @@ def pipeline2():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -144,7 +151,7 @@ def pipeline3():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline4():
@@ -166,7 +173,7 @@ def pipeline4():
         show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline5():
@@ -186,7 +193,7 @@ def pipeline5():
         show_matches_module(id_more='fourth', img_prefix='best_rot_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET_random_rotated'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline6():
@@ -214,7 +221,7 @@ def pipeline6():
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -244,7 +251,7 @@ def pipeline7():
         show_matches_module(id_more='fourth', img_prefix='union_matches_', mask_idx=[1, 0], prepend_pair=False),            
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)    
 
 def pipeline8():
@@ -260,7 +267,7 @@ def pipeline8():
         show_matches_module(id_more='second', img_prefix='matches_sampled_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline9():
@@ -272,10 +279,10 @@ def pipeline9():
         loftr_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)       
 
 
@@ -289,10 +296,10 @@ def pipeline10():
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline11(): 
@@ -304,10 +311,10 @@ def pipeline11():
         loftr_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 
@@ -320,10 +327,10 @@ def pipeline12():
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
  
 def pipeline13():
@@ -339,7 +346,7 @@ def pipeline13():
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)   
 
 def pipeline14():
@@ -359,7 +366,7 @@ def pipeline14():
         show_matches_module(id_more='third', img_prefix='matches_final_', mask_idx=[1, 0]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline15():
@@ -371,10 +378,10 @@ def pipeline15():
         aspanformer_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 def pipeline16():
@@ -383,12 +390,12 @@ def pipeline16():
     print("=" * 50)
     print(f"Running: {name_example}")
     pipeline = [
-        from_colmap_module(),
+        from_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
         show_kpts_module(img_prefix='sift_', prepend_pair=False),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
  
 def pipeline17():
@@ -406,7 +413,7 @@ def pipeline17():
         pairwise_benchmark_module(id_more='megadepth_essential', gt=gt_megadepth, to_add_path=to_add_path_megadepth, mode='essential'),
     ]         
     imgs = [imgs_megadepth[i] for i in range(10)]
-    run_pairs(pipeline, imgs, add_path=to_add_path_megadepth)      
+    run_pairs(pipeline, imgs, add_path=to_add_path_megadepth, db_name=os.path.join(OUTPUT_DIR, 'database.hdf5'))
 
 def pipeline18():
     name_example = inspect.currentframe().f_code.co_name
@@ -423,7 +430,7 @@ def pipeline18():
         pairwise_benchmark_module(id_more='scannet_essential', gt=gt_scannet, to_add_path=to_add_path_scannet, mode='essential'),
     ]
     imgs = [imgs_scannet[i] for i in range(10)]
-    run_pairs(pipeline, imgs, add_path=to_add_path_scannet)
+    run_pairs(pipeline, imgs, add_path=to_add_path_scannet, db_name=os.path.join(OUTPUT_DIR, 'database.hdf5'))
 
 def pipeline19():
     name_example = inspect.currentframe().f_code.co_name
@@ -442,7 +449,7 @@ def pipeline19():
         pairwise_benchmark_module(id_more='megadepth_essential_metric', gt=gt_imc, to_add_path=to_add_path_imc, mode='essential', metric=True),
     ]         
     imgs = [imgs_imc[i] for i in range(10)]
-    run_pairs(pipeline, imgs, add_path=to_add_path_imc)
+    run_pairs(pipeline, imgs, add_path=to_add_path_imc, db_name=os.path.join(OUTPUT_DIR, 'database.hdf5'))
 
 def pipeline20():
     name_example = inspect.currentframe().f_code.co_name
@@ -455,9 +462,9 @@ def pipeline20():
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'{name_example}_aliked.db'),            
-    ]         
-    name_db = f"database_{name_example}_aliked.hdf5"
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, f'{name_example}_aliked.db')),
+    ]
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_aliked.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
     #
     pipeline = [
@@ -465,13 +472,13 @@ def pipeline20():
         lightglue_module(what='superpoint'),
         magsac_module(),
         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'{name_example}_superpoint.db'),            
-    ]         
-    name_db = f"database_{name_example}_superpoint.hdf5"
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, f'{name_example}_superpoint.db')),
+    ]
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_superpoint.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
     #
     device = torch.device('cpu')
-    merge_colmap_db([f'{name_example}_aliked.db', f'{name_example}_superpoint.db'], f'{name_example}_aliked_superpoint.db', img_folder='../data/ET')
+    merge_colmap_db([os.path.join(OUTPUT_DIR, f'{name_example}_aliked.db'), os.path.join(OUTPUT_DIR, f'{name_example}_superpoint.db')], os.path.join(OUTPUT_DIR, f'{name_example}_aliked_superpoint.db'), img_folder='../data/ET')
 
 def pipeline21():
     name_example = inspect.currentframe().f_code.co_name
@@ -483,14 +490,16 @@ def pipeline21():
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=f'database_{name_example}_aliked.db'),            
-    ]         
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, f'database_{name_example}_aliked.db')),
+    ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
-    os.makedirs('aliked_colmap_models', exist_ok=True)          
-    pycolmap.incremental_mapping(database_path=f'database_{name_example}_aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path=f'database_{name_example}_aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    aliked_db = os.path.join(OUTPUT_DIR, f'database_{name_example}_aliked.db')
+    aliked_models = os.path.join(OUTPUT_DIR, 'aliked_colmap_models')
+    os.makedirs(aliked_models, exist_ok=True)
+    pycolmap.incremental_mapping(database_path=aliked_db, image_path=imgs, output_path=aliked_models)
+    filter_colmap_reconstruction(input_model_path=os.path.join(aliked_models, '0'), db_path=aliked_db, img_path=imgs, output_model_path=os.path.join(aliked_models, 'filtered_model'), to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
 
 
 def pipeline21bis():
@@ -500,26 +509,27 @@ def pipeline21bis():
     print(f"Running: {name_example}")
     import os
     from pathlib import Path
-    
-    base_dir = Path(__file__).parent
+
+    src_dir = Path(__file__).parent
+    base_dir = src_dir / OUTPUT_DIR
+    base_dir.mkdir(parents=True, exist_ok=True)
     print(f"__file__: {__file__}")
     print(f"base_dir: {base_dir}")
     print(f"CWD: {os.getcwd()}")
     print(f"aliked_colmap_models exists: {(base_dir / 'aliked_colmap_models').exists()}")
     print(f"aliked_colmap_models/0 exists: {(base_dir / 'aliked_colmap_models' / '0').exists()}")
     print(f"Contents of aliked_colmap_models: {list((base_dir / 'aliked_colmap_models').iterdir()) if (base_dir / 'aliked_colmap_models').exists() else 'DIR NOT FOUND'}")
-    base_dir = Path(__file__).parent
 
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=str(base_dir / f"{name_example}_aliked.db")),            
-    ]         
-    imgs = str(base_dir.parent / 'data' / 'ET')
+        to_colmap_module(db=str(base_dir / f"{name_example}_aliked.db")),
+    ]
+    imgs = str(src_dir.parent / 'data' / 'ET')
     
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
     os.makedirs(base_dir / 'aliked_colmap_models', exist_ok=True)    
       
@@ -546,34 +556,38 @@ def pipeline22():
     print("=" * 50)
     print(f"Running: {name_example}")
     imgs = '../data/ET'
+    aliked_db = os.path.join(OUTPUT_DIR, 'aliked.db')
+    aliked_models = os.path.join(OUTPUT_DIR, 'aliked_colmap_models')
+    superpoint_db = os.path.join(OUTPUT_DIR, 'superpoint.db')
+    superpoint_models = os.path.join(OUTPUT_DIR, 'superpoint_colmap_models')
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='aliked.db'),            
-    ]         
-    name_db = f"database_{name_example}_aliked.hdf5"
+        to_colmap_module(db=aliked_db),
+    ]
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_aliked.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
-    os.makedirs('aliked_colmap_models', exist_ok=True)          
-    pycolmap.incremental_mapping(database_path='aliked.db', image_path=imgs, output_path='aliked_colmap_models')            
-    filter_colmap_reconstruction(input_model_path='aliked_colmap_models/0', db_path='aliked.db', img_path=imgs, output_model_path='aliked_colmap_models/filtered_model', to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
+    os.makedirs(aliked_models, exist_ok=True)
+    pycolmap.incremental_mapping(database_path=aliked_db, image_path=imgs, output_path=aliked_models)
+    filter_colmap_reconstruction(input_model_path=os.path.join(aliked_models, '0'), db_path=aliked_db, img_path=imgs, output_model_path=os.path.join(aliked_models, 'filtered_model'), to_filter=['et002.jpg', 'et005.jpg'], how_filter='exclude', only_cameras=False, add_3D_points=True)
     #
     pipeline = [
         deep_joined_module(what='superpoint'),
         lightglue_module(what='superpoint'),
         magsac_module(),
         show_matches_module(img_prefix='superpoint_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='superpoint.db'),            
-    ]         
-    name_db = f"database_{name_example}_superpoint.hdf5"
+        to_colmap_module(db=superpoint_db),
+    ]
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_superpoint.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
-    os.makedirs('superpoint_colmap_models', exist_ok=True)          
-    pycolmap.incremental_mapping(database_path='superpoint.db', image_path=imgs, output_path='superpoint_colmap_models')            
-    filter_colmap_reconstruction(input_model_path='superpoint_colmap_models/0', db_path='superpoint.db', img_path=imgs, output_model_path='superpoint_colmap_models/filtered_model', to_filter=['et001.jpg', 'et002.jpg', 'et003.jpg', 'et004.jpg', 'et005.jpg'], how_filter='include', only_cameras=False, add_3D_points=True)
+    os.makedirs(superpoint_models, exist_ok=True)
+    pycolmap.incremental_mapping(database_path=superpoint_db, image_path=imgs, output_path=superpoint_models)
+    filter_colmap_reconstruction(input_model_path=os.path.join(superpoint_models, '0'), db_path=superpoint_db, img_path=imgs, output_model_path=os.path.join(superpoint_models, 'filtered_model'), to_filter=['et001.jpg', 'et002.jpg', 'et003.jpg', 'et004.jpg', 'et005.jpg'], how_filter='include', only_cameras=False, add_3D_points=True)
     #
     device = torch.device('cpu')
-    align_colmap_models(model_path1='aliked_colmap_models/filtered_model', model_path2='superpoint_colmap_models/filtered_model', imgs_path=imgs, db_path0='aliked.db', db_path1='superpoint.db', output_db='aliked_superpoint.db', output_model='merged_model', th=None)
+    align_colmap_models(model_path1=os.path.join(aliked_models, 'filtered_model'), model_path2=os.path.join(superpoint_models, 'filtered_model'), imgs_path=imgs, db_path0=aliked_db, db_path1=superpoint_db, output_db=os.path.join(OUTPUT_DIR, 'aliked_superpoint.db'), output_model=os.path.join(OUTPUT_DIR, 'merged_model'), th=None)
 
 def pipeline23():
     name_example = inspect.currentframe().f_code.co_name
@@ -584,7 +598,7 @@ def pipeline23():
         deep_joined_module(),
         lightglue_module(),
         magsac_module(),
-        to_colmap_module(),            
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),            
         show_matches_module(mask_idx=[1], prepend_pair=False),
     ]
     imgs = '../data/ET'
@@ -596,17 +610,18 @@ def pipeline24():
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
+    aliked_db = os.path.join(OUTPUT_DIR, 'aliked.db')
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(id_more='1st', img_prefix='aliked_matches_1st_', mask_idx=[1], prepend_pair=False),
-        to_colmap_module(db='aliked.db'),            
-    ]         
+        to_colmap_module(db=aliked_db),
+    ]
     # imgs = '../data/ET'
     # run_pairs(pipeline, imgs, colmap_db_or_list=['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg'], mode='exclude')
     imgs = ['et000.jpg', 'et001.jpg', 'et003.jpg', 'et006.jpg', 'et007.jpg', 'et008.jpg']
-    name_db = f"database_{name_example}_aliked1.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_aliked1.hdf5")
     run_pairs(pipeline, imgs, add_path='../data/ET', db_name= name_db)
     # now the remaining mathing pairs only
     pipeline = [
@@ -614,11 +629,11 @@ def pipeline24():
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(id_more='2nd', img_prefix='aliked_matches_2nd_', mask_idx=[1], prepend_pair=False),
-        to_colmap_module(db='aliked.db'),            
-    ]         
+        to_colmap_module(db=aliked_db),
+    ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}_aliked2.hdf5"
-    run_pairs(pipeline, imgs, colmap_db_or_list='aliked.db', mode='exclude', colmap_req='matches', db_name=name_db)
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}_aliked2.hdf5")
+    run_pairs(pipeline, imgs, colmap_db_or_list=aliked_db, mode='exclude', colmap_req='matches', db_name=name_db)
 
 def pipeline25():
     name_example = inspect.currentframe().f_code.co_name
@@ -647,7 +662,7 @@ def pipeline25():
         ]),
         magsac_module(),            
         show_matches_module(img_prefix='union_', prepend_pair=False),  
-        to_colmap_module(),                       
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),                       
     ]    
     imgs = '../data/ET'
     run_pairs(pipeline, imgs, db_name=None)  
@@ -682,7 +697,7 @@ def pipeline27():
         pairwise_benchmark_module(gt=gt_planar, to_add_path=to_add_path_planar, mode='homography'),
     ]         
     imgs = [imgs_planar[i] for i in range(20)]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, add_path=to_add_path_planar, force=True, db_name=name_db)   
 
 def pipeline28():
@@ -699,7 +714,7 @@ def pipeline28():
         pairwise_benchmark_module(gt=gt_imc, to_add_path=to_add_path_imc, mode='epipolar'),
     ]         
     imgs = [imgs_imc[i] for i in range(10)]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, add_path=to_add_path_imc, db_name=name_db)   
 
 def pipeline29():
@@ -716,7 +731,7 @@ def pipeline29():
         pairwise_benchmark_module(gt=gt_megadepth, to_add_path=to_add_path_megadepth, mode='epipolar'),
     ]         
     imgs = [imgs_megadepth[i] for i in range(10)]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, add_path=to_add_path_megadepth, db_name = name_db)   
 
 def pipeline30():
@@ -733,7 +748,7 @@ def pipeline30():
         pairwise_benchmark_module(gt=gt_scannet, to_add_path=to_add_path_scannet, mode='epipolar'),
     ]         
     imgs = [imgs_scannet[i] for i in range(10)]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, add_path=to_add_path_scannet, db_name = name_db)   
 
 def pipeline31():
@@ -757,7 +772,7 @@ def pipeline31():
         show_kpts_module(id_more='third', img_prefix='patches_after_final_', mask_idx=[1, 0], prepend_pair=True),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline32():
@@ -785,7 +800,7 @@ def pipeline32():
         show_matches_module(img_prefix='matches_final_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline33():
@@ -799,7 +814,7 @@ def pipeline33():
         show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 def pipeline34():
@@ -813,7 +828,7 @@ def pipeline34():
         show_matches_module(id_more='first', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)          
 
 def pipeline35():
@@ -859,7 +874,7 @@ def pipeline35():
         show_matches_module(id_more='all_show', img_prefix='matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline36():
@@ -884,7 +899,7 @@ def pipeline36():
         show_matches_module(id_more='dtm_guided', img_prefix='matches_dtm_guided_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline37():
@@ -914,7 +929,7 @@ def pipeline37():
         show_matches_module(img_prefix='matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline38():
@@ -949,7 +964,7 @@ def pipeline38():
         show_matches_module(id_more='all_show', img_prefix='all_matches_', mask_idx=[1]),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db) 
 
 def pipeline39():
@@ -961,10 +976,10 @@ def pipeline39():
         romav2_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]    
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)  
 
 
@@ -974,6 +989,11 @@ def pipeline40(imgs='../data/ET'):
     print("=" * 50)
     print(f"Running: {name_example}")
 
+    for pt_dir, chunk_idx in [('../data/ET_pt1', 0), ('../data/ET_pt2', 1)]:
+        os.makedirs(pt_dir, exist_ok=True)
+        for src in split_images('../data/ET', n_chunks=2, chunk_idx=chunk_idx):
+            shutil.copy(src, os.path.join(pt_dir, os.path.basename(src)))
+
     start_time = time.time()
 
     imgs='../data/ET'
@@ -982,9 +1002,9 @@ def pipeline40(imgs='../data/ET'):
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='ET_full.db'),            
-    ]         
-    run_pairs(pipeline, imgs, db_name='database_ET_full.hdf5')
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'ET_full.db')),
+    ]
+    run_pairs(pipeline, imgs, db_name=os.path.join(OUTPUT_DIR, 'database_ET_full.hdf5'))
 
     end_time = time.time()
 
@@ -994,25 +1014,25 @@ def pipeline40(imgs='../data/ET'):
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='ET_pt1.db'),            
-    ]         
-    run_pairs(pipeline, imgs, db_name='database_ET_pt1.hdf5')
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'ET_pt1.db')),
+    ]
+    run_pairs(pipeline, imgs, db_name=os.path.join(OUTPUT_DIR, 'database_ET_pt1.hdf5'))
 
     start_time2 = time.time()
-    
+
     imgs='../data/ET_pt2'
     pipeline = [
         deep_joined_module(what='aliked'),
         lightglue_module(what='aliked'),
         magsac_module(),
         show_matches_module(img_prefix='aliked_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db='ET_pt2.db'),            
-    ]         
-    name_db = f"database_{name_example}.hdf5"
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'ET_pt2.db')),
+    ]
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
-    
 
-    merge_colmap_db(['ET_pt1.db', 'ET_pt2.db'], 'Merged_ET.db', img_folder='../data/ET')
+
+    merge_colmap_db([os.path.join(OUTPUT_DIR, 'ET_pt1.db'), os.path.join(OUTPUT_DIR, 'ET_pt2.db')], os.path.join(OUTPUT_DIR, 'Merged_ET.db'), img_folder='../data/ET')
 
     end_time2 = time.time()
 
@@ -1032,7 +1052,7 @@ def pipeline41():
         show_matches_module(id_more='second', img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -1041,6 +1061,7 @@ def pipeline42():
     print("\n \n")
     print("=" * 50)
     print(f"Running: {name_example}")
+    colmap_ab_db = os.path.join(OUTPUT_DIR, name_example + '_colmap_ab.db')
     pipeline_a = [
         image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches,
             pipeline=[
@@ -1064,19 +1085,19 @@ def pipeline42():
         ),
         show_kpts_module(id_more='3th', img_prefix='union_', prepend_pair=False),
         show_matches_module(id_more='2nd', img_prefix='best_matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=name_example + '_colmap_ab.db'),
+        to_colmap_module(db=colmap_ab_db),
     ]
     imgs = '../data/ET'
-    run_pairs(pipeline_a, imgs, db_name=name_example + '_a.hdf5')
-    
+    run_pairs(pipeline_a, imgs, db_name=os.path.join(OUTPUT_DIR, name_example + '_a.hdf5'))
+
     pipeline_b = [
         roma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(db=name_example + '_colmap_ab.db'),
-    ]    
+        to_colmap_module(db=colmap_ab_db),
+    ]
     imgs = '../data/ET'
-    run_pairs(pipeline_b, imgs, db_name=name_example + '_b.hdf5', colmap_db_or_list=name_example + '_colmap_ab.db', mode='include')
+    run_pairs(pipeline_b, imgs, db_name=os.path.join(OUTPUT_DIR, name_example + '_b.hdf5'), colmap_db_or_list=colmap_ab_db, mode='include')
 
 
 def pipeline43():
@@ -1088,10 +1109,10 @@ def pipeline43():
         loma_module(),
         magsac_module(),
         show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
-        to_colmap_module(),
+        to_colmap_module(db=os.path.join(OUTPUT_DIR, 'colmap.db')),
     ]
     imgs = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
@@ -1102,9 +1123,9 @@ def pipeline44():
     print(f"Running: {name_example}")
 
     imgs_dir = '../data/ET'
-    name_db_chunk0 = f'database_{name_example}_chunk0.hdf5'
-    name_db_chunk1 = f'database_{name_example}_chunk1.hdf5'
-    name_db_merged = f'database_{name_example}_merged.hdf5'
+    name_db_chunk0 = os.path.join(OUTPUT_DIR, f'database_{name_example}_chunk0.hdf5')
+    name_db_chunk1 = os.path.join(OUTPUT_DIR, f'database_{name_example}_chunk1.hdf5')
+    name_db_merged = os.path.join(OUTPUT_DIR, f'database_{name_example}_merged.hdf5')
 
     for name_db in [name_db_chunk0, name_db_chunk1, name_db_merged]:
         if os.path.exists(name_db):
@@ -1207,8 +1228,8 @@ def pipeline45():
     print(f"Running: {name_example}")
 
     imgs = '../data/ET'
-    colmap_db = f'{name_example}_colmap.db'
-    name_db = f'database_{name_example}.hdf5'
+    colmap_db = os.path.join(OUTPUT_DIR, f'{name_example}_colmap.db')
+    name_db = os.path.join(OUTPUT_DIR, f'database_{name_example}.hdf5')
 
     for f in [colmap_db, name_db]:
         if os.path.exists(f):
@@ -1254,7 +1275,7 @@ def pipeline46():
     img_names = {f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))}
 
     pipeline = [salad_module()]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     if os.path.exists(name_db):
         os.remove(name_db)
 
@@ -1288,7 +1309,7 @@ def pipeline47():
     img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
 
     pipeline = [salad_module(), cosine_similarity_module()]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     if os.path.exists(name_db):
         os.remove(name_db)
 
@@ -1327,7 +1348,7 @@ def pipeline48():
     img_names = sorted(f for f in os.listdir(imgs_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png')))
 
     pipeline = [salad_module(), l2_similarity_module()]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     if os.path.exists(name_db):
         os.remove(name_db)
 
@@ -1364,8 +1385,8 @@ def pipeline49():
 
     imgs_dir = '../data/ET'
     threshold = 0.5
-    pairs_path = f"{name_example}_pairs.hdf5"
-    name_db = f"database_{name_example}.hdf5"
+    pairs_path = os.path.join(OUTPUT_DIR, f"{name_example}_pairs.hdf5")
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
 
     for f in [pairs_path, name_db]:
         if os.path.exists(f):
@@ -1408,9 +1429,9 @@ def pipeline50():
     print(f"Running: {name_example}")
 
     imgs_dir = '../data/ET'
-    name_db = f"database_{name_example}.hdf5"
-    pairs_path_high = f"{name_example}_pairs_high.hdf5"
-    pairs_path_low = f"{name_example}_pairs_low.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
+    pairs_path_high = os.path.join(OUTPUT_DIR, f"{name_example}_pairs_high.hdf5")
+    pairs_path_low = os.path.join(OUTPUT_DIR, f"{name_example}_pairs_low.hdf5")
 
     for f in [name_db, pairs_path_high, pairs_path_low]:
         if os.path.exists(f):
@@ -1463,7 +1484,7 @@ def pipeline51():
         magsac_module(),
         seg_mt,
     ]
-    name_db = f"database_{name_example}.hdf5"
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     if os.path.exists(name_db):
         os.remove(name_db)
 
@@ -1503,7 +1524,7 @@ def pipeline51():
     print("pipeline51: ALL ASSERTIONS PASSED")
 
 
-def pipeline55(output_folder='.'):
+def pipeline52(output_folder=OUTPUT_DIR):
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
@@ -1550,7 +1571,7 @@ def pipeline55(output_folder='.'):
           f"over {transitive._graph.number_of_nodes()} images")
 
 
-def pipeline56(output_folder='.'):
+def pipeline53(output_folder=OUTPUT_DIR):
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
@@ -1585,7 +1606,7 @@ def pipeline56(output_folder='.'):
     print(f"{name_example}: {model.num_reg_images()} images registered, {model.num_points3D()} points")
 
 
-def pipeline57(output_folder='.'):
+def pipeline54(output_folder=OUTPUT_DIR):
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)

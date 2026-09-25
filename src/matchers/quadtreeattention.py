@@ -81,10 +81,10 @@ Attributes:
 
         if self.args['outdoor'] == True:
             self.weights = '../weights/quadtreeattention/outdoor.ckpt'
-            self.config_path = 'quadtreeattention/FeatureMatching/configs/loftr/outdoor/loftr_ds_quadtree.py'
+            self.config_path = '../external/quadtreeattention/FeatureMatching/configs/loftr/outdoor/loftr_ds_quadtree.py'
         else:
             self.weights = '../weights/quadtreeattention/indoor.ckpt'
-            self.config_path = 'quadtreeattention/FeatureMatching/configs/loftr/indoor/loftr_ds_quadtree.py'
+            self.config_path = '../external/quadtreeattention/FeatureMatching/configs/loftr/indoor/loftr_ds_quadtree.py'
 
         parser = argparse.ArgumentParser(description='QuadTreeAttention online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument('--weight', type=str, default=self.weights, help="Path to the checkpoint.")

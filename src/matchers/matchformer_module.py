@@ -79,14 +79,14 @@ class matchformer_module:
         download_matchformer()
         cfgs = os.listdir('../data/matchfomer_cfgs')
         for fname in cfgs:
-            dst = os.path.join('matchformer/config', fname)
+            dst = os.path.join('../external/matchformer/config', fname)
             src = os.path.join('../data/matchfomer_cfgs', fname)
             if not os.path.isfile(dst):
                 shutil.copy(src, dst)
 
         self.weights = os.path.join('../weights/matchformer/', self.args['model'] + '.ckpt')
-        self.config_path = os.path.join('matchformer/config', self.args['model'] + '.py')
-        self.base_cfg = 'matchformer/config/defaultmf.py'
+        self.config_path = os.path.join('../external/matchformer/config', self.args['model'] + '.py')
+        self.base_cfg = '../external/matchformer/config/defaultmf.py'
 
 
         parser = argparse.ArgumentParser(description='MatchFormer online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)

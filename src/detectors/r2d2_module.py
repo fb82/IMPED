@@ -150,7 +150,7 @@ class r2d2_module:
             'max_scale': 1,
             'reliability-thr': 0.7,
             'repeatability-thr': 0.7,
-            'model': 'r2d2/models/r2d2_WAF_N16.pt',
+            'model': '../external/r2d2/models/r2d2_WAF_N16.pt',
             }
         self.device =  torch.device(global_device)
         if 'device' in args:

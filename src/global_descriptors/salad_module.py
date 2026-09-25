@@ -116,7 +116,7 @@ class salad_module:
 
         self.id_string, self.args = set_args('salad', args, self.args)
 
-        salad_path = os.path.join(os.path.dirname(__file__), '..', 'salad')
+        salad_path = os.path.join(os.path.dirname(__file__), '..', '..', 'external', 'salad')
         self.salad_path = os.path.normpath(salad_path)
 
 

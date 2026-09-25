@@ -1,48 +1,48 @@
 [submodule "src/pickled_hdf5"]
-	path = src/pickled_hdf5
+	path = external/pickled_hdf5
 	url = https://github.com/fb82/pickled-HDF5.git
 [submodule "src/hz"]
-	path = src/hz
+	path = external/hz
 	url = https://github.com/fb82/HarrisZ.git
 [submodule "src/quadtreeattention"]
-	path = src/quadtreeattention
+	path = external/quadtreeattention
 	url = https://github.com/Tangshitao/QuadTreeAttention.git
 [submodule "src/matchformer"]
-	path = src/matchformer
+	path = external/matchformer
 	url = https://github.com/jamycheung/MatchFormer.git
 [submodule "src/gms"]
-	path = src/gms
+	path = external/gms
 	url = https://github.com/JiawangBian/GMS-Feature-Matcher.git
 [submodule "src/aspanformer"]
-	path = src/aspanformer
+	path = external/aspanformer
 	url = https://github.com/apple/ml-aspanformer.git
 [submodule "src/r2d2"]
-	path = src/r2d2
+	path = external/r2d2
 	url = https://github.com/naver/r2d2.git
 [submodule "src/lpm"]
-	path = src/lpm
+	path = external/lpm
 	url = https://github.com/jiayi-ma/LPM_Python.git
 [submodule "src/adalam"]
-	path = src/adalam
+	path = external/adalam
 	url = https://github.com/cavalli1234/AdaLAM.git
 [submodule "src/fcgnn"]
-	path = src/fcgnn
+	path = external/fcgnn
 	url = https://github.com/xuy123456/fcgnn.git
 [submodule "src/miho"]
-	path = src/miho
+	path = external/miho
 	url = https://github.com/fb82/MiHo
 [submodule "src/mast3r"]
-	path = src/mast3r
+	path = external/mast3r
 	url = https://github.com/naver/mast3r.git
 [submodule "src/dtm"]
-	path = src/dtm
+	path = external/dtm
 	url = https://github.com/fb82/DTM.git
 [submodule "src/romav2"]
-	path = src/romav2
+	path = external/romav2
 	url = https://github.com/Parskatt/RoMaV2.git
 [submodule "src/loma"]
-	path = src/loma
+	path = external/loma
 	url = https://github.com/davnords/LoMa.git
 [submodule "src/salad"]
-	path = src/salad
+	path = external/salad
 	url = https://github.com/serizba/salad.git

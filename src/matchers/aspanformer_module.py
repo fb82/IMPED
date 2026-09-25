@@ -83,10 +83,10 @@ class aspanformer_module:
 
         if self.args['outdoor']:
             self.weights = os.path.join('../weights/aspanformer/outdoor.ckpt')
-            self.config_path = os.path.join('aspanformer/configs/aspan/outdoor/aspan_test.py')
+            self.config_path = os.path.join('../external/aspanformer/configs/aspan/outdoor/aspan_test.py')
         else:
             self.weights = os.path.join('../weights/aspanformer/indoor.ckpt')
-            self.config_path = os.path.join('aspanformer/configs/aspan/indoor/aspan_test.py')
+            self.config_path = os.path.join('../external/aspanformer/configs/aspan/indoor/aspan_test.py')
             
 
         parser = argparse.ArgumentParser(description='AspanFormer online demo', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -109,7 +109,7 @@ class aspanformer_module:
         import importlib.util
         import types
 
-        aspanformer_dir = os.path.join(conf_path, '..', 'aspanformer')
+        aspanformer_dir = os.path.join(conf_path, '..', '..', 'external', 'aspanformer')
 
         def register_aspanformer_src():
             src_path = os.path.join(aspanformer_dir, 'src')
