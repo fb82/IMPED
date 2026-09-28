@@ -1635,7 +1635,7 @@ def pipeline54(output_folder=OUTPUT_DIR):
 
     transitive = transitive_module(pairs=current_pairs, sim_table=sim_table, threshold=0, max_iterations=3)
     hierarchical = hierarchical_reconstruct_module(
-        db=match_db, images=imgs_dir, output=model_dir, worklist=transitive,
+        db=match_db, images=imgs_dir, output=model_dir, worklist=current_pairs,
         overlap_threshold=1.1, align_max_error=1.0, align_min_inlier_ratio=0.5,
     )
 
@@ -1645,7 +1645,7 @@ def pipeline54(output_folder=OUTPUT_DIR):
         smnn_module(),
         magsac_module(),
         transitive,
-        to_colmap_module(db=match_db, worklist=transitive, no_unmatched=False, only_matched=True),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
         hierarchical,
     ]
 
@@ -1763,8 +1763,8 @@ def pipeline_ssma_transitive(
         smnn_module(),
         magsac_module(),
         transitive,
-        to_colmap_module(db=match_db, worklist=transitive, no_unmatched=False),
-        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'ssma_model'), worklist=transitive),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False),
+        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'ssma_model'), worklist=current_pairs),
         live,
     ]
 
@@ -1853,8 +1853,8 @@ def pipeline_ssma_transitive_salad(
         smnn_module(),
         magsac_module(),
         transitive,
-        to_colmap_module(db=match_db, worklist=transitive, no_unmatched=False),
-        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'ssma_model'), worklist=transitive),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False),
+        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'ssma_model'), worklist=current_pairs),
         live,
     ]
 
@@ -1933,8 +1933,8 @@ def full_pipeline_ssma(
         magsac_module(),
         transitive,
         segformer_module(stage='matches'),
-        to_colmap_module(db=match_db, worklist=transitive, no_unmatched=False, only_matched=True),
-        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'full_ssma_model'), worklist=transitive),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+        reconstruct_module(db=match_db, images=images_folder, output=str(output_path / 'full_ssma_model'), worklist=current_pairs),
     ]
 
     while current_pairs:

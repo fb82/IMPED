@@ -85,7 +85,7 @@ class reconstruct_module:
         self._future = self._executor.submit(self._reconstruct, self._snapshot())
 
         worklist = self.args.get('worklist')
-        if worklist is None or not worklist.args.get('continue', False):
+        if not worklist:
             self._future.result()
             self._future = None
             self._executor.shutdown(wait=True)

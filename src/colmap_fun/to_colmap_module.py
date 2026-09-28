@@ -133,7 +133,7 @@ class to_colmap_module:
         self.db.commit()
 
         worklist = self.args.get('worklist')
-        if worklist is not None and worklist.args.get('continue', False):
+        if worklist:
             return
 
         self.db.close()

@@ -31,10 +31,12 @@ class transitive_module:
 
     finalize() also sets `self.args['continue']` to whether `pp` is still
     non-empty after this round. Other modules placed after `transitive` in
-    the pipeline (e.g. to_colmap_module, live_pair_graph) can be given a
-    `worklist=transitive` reference and check `worklist.args['continue']` in
-    their own finalize() to skip their real teardown (closing a db, stopping
-    a live view) until the closure is actually done.
+    the pipeline can defer their real teardown (closing a db, stopping a
+    background thread) until the closure is actually done: to_colmap_module
+    and reconstruct_module take a `worklist=seed_pairs` reference (the same
+    list) and check its truthiness; live_pair_graph needs more than that
+    (queued pairs, threshold, round numbers) so it takes `worklist=transitive`
+    instead and reads `worklist.args['continue']` directly.
 
     Each run() records the pair just matched and, when its match count
     clears `threshold`, adds it to the confirmed graph.
