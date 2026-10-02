@@ -21,6 +21,8 @@ extra_paths = [
     external_root / "miho" / "src",
     external_root / "romav2" / "src",
     external_root / "loma" / "src",
+    external_root / "vggt-omega",
+    external_root / "map-anything",
     external_root / "gsm"
 ]
 

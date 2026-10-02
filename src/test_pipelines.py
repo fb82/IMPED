@@ -57,6 +57,8 @@ from matchers import (
     loftr_module,
     mast3r_module,
     loma_module,
+    vggt_omega_module,
+    mapanything_module,
     roma_module,
     romav2_module,
     smnn_module,
@@ -1661,6 +1663,44 @@ def pipeline54(output_folder=OUTPUT_DIR):
     print(f"{name_example}: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
 
 
+def pipeline55():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+    colmap_db = os.path.join(OUTPUT_DIR, f"colmap_{name_example}.db")
+    if os.path.exists(colmap_db):
+        os.remove(colmap_db)
+    pipeline = [
+        vggt_omega_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db=colmap_db),
+    ]
+    imgs = '../data/ET'
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
+    run_pairs(pipeline, imgs, db_name=name_db)
+
+
+def pipeline56():
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+    colmap_db = os.path.join(OUTPUT_DIR, f"colmap_{name_example}.db")
+    if os.path.exists(colmap_db):
+        os.remove(colmap_db)
+    pipeline = [
+        mapanything_module(),
+        magsac_module(),
+        show_matches_module(img_prefix='matches_', mask_idx=[1, 0], prepend_pair=False),
+        to_colmap_module(db=colmap_db),
+    ]
+    imgs = '../data/ET'
+    name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
+    run_pairs(pipeline, imgs, db_name=name_db)
+
+
 def pipeline_ssma_transitive(
     images_folder='/home/colombo/Shared/test_kornia',
     output_folder='.',
@@ -1941,6 +1981,90 @@ def full_pipeline_ssma(
         run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'full_ssma_transitive.hdf5'))
 
     print(f"full_pipeline_ssma: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
+
+
+def full_pipeline_ssma_hierarchical(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/full_ssma_hierarchical',
+    n_mst=2,
+    max_iterations=3,
+    min_matches=3,
+    sim_quantile=0.75,
+    sim_min=None,
+):
+    print("\n \n")
+    print("=" * 50)
+    print("Running: full_pipeline_ssma_hierarchical")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    transitive_pairs_path = str(output_path / 'full_ssma_hierarchical_transitive_pairs.hdf5')
+    match_db = str(output_path / 'full_ssma_hierarchical_transitive.db')
+
+    imgs = sorted(resolve_image_folder(images_folder))
+
+    current_pairs = []
+    sim_table = {}
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(mode='table', table=sim_table),
+        kfc_module(pairs=current_pairs, table=sim_table, out_path=None, n_mst=n_mst),
+    ]
+    run_pairs(global_pipeline, list(zip(imgs, imgs[1:])), db_name=str(output_path / 'full_ssma_hierarchical_global_sim.hdf5'))
+
+    print(f"full_pipeline_ssma_hierarchical: {len(current_pairs)} seed pairs selected")
+
+    if not current_pairs:
+        print("full_pipeline_ssma_hierarchical: no seed pairs, nothing to match")
+        return
+
+    transitive = transitive_module(
+        pairs=current_pairs,
+        sim_table=sim_table,
+        threshold=min_matches,
+        sim_quantile=sim_quantile,
+        sim_min=sim_min,
+        max_iterations=max_iterations,
+        out_path=transitive_pairs_path,
+    )
+
+    hierarchical = hierarchical_reconstruct_module(
+        db=match_db,
+        images=images_folder,
+        output=str(output_path / 'full_ssma_hierarchical_model'),
+        worklist=current_pairs,
+    )
+
+    match_pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                smnn_module(),
+            ],
+        ]),
+        segformer_module(stage='matches'),
+        magsac_module(),
+        transitive,
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+        hierarchical,
+    ]
+
+    while current_pairs:
+        run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'full_ssma_hierarchical_transitive.hdf5'))
+
+    print(f"full_pipeline_ssma_hierarchical: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
+    print(f"full_pipeline_ssma_hierarchical: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
 
 
 

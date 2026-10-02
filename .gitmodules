@@ -46,3 +46,9 @@
 [submodule "src/salad"]
 	path = external/salad
 	url = https://github.com/serizba/salad.git
+[submodule "external/vggt-omega"]
+	path = external/vggt-omega
+	url = https://github.com/facebookresearch/vggt-omega.git
+[submodule "external/map-anything"]
+	path = external/map-anything
+	url = https://github.com/facebookresearch/map-anything.git

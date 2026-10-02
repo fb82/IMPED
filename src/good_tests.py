@@ -100,6 +100,8 @@ if __name__ == '__main__':
         test_pipelines.pipeline52()
         test_pipelines.pipeline53()
         test_pipelines.pipeline54()
+        test_pipelines.pipeline55()
+        test_pipelines.pipeline56()
 
         print('doh!')
 

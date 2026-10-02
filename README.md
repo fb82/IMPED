@@ -258,7 +258,7 @@ See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/
 `patch_module` · `deep_descriptor_module` · `sift_module`
 
 ### Matchers
-`smnn_module` · `lightglue_module` · `loftr_module` · `roma_module` ·  `romav2_module` ·  `loma_module` · `mast3r_module` · `dust3r_module` · `matchformer_module` · `aspanformer_module`
+`smnn_module` · `lightglue_module` · `loftr_module` · `roma_module` ·  `romav2_module` ·  `loma_module` · `vggt_omega_module` · `mapanything_module` · `mast3r_module` · `dust3r_module` · `matchformer_module` · `aspanformer_module`
 
 ### Filters
 `magsac_module` · `poselib_module` · `adalam_module` · `gms_module` · `lpm_module` · `dtm_module` · `fcgnn_module` · `oanet_module` · `acne_module` · `mop_miho_ncc_module`
@@ -314,6 +314,8 @@ src/
 │   ├── roma_module.py
 │   ├── romav2_module.py
 │   ├── loma_module.py
+│   ├── vggt_omega_module.py
+│   ├── mapanything_module.py
 │   ├── mast3r_module.py
 │   ├── dust3r_module.py
 │   ├── matchformer_module.py

@@ -62,6 +62,7 @@ class magsac_module:
         pt2_ = args['kp'][1]
         mi = args['m_idx']
         mm = args['m_mask']
+        if mm.dim() > 1: mm = mm.all(dim=1)
         
         pt1 = pt1_[mi[mm][:, 0]]
         pt2 = pt2_[mi[mm][:, 1]]
