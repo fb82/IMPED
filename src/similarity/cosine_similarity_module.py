@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import device as global_device, set_args, check_data
 
 
@@ -19,11 +20,10 @@ class cosine_similarity_module:
         self.pass_through = False
         self.add_to_cache = True
 
-        table = args.pop('table', None)
-
         self.args = {
             'id_more': '',
             'mode': 'pair',
+            'sim_db': None,
         }
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
@@ -33,7 +33,6 @@ class cosine_similarity_module:
         if self.args['mode'] == 'table':
             self.add_to_cache = False
 
-        self._table = table if table is not None else {}
         self._descs = {}
 
         self.required_input = {'global_desc': 2}
@@ -45,7 +44,9 @@ class cosine_similarity_module:
 
     def finalize(self):
         if self.args['mode'] == 'table':
-            self._table.update(cosine_similarity_table(self._descs))
+            db = pickled_hdf5.pickled_hdf5(self.args['sim_db'])
+            db.add('/sim_table', cosine_similarity_table(self._descs))
+            db.close()
 
 
     def run(self, **args):

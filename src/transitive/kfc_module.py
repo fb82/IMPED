@@ -20,28 +20,28 @@ class kfc_module:
     run() records `pair_sim` for the current (img0, img1) in the table.
 
     finalize():
+      * merges in the table already saved under '/sim_table' in `sim_db`
+        (e.g. by cosine_similarity_module(mode='table')), if any, and saves
+        the result back there as a single entry;
       * builds a graph weighted by 'pair_sim';
       * extracts `n_mst` successive maximum spanning trees, removing every
         edge picked by the earlier trees before computing the next one
         (`n_mst` defaults to 2);
       * concatenates their edges into the selected-pairs list;
-      * saves both the full similarity table and the selected-pairs list to
-        the HDF5 store at `out_path`.
+      * saves the selected-pairs list to the HDF5 store at `out_path`.
 
-    Read the selection back with `kfc_module.load_pairs(out_path)` (and the
-    full table with `kfc_module.load_table(out_path)`) to drive a second
-    matching pipeline, e.g.
+    Read the selection back with `kfc_module.load_pairs(out_path)` to drive a
+    second matching pipeline, e.g.
     `run_pairs(real_pipeline, imgs, colmap_db_or_list=kfc_module.load_pairs(out_path), mode='include')`.
 
-    For a caller in the same process that already holds a list/dict before
-    run_pairs() starts, pass them in as `pairs` / `table`: run()/finalize()
-    fill those same objects in place (never reassign them), so the caller's
-    variables have the selection and the full table right after run_pairs()
-    returns, with no need to go through `out_path` at all.
+    For a caller in the same process that already holds a list before
+    run_pairs() starts, pass it in as `pairs`: finalize() fills that same
+    list in place (never reassigns it), so the caller's variable has the
+    selection right after run_pairs() returns.
 
-        pp, tt = [], {}
-        run_pairs([..., kfc_module(pairs=pp, table=tt, out_path=..., n_mst=2)], imgs, ...)
-        # pp now holds the selected (img0, img1) pairs, tt the full {(img0, img1): pair_sim} table
+        pp = []
+        run_pairs([..., kfc_module(pairs=pp, sim_db=..., n_mst=2)], imgs, db_name=...)
+        # pp now holds the selected (img0, img1) pairs
     """
     def __init__(self, **args):
         self.single_image = False
@@ -50,17 +50,17 @@ class kfc_module:
         self.add_to_cache = False
 
         pairs = args.pop('pairs', None)
-        table = args.pop('table', None)
 
         self.args = {
             'id_more': '',
             'out_path': 'kfc_pairs.hdf5',
+            'sim_db': None,
             'n_mst': 2,
         }
 
         self.id_string, self.args = set_args('kfc', args, self.args)
 
-        self._table = table if table is not None else {}
+        self._table = {}
         self.selected = pairs if pairs is not None else []
         self._n_seen = 0
 
@@ -77,21 +77,6 @@ class kfc_module:
                 pairs.append(tuple(val))
         aux_hdf5.close()
         return pairs
-
-    @staticmethod
-    def load_table(out_path, id_string='kfc'):
-        """Read back the full {(img0, img1): pair_sim} similarity table."""
-        aux_hdf5 = pickled_hdf5.pickled_hdf5(out_path, mode='r', label_prefix='pickled/' + id_string)
-        table = {}
-        for key in aux_hdf5.get_keys():
-            if not key.startswith('/table/'):
-                continue
-            val, is_found = aux_hdf5.get(key)
-            if is_found:
-                img0, img1, sim = val
-                table[(img0, img1)] = sim
-        aux_hdf5.close()
-        return table
 
     def get_id(self):
         return self.id_string
@@ -141,6 +126,15 @@ class kfc_module:
         return self.select_pairs(self._table, self.args['n_mst'])
 
     def finalize(self):
+        if self.args['sim_db'] is not None:
+            db = pickled_hdf5.pickled_hdf5(self.args['sim_db'])
+            table, found = db.get('/sim_table')
+            if found:
+                table.update(self._table)
+                self._table = table
+            db.add('/sim_table', self._table)
+            db.close()
+
         # mutate the list in place (never reassign it) so that if `pairs` was
         # passed in at construction, the caller's own list object also ends
         # up holding the selection - not just self.selected.
@@ -151,9 +145,6 @@ class kfc_module:
                 os.remove(self.args['out_path'])
 
             aux_hdf5 = pickled_hdf5.pickled_hdf5(self.args['out_path'], mode='a', label_prefix='pickled/' + self.id_string)
-            for (img0, img1), sim in self._table.items():
-                data_key = '/table/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
-                aux_hdf5.add(data_key, (img0, img1, sim))
             for img0, img1 in self.selected:
                 data_key = '/pairs/' + os.path.split(img0)[-1] + '/' + os.path.split(img1)[-1]
                 aux_hdf5.add(data_key, (img0, img1))

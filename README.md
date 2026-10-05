@@ -182,21 +182,21 @@ Pass 1 — global similarity, computed exhaustively but cheaply (one descriptor 
 
 ```python
 current_pairs = []
-sim_table = {}
+global_db = 'database_global.hdf5'
 global_pipeline = [
     salad_module(),
     cosine_similarity_module(),
-    kfc_module(pairs=current_pairs, table=sim_table, out_path='kfc_pairs.hdf5', n_mst=2),
+    kfc_module(pairs=current_pairs, sim_db=global_db, out_path='kfc_pairs.hdf5', n_mst=2),
 ]
-run_pairs(global_pipeline, '../data/ET', db_name='database_global.hdf5')
+run_pairs(global_pipeline, '../data/ET', db_name=global_db)
 ```
 
-`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs`/`sim_table` are filled in place, so they're ready as soon as `run_pairs()` returns — no file read needed.
+`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs` is filled in place, so it's ready as soon as `run_pairs()` returns. The full similarity table is saved as a single `/sim_table` entry in `sim_db`, where `transitive_module` reads it back.
 
 Pass 2 — the real matching pipeline, driven round by round:
 
 ```python
-transitive = transitive_module(pairs=current_pairs, sim_table=sim_table, threshold=0, max_iterations=10)
+transitive = transitive_module(pairs=current_pairs, sim_db=global_db, threshold=0, max_iterations=10)
 match_pipeline = [
     dog_module(), sift_module(), smnn_module(), magsac_module(),
     transitive,
@@ -221,7 +221,7 @@ Two pair-level modules turn a pair of global descriptors into a single `pair_sim
 
 `n_matches_similarity_module` produces the same `pair_sim` output from a different source — the number of RANSAC inliers surviving a real (if downscaled) SIFT + MAGSAC pass — so it can be dropped into the same `kfc_module` pipeline as a similarity source when a real geometric check is affordable for the whole dataset, instead of a learned global descriptor. `pipeline_ssma_transitive` uses this variant; `pipeline_ssma_transitive_salad` and `full_pipeline_ssma` use SALAD's cosine similarity instead.
 
-**Computing the full similarity matrix instead of one pair at a time**: for very large datasets, scoring every pair one by one (N(N-1)/2 calls through `run_pairs`) is the bottleneck even though the global descriptor itself is computed only once per image — see `full_pipeline_ssma` for a worked example. `cosine_similarity_module(mode='table', table=sim_table)` sidesteps this: pass it just enough pairs to touch every image once (e.g. a chain `(img0,img1), (img1,img2), …`, N-1 pairs instead of N(N-1)/2), and instead of scoring pairs one at a time, it collects every image's descriptor as it's seen and computes the entire similarity matrix in one shot in `finalize()` (`descs @ descs.T`), filling `sim_table` — the same dict `kfc_module` reads — with every pair's score at once.
+**Computing the full similarity matrix instead of one pair at a time**: for very large datasets, scoring every pair one by one (N(N-1)/2 calls through `run_pairs`) is the bottleneck even though the global descriptor itself is computed only once per image — see `full_pipeline_ssma` for a worked example. `cosine_similarity_module(mode='table', sim_db=global_db)` sidesteps this: pass it just enough pairs to touch every image once (e.g. a chain `(img0,img1), (img1,img2), …`, N-1 pairs instead of N(N-1)/2), and instead of scoring pairs one at a time, it collects every image's descriptor as it's seen and computes the entire similarity matrix in one shot in `finalize()` (`descs @ descs.T`), saving every pair's score at once as the `/sim_table` entry of `sim_db`, which `kfc_module` and `transitive_module` then read.
 
 ### Incremental 3D reconstruction with `reconstruct_module`
 

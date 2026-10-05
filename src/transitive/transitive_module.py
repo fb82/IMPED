@@ -49,7 +49,7 @@ class transitive_module:
       appropriate value for whatever 'pair_sim' the pipeline produces.
 
     * `sim_min` / `sim_quantile` - on the *global similarity* of pass 1
-      (`sim_table`, the table kfc_module cached). A transitive candidate a-c
+      (the '/sim_table' entry kfc_module saved in `sim_db`). A transitive candidate a-c
       is only queued if its pass-1 similarity is high enough, so weak pairs
       are never matched at all. `sim_quantile` (0..1) is scale-independent -
       it cuts at that quantile of the table's values - so the same setting
@@ -65,7 +65,6 @@ class transitive_module:
         self.add_to_cache = False
 
         pairs = args.pop('pairs', None)
-        sim_table = args.pop('sim_table', None)
 
         self.args = {
             'id_more': '',
@@ -74,6 +73,7 @@ class transitive_module:
             'sim_quantile': 0.0,
             'max_iterations': 10,
             'out_path': 'transitive_pairs.hdf5',
+            'sim_db': None,
         }
 
         self.id_string, self.args = set_args('transitive', args, self.args)
@@ -84,7 +84,10 @@ class transitive_module:
 
         # pass-1 similarity, keyed by the unordered pair of basenames
         self._sim = {}
-        if sim_table:
+        if self.args['sim_db'] is not None:
+            db = pickled_hdf5.pickled_hdf5(self.args['sim_db'], mode='r')
+            sim_table, _ = db.get('/sim_table')
+            db.close()
             for (a, b), v in sim_table.items():
                 self._sim[frozenset((os.path.basename(a), os.path.basename(b)))] = v
 
