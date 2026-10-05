@@ -43,7 +43,11 @@ torch.backends.cudnn.enabled = False
 if __name__ == '__main__':
 
     with torch.inference_mode():
-        test_pipelines.pipeline_ssma_transitive()
+        test_pipelines.full_pipeline_ssma_hierarchical_dino(
+            images_folder='/home/colombo/Shared/imgs',
+            output_folder='/media/dati/full_ssma_hierarchical_dino',
+            global_db='/media/dati/full_ssma/full_ssma_global_sim.hdf5',
+        )
 
     print('done!')
 

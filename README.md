@@ -15,6 +15,7 @@ Key features:
 - **COLMAP integration** — export/import features and matches, use COLMAP databases for pair selection, and merge reconstructions.
 - **Benchmarking tools** — built-in support for MegaDepth-1500, ScanNet-1500, IMC PhotoTourism, and planar datasets with standard pose and homography metrics.
 - **Incremental processing** — HDF5-backed caching avoids redundant computation across runs.
+- **In-memory database cache** — reads and writes to the HDF5 database go through an in-memory cache and are flushed to disk in batches, so pipelines don't hit the disk on every entry.
 - **Device-aware execution** — per-module CPU/GPU assignment with automatic tensor routing.
 - **Automatic pair selection** — a transitive pipeline (`transitive.kfc_module` + `transitive.transitive_module`, driven by a plain `while` loop around `run_pairs()`) avoids exhaustive pairwise matching on large datasets by scoring pairs with a cheap global descriptor and growing the match graph transitively.
 - **Live graph visualization** — watch pairs get confirmed round by round on an interactive graph view.
@@ -240,6 +241,8 @@ match_pipeline = [
 `no_unmatched=False` is required on `to_colmap_module` in this setup: COLMAP refuses to continue from a previous model if an image's keypoint count in the database changed, and the default `no_unmatched=True` grows each image's keypoint set every time a new pair is matched. Storing every keypoint keeps the count fixed from the first round.
 
 Without a `worklist`, it runs synchronously at the end of a single, non-transitive `run_pairs()` call — the same module works for both kinds of pipeline.
+
+
 
 ### Distributed / multi-machine processing
 

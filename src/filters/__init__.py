@@ -8,3 +8,4 @@ from .magsac_module import magsac_module
 from .mop_miho_ncc_module import mop_miho_ncc_module
 from .oanet_module import oanet_module
 from .poselib_module import poselib_module
+from .dino_filter_module import dino_filter_module

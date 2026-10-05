@@ -86,7 +86,7 @@ from ensemble import (
     sampling_module,
 )
 from reconstruct import hierarchical_reconstruct_module, reconstruct_module
-from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module
+from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module, dino_filter_module
 from segmentators import segformer_module
 from visualization import (
     live_pair_graph,
@@ -2065,6 +2065,100 @@ def full_pipeline_ssma_hierarchical(
 
     print(f"full_pipeline_ssma_hierarchical: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
     print(f"full_pipeline_ssma_hierarchical: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
+
+
+def full_pipeline_ssma_hierarchical_dino(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/full_ssma_hierarchical_dino',
+    n_mst=2,
+    max_iterations=3,
+    min_matches=3,
+    sim_quantile=0.75,
+    sim_min=None,
+    global_db=None,
+):
+    # global_db: path to an existing global-similarity hdf5 (e.g. the
+    # full_ssma_global_sim.hdf5 written by full_pipeline_ssma) to reuse its
+    # cached SALAD descriptors; defaults to a fresh file in output_folder.
+    print("\n \n")
+    print("=" * 50)
+    print("Running: full_pipeline_ssma_hierarchical_dino")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    transitive_pairs_path = str(output_path / 'full_ssma_hierarchical_dino_transitive_pairs.hdf5')
+    match_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.db')
+
+    imgs = sorted(resolve_image_folder(images_folder))
+
+    current_pairs = []
+    sim_table = {}
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(mode='table', table=sim_table),
+        kfc_module(pairs=current_pairs, table=sim_table, out_path=None, n_mst=n_mst),
+    ]
+    if global_db is None:
+        global_db = str(output_path / 'full_ssma_hierarchical_dino_global_sim.hdf5')
+    run_pairs(global_pipeline, list(zip(imgs, imgs[1:])), db_name=global_db)
+
+    print(f"full_pipeline_ssma_hierarchical_dino: {len(current_pairs)} seed pairs selected")
+
+    if not current_pairs:
+        print("full_pipeline_ssma_hierarchical_dino: no seed pairs, nothing to match")
+        return
+
+    transitive = transitive_module(
+        pairs=current_pairs,
+        sim_table=sim_table,
+        threshold=min_matches,
+        sim_quantile=sim_quantile,
+        sim_min=sim_min,
+        max_iterations=max_iterations,
+        out_path=transitive_pairs_path,
+    )
+
+    hierarchical = hierarchical_reconstruct_module(
+        db=match_db,
+        images=images_folder,
+        output=str(output_path / 'full_ssma_hierarchical_dino_model'),
+        worklist=current_pairs,
+    )
+
+    match_pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                smnn_module(),
+            ],
+            [
+                loma_module(),
+            ],
+        ]),
+        segformer_module(stage='matches'),
+        dino_filter_module(),
+        magsac_module(),
+        transitive,
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+        hierarchical,
+    ]
+
+    while current_pairs:
+        run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'full_ssma_hierarchical_dino_transitive.hdf5'))
+
+    print(f"full_pipeline_ssma_hierarchical_dino: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
+    print(f"full_pipeline_ssma_hierarchical_dino: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
 
 
 
