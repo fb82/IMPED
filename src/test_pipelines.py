@@ -1700,6 +1700,97 @@ def pipeline56():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
+def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    imgs_dir = output_path / 'imgs'
+    imgs_dir.mkdir(parents=True)
+
+    sources = {}
+    for d in ['kermits/another_kermit', 'ETs/dioscuri', 'ETs/another_ET']:
+        src_dir = Path('../data/imc2025/kaggle_raw_data') / d / 'images'
+        for img in os.listdir(src_dir):
+            os.symlink((src_dir / img).resolve(), imgs_dir / img)
+            sources[img] = d
+
+    imgs = sorted(resolve_image_folder(str(imgs_dir)))
+    global_db = str(output_path / 'global_sim.hdf5')
+
+    datasets = []
+    global_pipeline = [
+        salad_module(),
+        cosine_similarity_module(mode='table', sim_db=global_db),
+        kfc_module(datasets=datasets, sim_db=global_db, out_path=None, n_mst=2, multi_dataset=True, cut_ratio=1.0, n_datasets=n_datasets),
+    ]
+    run_pairs(global_pipeline, list(zip(imgs, imgs[1:])), db_name=global_db)
+
+    for i, current_pairs in enumerate(datasets):
+        match_db = str(output_path / f'dataset_{i}.db')
+
+        transitive = transitive_module(
+            pairs=current_pairs,
+            sim_db=global_db,
+            threshold=3,
+            sim_quantile=0.75,
+            max_iterations=3,
+            out_path=str(output_path / f'dataset_{i}_transitive_pairs.hdf5'),
+        )
+
+        hierarchical = hierarchical_reconstruct_module(
+            db=match_db,
+            images=str(imgs_dir),
+            output=str(output_path / f'dataset_{i}_model'),
+            worklist=current_pairs,
+        )
+
+        match_pipeline = [
+            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+                [
+                    deep_joined_module(what='aliked'),
+                    lightglue_module(what='aliked'),
+                ],
+                [
+                    deep_joined_module(what='superpoint'),
+                    lightglue_module(what='superpoint'),
+                ],
+                [
+                    dog_module(),
+                    patch_module(),
+                    deep_descriptor_module(),
+                    smnn_module(),
+                ],
+            ]),
+            magsac_module(),
+            transitive,
+            to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+            hierarchical,
+        ]
+
+        while current_pairs:
+            run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'match.hdf5'))
+
+    model_dirs = sorted(output_path.glob('dataset_*_model'))
+    assert len(model_dirs) == 3, f"{len(model_dirs)} datasets found instead of 3"
+
+    found = []
+    for model_dir in model_dirs:
+        names = set()
+        for d in os.listdir(model_dir):
+            model = pycolmap.Reconstruction(str(model_dir / d))
+            names |= {im.name for im in model.images.values() if im.has_pose}
+        dataset_sources = {sources[n] for n in names}
+        assert len(dataset_sources) == 1, f"{model_dir.name} mixes {dataset_sources}"
+        found.append(dataset_sources.pop())
+        print(f"{name_example}: {model_dir.name} -> {found[-1]}, {len(names)} images registered")
+
+    assert len(set(found)) == 3, f"datasets not separated: {found}"
+
+
 def pipeline_ssma_transitive(
     images_folder='/home/colombo/Shared/test_kornia',
     output_folder='.',
@@ -2157,6 +2248,4 @@ def full_pipeline_ssma_hierarchical_dino(
 
     print(f"full_pipeline_ssma_hierarchical_dino: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
     print(f"full_pipeline_ssma_hierarchical_dino: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
-
-
 

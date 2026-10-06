@@ -1,6 +1,7 @@
 import os
 
 import networkx as nx
+import numpy as np
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
 from core import set_args
@@ -42,6 +43,12 @@ class kfc_module:
         pp = []
         run_pairs([..., kfc_module(pairs=pp, sim_db=..., n_mst=2)], imgs, db_name=...)
         # pp now holds the selected (img0, img1) pairs
+
+    With `multi_dataset=True`, finalize() first splits the images into
+    separate datasets by cutting the first maximum spanning tree (see
+    `split_datasets`), then runs the KFC selection on each one. `datasets`
+    (a list passed by reference) is filled with one seed-pair list per
+    dataset; `pairs` gets all of them concatenated.
     """
     def __init__(self, **args):
         self.single_image = False
@@ -50,18 +57,25 @@ class kfc_module:
         self.add_to_cache = False
 
         pairs = args.pop('pairs', None)
+        datasets = args.pop('datasets', None)
 
         self.args = {
             'id_more': '',
             'out_path': 'kfc_pairs.hdf5',
             'sim_db': None,
             'n_mst': 2,
+            'multi_dataset': False,
+            'cut_ratio': 0.5,
+            'sep_ratio': 0.8,
+            'min_dataset_size': 3,
+            'n_datasets': None,
         }
 
         self.id_string, self.args = set_args('kfc', args, self.args)
 
         self._table = {}
         self.selected = pairs if pairs is not None else []
+        self.datasets = datasets if datasets is not None else []
         self._n_seen = 0
 
     @staticmethod
@@ -122,8 +136,76 @@ class kfc_module:
 
         return selected
 
+    @staticmethod
+    def split_datasets(table, cut_ratio=0.5, sep_ratio=0.8, min_size=3, n_datasets=None):
+        """
+        Splits the images of `table` into separate datasets by cutting edges
+        of its maximum spanning tree. An edge is a candidate cut when its
+        similarity is below `cut_ratio` times the mean similarity of the tree
+        edges touching its two endpoints. Candidates are tried from the
+        weakest; a cut is kept only if both sides have at least `min_size`
+        images and the mean similarity between the two sides is below
+        `sep_ratio` times the lower of the two within-side means. With
+        `n_datasets` set, `cut_ratio`/`sep_ratio` are ignored: edges are cut
+        by increasing similarity relative to their neighbours (still keeping
+        `min_size`) until there are `n_datasets` sets. Returns the list of
+        image sets.
+        """
+        graph = nx.Graph()
+        for (a, b), sim in go_iter(list(table.items()), msg='kfc: building graph'):
+            graph.add_edge(a, b, weight=sim)
+        tree = nx.maximum_spanning_tree(graph, weight='weight')
+
+        scored = []
+        for u, v, sim in tree.edges(data='weight'):
+            near = [tree[x][y]['weight'] for x in (u, v) for y in tree[x] if {x, y} != {u, v}]
+            if near:
+                scored.append((sim / np.mean(near), sim, u, v))
+
+        if n_datasets is None:
+            candidates = sorted((sim, u, v) for ratio, sim, u, v in scored if ratio < cut_ratio)
+
+            idx = {img: i for i, img in enumerate(graph.nodes)}
+            sim_m = np.full((len(idx), len(idx)), np.nan, dtype=np.float32)
+            for (a, b), sim in table.items():
+                sim_m[idx[a], idx[b]] = sim
+                sim_m[idx[b], idx[a]] = sim
+
+            def mean_sim(g0, g1):
+                return np.nanmean(sim_m[np.ix_([idx[x] for x in g0], [idx[x] for x in g1])])
+        else:
+            candidates = [(sim, u, v) for ratio, sim, u, v in sorted(scored)]
+
+        n_groups = nx.number_connected_components(tree)
+        for sim, u, v in candidates:
+            if n_datasets is not None and n_groups >= n_datasets:
+                break
+            tree.remove_edge(u, v)
+            g0 = nx.node_connected_component(tree, u)
+            g1 = nx.node_connected_component(tree, v)
+            if len(g0) >= min_size and len(g1) >= min_size and (n_datasets is not None or
+                    mean_sim(g0, g1) < sep_ratio * min(mean_sim(g0, g0), mean_sim(g1, g1))):
+                print(f"kfc_module: cut at similarity {sim:.4g} -> {len(g0)} / {len(g1)} images")
+                n_groups += 1
+            else:
+                tree.add_edge(u, v, weight=sim)
+
+        return [set(g) for g in nx.connected_components(tree)]
+
     def _select(self):
-        return self.select_pairs(self._table, self.args['n_mst'])
+        if not self.args['multi_dataset']:
+            return self.select_pairs(self._table, self.args['n_mst'])
+
+        groups = self.split_datasets(self._table, self.args['cut_ratio'], self.args['sep_ratio'], self.args['min_dataset_size'], self.args['n_datasets'])
+        group_of = {img: i for i, g in enumerate(groups) for img in g}
+        tables = [{} for _ in groups]
+        for (a, b), sim in self._table.items():
+            if group_of[a] == group_of[b]:
+                tables[group_of[a]][(a, b)] = sim
+
+        self.datasets[:] = [self.select_pairs(t, self.args['n_mst']) for t in tables]
+        print(f"kfc_module: {len(groups)} dataset(s) found, sizes {[len(g) for g in groups]}")
+        return [p for d in self.datasets for p in d]
 
     def finalize(self):
         if self.args['sim_db'] is not None:
