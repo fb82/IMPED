@@ -1791,6 +1791,54 @@ def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
     assert len(set(found)) == 3, f"datasets not separated: {found}"
 
 
+def pipeline58(output_folder=OUTPUT_DIR):
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    imgs = '../data/ET_random_rotated'
+    colmap_db = str(output_path / 'colmap.db')
+    fast_model = str(output_path / 'fast_model')
+    full_model = str(output_path / 'full_model')
+
+    fast_pipeline = [
+        deep_joined_module(what='superpoint', num_features=512, resize=512),
+        lightglue_module(what='superpoint'),
+        magsac_module(),
+        to_colmap_module(db=colmap_db),
+        reconstruct_module(db=colmap_db, images=imgs, output=fast_model),
+    ]
+    run_pairs(fast_pipeline, imgs, db_name=str(output_path / 'fast.hdf5'))
+
+    registered = set()
+    if os.path.isdir(fast_model):
+        registered = {im.name for im in pycolmap.Reconstruction(fast_model).images.values() if im.has_pose}
+    missing = [img for img in sorted(os.listdir(imgs)) if img not in registered]
+    print(f"{name_example}: {len(registered)} images registered, {len(missing)} missing")
+
+    if not missing:
+        return
+
+    robust_pipeline = [
+        image_muxer_module(pair_generator=pair_rot4, pipe_gather=pipe_max_matches, pipeline=[
+            romav2_module(),
+            magsac_module(),
+        ]),
+        to_colmap_module(db=colmap_db),
+        reconstruct_module(db=colmap_db, images=imgs, output=full_model),
+    ]
+    run_pairs(robust_pipeline, imgs, db_name=str(output_path / 'robust.hdf5'), colmap_db_or_list=missing, mode='include')
+
+    full = pycolmap.Reconstruction(full_model)
+    print(f"{name_example}: {full.num_reg_images()} images registered after the robust pass")
+    assert full.num_reg_images() >= len(registered)
+
+
 def pipeline_ssma_transitive(
     images_folder='/home/colombo/Shared/test_kornia',
     output_folder='.',
