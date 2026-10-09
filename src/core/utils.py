@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 
-from imc import _EPS
+_EPS = np.finfo(float).eps * 4.0
 
 
 DONTCARE   = -1  # list length not checked (single-image modules)

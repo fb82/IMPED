@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="450" viewBox="0 0 1000 450"><rect x="0.5" y="0.5" width="999" height="449" rx="16" fill="#FFFFFF" stroke="#E5E7EB"/>
+<text x="40" y="50" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" font-weight="800" fill="#111827" text-anchor="start">IMPED</text>
+<text x="134" y="50" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="500" fill="#4B5563" text-anchor="start">Image Matching PipelinED</text>
+<text x="40" y="78" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4B5563" text-anchor="start">Compose, compare and scale image matching pipelines, from keypoints to 3D models.</text>
+<rect x="76" y="150" width="92" height="70" rx="8" fill="#F9FAFB" stroke="#9CA3AF" stroke-width="1.5"/>
+<rect x="64" y="162" width="92" height="70" rx="8" fill="#F9FAFB" stroke="#9CA3AF" stroke-width="1.5"/>
+<rect x="52" y="174" width="92" height="70" rx="8" fill="#F9FAFB" stroke="#9CA3AF" stroke-width="1.5"/>
+<polyline points="62,232 88,204 104,220 116,210 134,232" fill="#E5E7EB" stroke="#9CA3AF" stroke-width="1.5" stroke-linejoin="round"/>
+<circle cx="120" cy="192" r="7" fill="#FCD34D"/>
+<text x="110" y="278" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#111827" text-anchor="middle">Images</text>
+<text x="110" y="296" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#4B5563" text-anchor="middle">folder, list or pairs</text>
+<path d="M 166.0 225.0 L 182.0 225.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="190.0,225.0 182.0,229.5 182.0,220.5" fill="#6B7280"/>
+<rect x="192" y="100" width="580" height="250" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+<text x="208" y="124" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="600" fill="#4B5563" text-anchor="start">pipeline = [ modules ]</text>
+<rect x="206" y="136" width="124" height="26" rx="7" fill="#2563EB" stroke="#2563EB" stroke-width="1.5"/>
+<text x="268.0" y="154" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.1em">DETECT</text>
+<polygon points="331,143 337,149 331,155" fill="#2563EB"/>
+<rect x="206" y="172" width="35.8" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="223.9" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DoG</text>
+<rect x="246.8" y="172" width="62.199999999999996" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="277.90000000000003" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">HarrisZ</text>
+<rect x="206" y="197" width="62.199999999999996" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="237.1" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">Key.Net</text>
+<rect x="273.2" y="197" width="42.4" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="294.4" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">R2D2</text>
+<rect x="206" y="222" width="82.0" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="247.0" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SuperPoint</text>
+<rect x="206" y="247" width="55.599999999999994" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="233.8" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">ALIKED</text>
+<rect x="266.6" y="247" width="42.4" height="20" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+<text x="287.8" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DISK</text>
+<rect x="338" y="136" width="124" height="26" rx="7" fill="#4F46E5" stroke="#4F46E5" stroke-width="1.5"/>
+<text x="400.0" y="154" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.1em">DESCRIBE</text>
+<polygon points="463,143 469,149 463,155" fill="#4F46E5"/>
+<rect x="338" y="172" width="42.4" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="359.2" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SIFT</text>
+<rect x="385.4" y="172" width="68.8" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="419.79999999999995" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">RootSIFT</text>
+<rect x="338" y="197" width="62.199999999999996" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="369.1" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">HardNet</text>
+<rect x="405.2" y="197" width="55.599999999999994" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="433.0" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SOSNet</text>
+<rect x="338" y="222" width="49.0" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="362.5" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">HyNet</text>
+<rect x="392.0" y="222" width="55.599999999999994" height="20" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1"/>
+<text x="419.8" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DINOv2</text>
+<rect x="470" y="136" width="160" height="26" rx="7" fill="#15803D" stroke="#15803D" stroke-width="1.5"/>
+<text x="550.0" y="154" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.1em">MATCH</text>
+<polygon points="631,143 637,149 631,155" fill="#15803D"/>
+<rect x="470" y="172" width="42.4" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="491.2" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SMNN</text>
+<rect x="517.4" y="172" width="75.4" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="555.1" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">LightGlue</text>
+<rect x="470" y="197" width="49.0" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="494.5" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">LoFTR</text>
+<rect x="524.0" y="197" width="88.6" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="568.3" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">MatchFormer</text>
+<rect x="470" y="222" width="88.6" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="514.3" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">ASpanFormer</text>
+<rect x="563.6" y="222" width="42.4" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="584.8000000000001" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">RoMa</text>
+<rect x="470" y="247" width="55.599999999999994" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="497.8" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">RoMaV2</text>
+<rect x="530.6" y="247" width="42.4" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="551.8000000000001" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">LoMa</text>
+<rect x="470" y="272" width="55.599999999999994" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="497.8" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">MASt3R</text>
+<rect x="530.6" y="272" width="55.599999999999994" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="558.4" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DUSt3R</text>
+<rect x="470" y="297" width="55.599999999999994" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="497.8" y="311" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">VGGT-Ω</text>
+<rect x="530.6" y="297" width="88.6" height="20" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1"/>
+<text x="574.9" y="311" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">MapAnything</text>
+<rect x="638" y="136" width="128" height="26" rx="7" fill="#B45309" stroke="#B45309" stroke-width="1.5"/>
+<text x="702.0" y="154" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.1em">FILTER</text>
+<rect x="638" y="172" width="55.599999999999994" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="665.8" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">MAGSAC</text>
+<rect x="698.6" y="172" width="62.199999999999996" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="729.7" y="186" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">PoseLib</text>
+<rect x="638" y="197" width="55.599999999999994" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="665.8" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">AdaLAM</text>
+<rect x="698.6" y="197" width="35.8" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="716.5" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">GMS</text>
+<rect x="638" y="222" width="35.8" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="655.9" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">LPM</text>
+<rect x="678.8" y="222" width="35.8" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="696.6999999999999" y="236" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DTM</text>
+<rect x="638" y="247" width="55.599999999999994" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="665.8" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">FC-GNN</text>
+<rect x="698.6" y="247" width="49.0" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="723.1" y="261" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">OANet</text>
+<rect x="638" y="272" width="42.4" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="659.2" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">ACNe</text>
+<rect x="685.4" y="272" width="42.4" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="706.6" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">MiHo</text>
+<rect x="638" y="297" width="55.599999999999994" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="665.8" y="311" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">DINOv2</text>
+<rect x="638" y="322" width="75.4" height="20" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1"/>
+<text x="675.7" y="336" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SegFormer</text>
+<text x="208" y="330" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="start">Dense and 3D matchers (LoFTR, RoMa,</text>
+<text x="208" y="344" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="start">MASt3R, VGGT-Ω, …) skip detect/describe.</text>
+<path d="M 772.0 225.0 L 780.0 225.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="788.0,225.0 780.0,229.5 780.0,220.5" fill="#6B7280"/>
+<path d="M 788 133 L 788 319" fill="none" stroke="#6B7280" stroke-width="1.2"/>
+<path d="M 788.0 133.0 L 796.0 133.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="804.0,133.0 796.0,137.5 796.0,128.5" fill="#6B7280"/>
+<rect x="806" y="108" width="154" height="50" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+<text x="883.0" y="131.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Matches</text>
+<text x="883.0" y="148.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">keypoints and inliers</text>
+<path d="M 788.0 195.0 L 796.0 195.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="804.0,195.0 796.0,199.5 796.0,190.5" fill="#6B7280"/>
+<rect x="806" y="170" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="883.0" y="193.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">COLMAP database</text>
+<text x="883.0" y="210.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">merge across matchers</text>
+<path d="M 788.0 257.0 L 796.0 257.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="804.0,257.0 796.0,261.5 796.0,252.5" fill="#6B7280"/>
+<rect x="806" y="232" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="883.0" y="255.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">3D reconstruction</text>
+<text x="883.0" y="272.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">incremental, hierarchical</text>
+<path d="M 788.0 319.0 L 796.0 319.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="804.0,319.0 796.0,323.5 796.0,314.5" fill="#6B7280"/>
+<rect x="806" y="294" width="154" height="50" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+<text x="883.0" y="317.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Evaluation</text>
+<text x="883.0" y="334.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">pose, homography metrics</text>
+<text x="40" y="384" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.1em">BUILT IN</text>
+<rect x="42.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="104.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Ensembles</text>
+<rect x="174.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="236.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Parallel branches</text>
+<rect x="306.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="368.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Pair selection</text>
+<rect x="438.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="500.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Multi-dataset split</text>
+<rect x="570.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="632.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">HDF5 caching</text>
+<rect x="702.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="764.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Semantic filtering</text>
+<rect x="834.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
+<text x="896.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Distributed runs</text>
+</svg>

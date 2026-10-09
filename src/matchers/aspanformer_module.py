@@ -95,17 +95,6 @@ class aspanformer_module:
 
         as_args = parser.parse_args()
 
-        import glob
-        # Find the aspanformer directory
-        matches = glob.glob(os.path.join(conf_path, '**', 'aspanformer*'), recursive=True)
-        print("aspanformer:", matches)
-
-        # Also print conf_path so we know the base
-        print("conf_path:", conf_path)
-        print("contents:", os.listdir(conf_path))
-        print(100*'-')
-
-        
         import importlib.util
         import types
 

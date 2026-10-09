@@ -1,11 +1,20 @@
+import os
 import sys
 from pathlib import Path
 
-project_root = Path(__file__).parent.resolve()
+project_root = Path(__file__).parent.parent.resolve()
+os.chdir(project_root)
 external_root = project_root.parent / "external"
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 if str(external_root) not in sys.path:
     sys.path.insert(0, str(external_root))
+
+modified_root = external_root / "modified"
+if str(modified_root) not in sys.path:
+    sys.path.insert(0, str(modified_root))
 
 import warnings
 
@@ -19,6 +28,10 @@ extra_paths = [
     external_root / "matchformer",
     external_root / "aspanformer" / "src",
     external_root / "miho" / "src",
+    external_root / "romav2" / "src",
+    external_root / "loma" / "src",
+    external_root / "vggt-omega",
+    external_root / "map-anything",
     external_root / "gsm"
 ]
 
@@ -31,16 +44,15 @@ if enable_quadtree:
     pass
 
 
-import test_pipelines
+from imped_tests import test_pipelines
 
 warnings.filterwarnings('ignore')
 torch.backends.cudnn.enabled = False
 
-if __name__ == '__main__':       
-    with torch.inference_mode():  
-        # # PASSED
+if __name__ == '__main__':
+    with torch.inference_mode():
         test_pipelines.pipeline1()
-        test_pipelines.pipeline2()  
+        test_pipelines.pipeline2()
         test_pipelines.pipeline3()
         test_pipelines.pipeline4()
         test_pipelines.pipeline5()
@@ -49,7 +61,6 @@ if __name__ == '__main__':
         test_pipelines.pipeline8()
         test_pipelines.pipeline9()
         test_pipelines.pipeline10()
-
 
         test_pipelines.pipeline11()
         test_pipelines.pipeline12()
@@ -64,7 +75,7 @@ if __name__ == '__main__':
 
         test_pipelines.pipeline21()
         test_pipelines.pipeline21bis()
-        test_pipelines.pipeline22()  
+        test_pipelines.pipeline22()
         test_pipelines.pipeline23()
         test_pipelines.pipeline24()
         test_pipelines.pipeline25()
@@ -102,7 +113,16 @@ if __name__ == '__main__':
         test_pipelines.pipeline54()
         test_pipelines.pipeline55()
         test_pipelines.pipeline56()
+        test_pipelines.pipeline57()
+        test_pipelines.pipeline58()
+        test_pipelines.pipeline59()
+        test_pipelines.pipeline60()
 
-        print('doh!')
+        test_pipelines.pipeline61()
+        test_pipelines.pipeline62()
+        test_pipelines.pipeline63()
+        test_pipelines.pipeline64()
+        test_pipelines.pipeline65()
+        test_pipelines.pipeline66()
 
-
+    print('done!')

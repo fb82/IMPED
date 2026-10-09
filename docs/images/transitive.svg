@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520"><rect x="0.5" y="0.5" width="999" height="519" rx="16" fill="#FFFFFF" stroke="#E5E7EB"/>
+<text x="40" y="46" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#111827" text-anchor="start">Automatic pair selection with a transitive pipeline</text>
+<text x="40" y="72" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4B5563" text-anchor="start">Pass 1 scores pairs cheaply and picks well-connected seeds; pass 2 matches round by round, growing the graph from confirmed pairs.</text>
+<text x="40" y="116" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.08em">PASS 1 · GLOBAL SIMILARITY</text>
+<rect x="40" y="128" width="130" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="105.0" y="145" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="105.0" y="174.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">image folder</text>
+<rect x="196" y="128" width="170" height="64" rx="10" fill="#CCFBF1" stroke="#0F766E" stroke-width="1.5"/>
+<text x="281.0" y="145" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0F766E" text-anchor="middle" letter-spacing="0.08em">GLOBAL</text>
+<text x="281.0" y="168.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">salad_module</text>
+<text x="281.0" y="185.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">one descriptor per image</text>
+<rect x="392" y="128" width="206" height="64" rx="10" fill="#CCFBF1" stroke="#0F766E" stroke-width="1.5"/>
+<text x="495.0" y="145" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0F766E" text-anchor="middle" letter-spacing="0.08em">SIMILARITY</text>
+<text x="495.0" y="168.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">cosine_similarity_module</text>
+<text x="495.0" y="185.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">pair_sim</text>
+<rect x="624" y="128" width="160" height="64" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+<text x="704.0" y="145" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0369A1" text-anchor="middle" letter-spacing="0.08em">PAIR SELECTION</text>
+<text x="704.0" y="168.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">kfc_module</text>
+<text x="704.0" y="185.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">n_mst spanning trees</text>
+<rect x="810" y="128" width="150" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="885.0" y="145" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">OUTPUT</text>
+<text x="885.0" y="168.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">current_pairs</text>
+<text x="885.0" y="185.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">seed pairs</text>
+<path d="M 170.0 160.0 L 186.0 160.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="194.0,160.0 186.0,164.5 186.0,155.5" fill="#6B7280"/>
+<path d="M 366.0 160.0 L 382.0 160.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="390.0,160.0 382.0,164.5 382.0,155.5" fill="#6B7280"/>
+<path d="M 598.0 160.0 L 614.0 160.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="622.0,160.0 614.0,164.5 614.0,155.5" fill="#6B7280"/>
+<path d="M 784.0 160.0 L 800.0 160.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="808.0,160.0 800.0,164.5 800.0,155.5" fill="#6B7280"/>
+<rect x="624" y="218" width="160" height="46" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="704" y="238" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">/sim_table</text>
+<text x="704" y="255" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">saved in sim_db</text>
+<path d="M 704.0 192.0 L 704.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="704.0,216.0 699.5,208.0 708.5,208.0" fill="#6B7280"/>
+<rect x="810" y="218" width="150" height="46" rx="8" fill="#FFE4E6" stroke="#BE123C" stroke-width="1.5"/>
+<text x="885" y="238" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="600" fill="#111827" text-anchor="middle">multi_dataset=True</text>
+<text x="885" y="255" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">one seed list per dataset</text>
+<path d="M 784.0 172.0 L 797.0 172.0 L 797.0 241.0 L 800.0 241.0" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-dasharray="5 4"/>
+<polygon points="808.0,241.0 800.0,245.5 800.0,236.5" fill="#6B7280"/>
+<text x="40" y="312" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.08em">PASS 2 · MATCHING, ROUND BY ROUND</text>
+<text x="960" y="312" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="normal" fill="#4B5563" text-anchor="end">while current_pairs: run_pairs(match_pipeline, current_pairs)</text>
+<rect x="40" y="326" width="130" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="105.0" y="343" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="105.0" y="366.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">current_pairs</text>
+<text x="105.0" y="383.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">pairs of this round</text>
+<rect x="196" y="326" width="196" height="64" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+<text x="294.0" y="343" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#15803D" text-anchor="middle" letter-spacing="0.08em">MATCHING</text>
+<text x="294.0" y="366.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">detector → … → filter</text>
+<text x="294.0" y="383.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">any matching pipeline</text>
+<rect x="418" y="326" width="180" height="64" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+<text x="508.0" y="343" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0369A1" text-anchor="middle" letter-spacing="0.08em">PAIR SELECTION</text>
+<text x="508.0" y="366.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">transitive_module</text>
+<text x="508.0" y="383.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">confirm, propose a–c</text>
+<rect x="624" y="326" width="160" height="64" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="704.0" y="343" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE185D" text-anchor="middle" letter-spacing="0.08em">COLMAP</text>
+<text x="704.0" y="366.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">to_colmap_module</text>
+<text x="704.0" y="383.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">worklist=current_pairs</text>
+<rect x="810" y="326" width="150" height="64" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="885.0" y="343" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE185D" text-anchor="middle" letter-spacing="0.08em">3D</text>
+<text x="885.0" y="366.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">reconstruct_module</text>
+<text x="885.0" y="383.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">or hierarchical</text>
+<path d="M 170.0 358.0 L 186.0 358.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="194.0,358.0 186.0,362.5 186.0,353.5" fill="#6B7280"/>
+<path d="M 392.0 358.0 L 408.0 358.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="416.0,358.0 408.0,362.5 408.0,353.5" fill="#6B7280"/>
+<path d="M 598.0 358.0 L 614.0 358.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="622.0,358.0 614.0,362.5 614.0,353.5" fill="#6B7280"/>
+<path d="M 784.0 358.0 L 800.0 358.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="808.0,358.0 800.0,362.5 800.0,353.5" fill="#6B7280"/>
+<path d="M 704.0 264.0 L 704.0 290.0 L 508.0 290.0 L 508.0 316.0" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-dasharray="5 4"/>
+<polygon points="508.0,324.0 503.5,316.0 512.5,316.0" fill="#6B7280"/>
+<text x="516" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="start">sim_quantile gate</text>
+<path d="M 508.0 390.0 L 508.0 430.0 L 105.0 430.0 L 105.0 400.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="105.0,392.0 109.5,400.0 100.5,400.0" fill="#6B7280"/>
+<text x="120" y="452" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">Next round: a–c for every confirmed a–b, b–c, gated by threshold (matches) and sim_quantile (global similarity).</text>
+<text x="120" y="472" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">The loop ends when no candidates are left or max_iterations is reached.</text>
+</svg>

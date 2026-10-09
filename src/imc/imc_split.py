@@ -12,6 +12,11 @@ imped_lib = True
 if imped_lib:
     try:
         import imped
+        from core import run_pairs
+        from colmap_fun import merge_colmap_db, to_colmap_module
+        from ensemble import image_muxer_module, pair_rot4, pipe_max_matches
+        from filters import poselib_module
+        from matchers import deep_joined_module, lightglue_module
     except:
         warnings.warn("imped unavailable, using base colmap")
         imped_lib = False
@@ -93,11 +98,19 @@ def to_csv(datasets, csv_file='../kaggle_raw_data/gt.csv', recopy_in_original=Tr
                     if os.path.isfile(scale_file):
                         with open(scale_file, newline='\n') as csvfile:    
                             csv_lines = csv.reader(csvfile, delimiter=',')
-                            next(csv_lines)
+
+                            label_idx = {}
+                            header = True
                             for row in csv_lines:
-                                if row[0] == scene: 
-                                    scale = float(row[1])
+                                if header:
+                                    header = False
+                                    for i, name in enumerate(row): label_idx[name] = i
+                                    continue
+
+                                if row[label_idx['scene']] == scene: 
+                                    scale = float(row[label_idx['scale']])
                                     break
+                                
                     warnings.warn(f'3D model scale for scene {scene} is {str(scale)}')
 
                     for img in imgs:
@@ -158,6 +171,7 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, check_image_only=False,
     for img in img_list: img_dict[img] = 1
     
     data = {}
+    label_idx = {}
 
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -166,13 +180,14 @@ def check_gt_imc2025(csv_gt, tolerance=5, warning=False, check_image_only=False,
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
-            R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
 
             if check_image_only:
                 dataset = dataset_name
@@ -220,6 +235,7 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
     for img in img_list: img_dict[img] = 1
     
     data = {}
+    label_idx = {}
 
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -228,12 +244,13 @@ def check_gt_imc2024(csv_gt, tolerance=5, warning=False, scene_name=None):
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            scene = row[0]
-            image = row[-1]
-            R = np.array([float(x) for x in (row[-3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[-2].split(';'))]).reshape(3)
+            scene = row[label_idx['scene']]
+            image = row[label_idx['imgname']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
 
             if (not (scene_name is None)) and (scene != scene_name):
                 continue
@@ -286,8 +303,7 @@ if imped_lib:
     
         if shared_hdf5 and os.path.isfile(hdf5_db):
             # remove processed images from the colmap db
-            imped.device = torch.device('cpu')                    
-            imped.merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
+            merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
         else:    
             if shared_hdf5:
                 for image in os.listdir(abs_scene):
@@ -299,18 +315,17 @@ if imped_lib:
                 image_location = abs_scene
                         
             # imped pipeline
-            imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
             with torch.inference_mode():    
                 pipeline = [
-                    imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
-                        imped.deep_joined_module(what='aliked'),
-                        imped.lightglue_module(what='aliked'),
-                        imped.poselib_module(),
+                    image_muxer_module(pair_generator=pair_rot4, cache_path=cache_path, pipe_gather=pipe_max_matches, pipeline=[
+                        deep_joined_module(what='aliked'),
+                        lightglue_module(what='aliked'),
+                        poselib_module(),
                     ]),
-                    imped.to_colmap_module(db=db, id_more=colmap_id),
+                    to_colmap_module(db=db, id_more=colmap_id),
                 ]       
                         
-                imped.run_pairs(pipeline, image_location, db_name=hdf5_db)
+                run_pairs(pipeline, image_location, db_name=hdf5_db)
                 
 else:
     def compute_matches_db(db, abs_3d, abs_scene, shared_hdf5=False):
@@ -531,16 +546,22 @@ def make_input_data(csv_gt='../kaggle_raw_data/gt.csv', input_folder='../kaggle_
     in any case if two images in the same dataset but different scene have the same name, one is renamed (the mapping is put in <mapping_csv>)'''
     
     data = {}
+    label_idx = {}
     with open(csv_gt, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset, scene, image, R, T = row
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = row[label_idx['rotation_matrix']]
+            T = row[label_idx['translation_vector']]
 
             if not dataset in data: data[dataset] = {}
             if not scene in data[dataset]: data[dataset][scene] = {}
@@ -864,6 +885,7 @@ def read_csv(filename):
     '''IMC2025 read gt/submission csv file (not the same of the IMC2024)'''
 
     data = {}
+    label_idx = {}
 
     with open(filename, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
@@ -872,13 +894,14 @@ def read_csv(filename):
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            image = row[2]
-            R = np.array([float(x) for x in (row[3].split(';'))]).reshape(3,3)
-            t = np.array([float(x) for x in (row[4].split(';'))]).reshape(3)
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]
+            R = np.array([float(x) for x in (row[label_idx['rotation_matrix']].split(';'))]).reshape(3,3)
+            t = np.array([float(x) for x in (row[label_idx['translation_vector']].split(';'))]).reshape(3)
             c = -R.T @ t
 
             if not (dataset in data):
@@ -984,13 +1007,13 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
         lg = len(gt_dataset)
         lu = len(user_dataset)
                
-        model_table = []        
+        model_table = []
         registered_table = np.full((lt, lg, lu), -1.)
         mAA_table = np.full((lg, lu), -1.)
         mAA_th_table = np.full((lt, lg, lu), -1.)
         cluster_table = np.full((lg, lu), -1.)
         gt_scene_sum_table = np.zeros((lg, lu))
-        user_scene_sum_table = np.zeros((lg, lu))        
+        user_scene_sum_table = np.zeros((lg, lu))
 
         best_gt_scene = [[] for k in range(ll)]
         best_user_scene = [[] for k in range(ll)]
@@ -1209,21 +1232,11 @@ def score_all_ext(gt_csv, user_csv, combo_mode='harmonic', strict_cluster=False,
 # if not included, default is used
 # all threshold vectors must have the same length
 tth = {
-    'ETs':
-    {
-       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-             'ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-     'another_ET': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-    },    
-    'kermits':
-    {
-         'kermit': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-       'dioscuri': np.array([0.002,  0.005,  0.008,  0.01,  0.02,  0.04]),
-    },
-    'default': np.array([0.01, 0.02, 0.05, 0.1, 0.15, 0.2]),
-}
+      'example_dataset': {'example_scene': np.array([0.025,  0.05,  0.1,  0.2,  0.5,  1.0])},
+      'default': np.array([0.01, 0.02, 0.05, 0.1, 0.15, 0.2]),
+}      
 
-    
+
 def tth_to_csv(tth, csv_file='../kaggle_raw_data/thresholds.csv'):    
     '''save thresholds to csv file <csv_file>'''
 
@@ -1244,19 +1257,21 @@ def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):
     '''read thresholds from csv file <csv_file>'''
 
     tth = {}
+    label_idx = {}
 
     with open(csv_file, newline='\n') as csvfile:    
         csv_lines = csv.reader(csvfile, delimiter=',')
-    
+
         header = True
         for row in csv_lines:
             if header:
                 header = False
+                for i, name in enumerate(row): label_idx[name] = i
                 continue
             
-            dataset = row[0]
-            scene = row[1]
-            th = np.array([float(x) for x in (row[2].split(';'))])
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            th = np.array([float(x) for x in (row[label_idx['thresholds']].split(';'))])
 
             if dataset == 'default':
                 tth['default'] = th
@@ -1267,64 +1282,496 @@ def tth_from_csv(csv_file='../kaggle_raw_data/thresholds.csv'):
     return tth
 
 
-if __name__ == '__main__':   
-    # generate raw gt
-
-    # input structure    
-    # kaggle_raw_data/dataset/scene - scene for each dataset *required*
-    # kaggle_raw_data/dataset/scene/images - images for the specific dataset, scene *required*
-    # kaggle_raw_data/dataset/scene/imc2025_gt.csv - gt (rotation and traslation) data in the IMC2025 format for the specific dataset, scene *generated by make_gt()*
-    # kaggle_raw_data/dataset/scene/imc2024_gt.csv - gt (rotation and traslation) data in the IMC2024  format for the specific dataset, scene *optionally provided* 
-    # kaggle_raw_data/dataset/scene/colmap - gt data as colmap reconstruction for the specific dataset, scene *optional, or computed by make_gt()*
-    # kaggle_raw_data/dataset/scene/colmap/database.db - colmap database for the specific dataset, scene *optional, provided or computed by imped in make_gt()*
-    # kaggle_raw_data/dataset/scene/colmap/models - colmap 3D models for the specific dataset, scene *optional, provided or computed by pycolmap in make_gt()*
-    # kaggle_raw_data/dataset/scene/colmap/scales.csv - colmap 3D models scale factor for the specific dataset, scene *optionally provided, otherwise scale is set to 1*
-    # kaggle_raw_data/dataset/outliers - distractor folder for the specific dataset, scene *optional*
-    # kaggle_raw_data/dataset/outliers/images - distractor images for the specific dataset, scene *optional*    
-
-    # if imc2025_gt.csv is present, this is used for the gt
-    # else if imc2024_gt.csv is present, this is used for the gt
-    # else if colmap 3D is present, this is used for the gt
-    # else if colmap database is present, this is used to generate the 3D model
-    # else if imped is available the 3D model is generated
-    tth_to_csv(tth, csv_file='../data/imc2025/kaggle_raw_data/thresholds.csv')
-    gt_data = make_gt(folder='../data/imc2025/kaggle_raw_data')
-    to_csv(gt_data, csv_file='../data/imc2025/kaggle_raw_data/gt.csv') 
+def score_all_with_split(gt_csv, user_csv, combo_mode='harmonic', inl_cf = 0.8, strict_cf=0.5, skip_top_thresholds=2, to_dec=3, thresholds=None, mask_csv=None, pct=0.5):
+    '''compute the score: <gt_csv>/<user_csv> - gt/submission csv file;
+    <combo_mode> - how to mix mAA_score and clusterness score ["harmonic", "geometric", "arithmetic"];
+    <inl_cf>, <strict_cf>, <skip_threshold>, <to_dec> - parameters to be passed to mAA computation, see previous IMC challenge;
+    <thresholds> - the threshold dict tth, <mask_csv> - public/private label csv file'''
+        
+    gt_data = read_csv(gt_csv)    
+    user_data = read_csv(user_csv)
     
+    assert check_data(gt_data, user_data, print_error=True)
+
+    if mask_csv is None: mask = make_mask_csv(gt_csv, 1.0, mask_filename=os.devnull)
+    else: mask = read_mask_csv(mask_csv)
+
+    if thresholds is None:
+        thresholds = np.array([0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2])
+    else:
+        thresholds = tth_from_csv(thresholds)
     
-    # generate gt data for kaggle    
+    if isinstance(thresholds, list):            
+        th_n = len(thresholds)
+    else:
+        th_n = thresholds['default'].shape[0]
 
-    # output structure
-    # kaggle_data/dataset - contains images of all the scenes for the specific dataset
-    # kaggle_data/gt.csv - contains gt data
-    # kaggle_data/mapping.csv - contains gt mapping data from kaggle_raw_data to kaggle_data
-    # kaggle_data/thresholds.csv - contains the thresholds
+    lt = th_n - skip_top_thresholds
+
+    # stat full
+    stat_score = []
+    stat_mAA = []
+    stat_clusterness = []
+
+    # stat public split
+    stat_score_mask_a = []
+    stat_mAA_mask_a = []
+    stat_clusterness_mask_a = []
+
+    # stat private split
+    stat_score_mask_b = []
+    stat_mAA_mask_b = []
+    stat_clusterness_mask_b = []
+        
+    for dataset in gt_data.keys():        
+        gt_dataset = gt_data[dataset]
+        user_dataset = user_data[dataset]
+
+        lg = len(gt_dataset)
+        lu = len(user_dataset)
+
+        # full table               
+        model_table = []
+        err_table = []
+        mAA_table = np.zeros((lg, lu))
+        cluster_table = np.zeros((lg, lu))
+        gt_scene_sum_table = np.zeros((lg, lu))
+        user_scene_sum_table = np.zeros((lg, lu))
+
+        # public split table               
+        err_table_mask_a = []
+        mAA_table_mask_a = np.zeros((lg, lu))
+        cluster_table_mask_a = np.zeros((lg, lu))
+        gt_scene_sum_table_mask_a = np.zeros((lg, lu))
+        user_scene_sum_table_mask_a = np.zeros((lg, lu))
+
+        # private split table               
+        err_table_mask_b = []
+        mAA_table_mask_b = np.zeros((lg, lu))
+        cluster_table_mask_b = np.zeros((lg, lu))
+        gt_scene_sum_table_mask_b = np.zeros((lg, lu))
+        user_scene_sum_table_mask_b = np.zeros((lg, lu))
+
+        # best full
+        best_gt_scene = []
+        best_user_scene = []
+        best_model = []
+        best_err = []
+        best_mAA = np.zeros(lg)
+        best_cluster = np.zeros(lg)
+        best_gt_scene_sum = np.zeros(lg)
+        best_user_scene_sum = np.zeros(lg)
+
+        # best public split
+        best_err_mask_a = []
+        best_mAA_mask_a = np.zeros(lg)
+        best_cluster_mask_a = np.zeros(lg)
+        best_gt_scene_sum_mask_a = np.zeros(lg)
+        best_user_scene_sum_mask_a = np.zeros(lg)
+
+        # best private split
+        best_err_mask_b = []
+        best_mAA_mask_b = np.zeros(lg)
+        best_cluster_mask_b = np.zeros(lg)
+        best_gt_scene_sum_mask_b = np.zeros(lg)
+        best_user_scene_sum_mask_b = np.zeros(lg)
+
+        # all possible gt/submission cluster association per dataset
+        gt_scene_list = []        
+        for i, gt_scene in enumerate(gt_dataset.keys()):
+            gt_scene_list.append(gt_scene)
+
+            model_row = []
+            err_row = []
+            err_row_mask_a = []
+            err_row_mask_b = []
+            
+            user_scene_list = []
+            for j, user_scene in enumerate(user_dataset.keys()):                
+                user_scene_list.append(user_scene)
+
+                if (gt_scene == 'outliers') or (user_scene == 'outliers'):
+                    model_row.append([])
+                    err_row.append([])
+                    err_row_mask_a.append([])
+                    err_row_mask_b.append([])
+                    continue
+                
+                if not isinstance(thresholds, dict):
+                    ths = thresholds
+                else:
+                    if (dataset in thresholds) and (gt_scene in thresholds[dataset]):                  
+                        ths = thresholds[dataset][gt_scene]
+                    else:
+                        ths = thresholds['default']
+                
+                gt_cams = gt_data[dataset][gt_scene]
+                user_cams = user_data[dataset][user_scene]
+                                                
+                # the denominator for mAA ratio
+                m = len(gt_cams)
+                m_mask_a = np.sum([mask[dataset][gt_scene][image] for image in mask[dataset][gt_scene].keys()])
+                m_mask_b = np.sum([not mask[dataset][gt_scene][image] for image in mask[dataset][gt_scene].keys()])
+                
+                # get the image list to use
+                good_cams = []
+                for image_path in gt_cams.keys():
+                    if image_path in user_cams.keys():
+                        good_cams.append(image_path)                        
+                
+                good_cams_mask = []
+                for image in good_cams:
+                    good_cams_mask.append(mask[dataset][gt_scene][image])
+                good_cams_mask_a = np.asarray(good_cams_mask)
+
+                good_cams_mask = []
+                for image in good_cams:
+                    good_cams_mask.append(not mask[dataset][gt_scene][image])
+                good_cams_mask_b = np.asarray(good_cams_mask)
+
+                # put corresponding camera centers into matrices
+                n = len(good_cams)
+                n_mask_a = np.sum(good_cams_mask_a)
+                n_mask_b = np.sum(good_cams_mask_b)
+                
+                u_cameras = np.zeros((3, n))
+                g_cameras = np.zeros((3, n))
+                
+                ii = 0
+                for k in good_cams:
+                    u_cameras[:, ii] = user_cams[k]['c']
+                    g_cameras[:, ii] = gt_cams[k]['c']
+                    ii += 1
+                    
+                # Horn camera centers registration, a different best model for each camera threshold
+                model = register_by_Horn(u_cameras, g_cameras, np.asarray(ths), inl_cf, strict_cf)
+
+                # mAA                
+                mAA = mAA_on_cameras(model["err"], ths, m, skip_top_thresholds, to_dec)
+                
+                if (len(model['valid_cams']) == 0) or (len(good_cams_mask_a) == 0): mAA_mask_a = np.float64(0.0)
+                else: mAA_mask_a = mAA_on_cameras(model["err"][good_cams_mask_a[model['valid_cams']]], ths, m_mask_a, skip_top_thresholds, to_dec*pct)
+
+                if (len(model['valid_cams']) == 0) or (len(good_cams_mask_b) == 0): mAA_mask_b = np.float64(0.0)
+                else: mAA_mask_b = mAA_on_cameras(model["err"][good_cams_mask_b[model['valid_cams']]], ths, m_mask_b, skip_top_thresholds, to_dec*(1-pct))
+                
+                len_user_scene = len(user_data[dataset][user_scene])
+                
+                aux_masked = {}
+                masked_dataset = mask[dataset]
+                for scene in masked_dataset.keys():
+                    for image in masked_dataset[scene]:
+                        aux_masked[image] = masked_dataset[scene][image]
+                
+                user_data_masked = []
+                for image in user_data[dataset][user_scene]:
+                    if (image in aux_masked): user_data_masked.append(aux_masked[image])
+                    
+                len_user_scene_mask_a = np.sum(np.asarray(user_data_masked))
+                len_user_scene_mask_b = np.sum(~np.asarray(user_data_masked))
+
+                # full                
+                err_row.append(model["err"])
+                mAA_table[i, j] = mAA                
+                cluster_table[i, j] = n
+                gt_scene_sum_table[i, j] = m
+                user_scene_sum_table[i, j] = len_user_scene
+
+                if (len(model['valid_cams']) == 0) or (len(good_cams_mask_a) == 0): err_row_mask_a.append(np.zeros((0, th_n)))
+                else: err_row_mask_a.append(model["err"][good_cams_mask_a[model['valid_cams']]])
+
+                if (len(model['valid_cams']) == 0) or (len(good_cams_mask_b) == 0): err_row_mask_b.append(np.zeros((0, th_n)))
+                else: err_row_mask_b.append(model["err"][good_cams_mask_b[model['valid_cams']]])
+
+                # public split
+                mAA_table_mask_a[i, j] = mAA_mask_a              
+                cluster_table_mask_a[i, j] = n_mask_a
+                gt_scene_sum_table_mask_a[i, j] = m_mask_a
+                user_scene_sum_table_mask_a[i, j] = len_user_scene_mask_a
+
+                # private split
+                mAA_table_mask_b[i, j] = mAA_mask_b              
+                cluster_table_mask_b[i, j] = n_mask_b
+                gt_scene_sum_table_mask_b[i, j] = m_mask_b
+                user_scene_sum_table_mask_b[i, j] = len_user_scene_mask_b
+
+                model_row.append(model)
     
-    # if obfuscate_data is True, each run will generate new kaggle data, so run only once
-    already_run = False # I've already run it!
-    if not already_run:
-        make_input_data(csv_gt='../data/imc2025/kaggle_raw_data/gt.csv', input_folder='../data/imc2025/kaggle_raw_data',
-                        input_tth='../data/imc2025/kaggle_raw_data/thresholds.csv', out_folder='../data/imc2025/kaggle_data',
-                        mapping_csv='../data/imc2025/kaggle_data/mapping.csv', final_gt_csv='../data/imc2025/kaggle_data/gt.csv',
-                        final_tth='../data/imc2025/kaggle_data/thresholds.csv', obfuscate_data=False)
+            model_table.append(model_row)
+            err_table.append(err_row)
+            err_table_mask_a.append(err_row_mask_a)
+            err_table_mask_b.append(err_row_mask_b)
+
+        # best greedy cluster association per dataset
+        for i, gt_scene in enumerate(gt_dataset.keys()):                                  
+            best_ind = np.lexsort((-mAA_table[i], -cluster_table[i]))[0]
+            best_gt_scene.append(gt_scene)
+            best_user_scene.append(user_scene_list[best_ind])
+            best_model.append(model_table[i][best_ind])
+
+            # full
+            best_err.append(err_table[i][best_ind])
+            best_mAA[i] = mAA_table[i, best_ind]
+            best_cluster[i] = cluster_table[i, best_ind]
+            best_gt_scene_sum[i] = gt_scene_sum_table[i, best_ind]
+            best_user_scene_sum[i] = user_scene_sum_table[i, best_ind]
+
+            # public split
+            best_err_mask_a.append(err_table_mask_a[i][best_ind])
+            best_mAA_mask_a[i] = mAA_table_mask_a[i, best_ind]
+            best_cluster_mask_a[i] = cluster_table_mask_a[i, best_ind]
+            best_gt_scene_sum_mask_a[i] = gt_scene_sum_table_mask_a[i, best_ind]
+            best_user_scene_sum_mask_a[i] = user_scene_sum_table_mask_a[i, best_ind]
+
+            # private split
+            best_err_mask_b.append(err_table_mask_b[i][best_ind])
+            best_mAA_mask_b[i] = mAA_table_mask_b[i, best_ind]
+            best_cluster_mask_b[i] = cluster_table_mask_b[i, best_ind]
+            best_gt_scene_sum_mask_b[i] = gt_scene_sum_table_mask_b[i, best_ind]
+            best_user_scene_sum_mask_b[i] = user_scene_sum_table_mask_b[i, best_ind]
+
+        # exclude outliers cluster            
+        outlier_idx = -1
+        for i, scene in enumerate(best_gt_scene):
+            if scene == 'outliers':
+                outlier_idx = i
+                break            
+            
+        if outlier_idx > -1:
+            best_gt_scene.pop(outlier_idx)
+            best_user_scene.pop(outlier_idx)
+            best_model.pop(outlier_idx)
+ 
+            # full            
+            best_err.pop(outlier_idx)
+            best_mAA = np.delete(best_mAA, outlier_idx)            
+            best_cluster = np.delete(best_cluster, outlier_idx)            
+            best_gt_scene_sum = np.delete(best_gt_scene_sum, outlier_idx)            
+            best_user_scene_sum = np.delete(best_user_scene_sum, outlier_idx)
+
+            # public split
+            best_err_mask_a.pop(outlier_idx)
+            best_mAA_mask_a = np.delete(best_mAA_mask_a, outlier_idx)            
+            best_cluster_mask_a = np.delete(best_cluster_mask_a, outlier_idx)            
+            best_gt_scene_sum_mask_a = np.delete(best_gt_scene_sum_mask_a, outlier_idx)            
+            best_user_scene_sum_mask_a = np.delete(best_user_scene_sum_mask_a, outlier_idx)
+
+            # private split
+            best_err_mask_b.pop(outlier_idx)
+            best_mAA_mask_b = np.delete(best_mAA_mask_b, outlier_idx)            
+            best_cluster_mask_b = np.delete(best_cluster_mask_b, outlier_idx)            
+            best_gt_scene_sum_mask_b = np.delete(best_gt_scene_sum_mask_b, outlier_idx)            
+            best_user_scene_sum_mask_b = np.delete(best_user_scene_sum_mask_b, outlier_idx)
+
+        # compute the clusterness score
+        # basically the precision: images in the both  gt and user cluster / images in the user cluster only
+        cluster_score = get_clusterness_score(best_cluster, best_user_scene_sum)
+        cluster_score_mask_a = get_clusterness_score(best_cluster_mask_a, best_user_scene_sum_mask_a)
+        cluster_score_mask_b = get_clusterness_score(best_cluster_mask_b, best_user_scene_sum_mask_b)
+
+        # compute the mAA score
+        # basically the recall: images in the both gt and user cluster correctly registered / images in the gt cluster only
+        mAA_score = get_mAA_score(best_gt_scene_sum, best_gt_scene, thresholds, dataset, best_model, best_err, skip_top_thresholds, to_dec, lt)            
+        mAA_score_mask_a = get_mAA_score(best_gt_scene_sum_mask_a, best_gt_scene, thresholds, dataset, best_model, best_err_mask_a, skip_top_thresholds, to_dec*pct, lt)            
+        mAA_score_mask_b = get_mAA_score(best_gt_scene_sum_mask_b, best_gt_scene, thresholds, dataset, best_model, best_err_mask_b, skip_top_thresholds, to_dec*(1-pct), lt)            
+            
+        # merge mAA and clusterness score
+        score = fuse_score(mAA_score, cluster_score, combo_mode)        
+        score_mask_a = fuse_score(mAA_score_mask_a, cluster_score_mask_a, combo_mode)        
+        score_mask_b = fuse_score(mAA_score_mask_b, cluster_score_mask_b, combo_mode)        
+                            
+        print(f'{dataset}: mAA (all)           = {mAA_score * 100:.2f} %, clusterness = {cluster_score * 100:.2f} %, combined = {score * 100:.2f} %')
+        print(f'{dataset}: mAA (public split)  = {mAA_score_mask_a * 100:.2f} %, clusterness = {cluster_score_mask_a * 100:.2f} %, combined = {score_mask_a * 100:.2f} %')
+        print(f'{dataset}: mAA (private split) = {mAA_score_mask_b * 100:.2f} %, clusterness = {cluster_score_mask_b * 100:.2f} %, combined = {score_mask_b * 100:.2f} %')
+
+        # full
+        stat_mAA.append(mAA_score)
+        stat_clusterness.append(cluster_score)
+        stat_score.append(score)
+        
+        # public split
+        stat_mAA_mask_a.append(mAA_score_mask_a)
+        stat_clusterness_mask_a.append(cluster_score_mask_a)
+        stat_score_mask_a.append(score_mask_a)
+
+        # public split
+        stat_mAA_mask_b.append(mAA_score_mask_b)
+        stat_clusterness_mask_b.append(cluster_score_mask_b)
+        stat_score_mask_b.append(score_mask_b)
+
+    # full
+    final_score = np.mean(stat_score)
+    final_mAA = np.mean(stat_mAA)
+    final_clusterness = np.mean(stat_clusterness)
+
+    # public split
+    final_score_mask_a = np.mean(stat_score_mask_a)
+    final_mAA_mask_a = np.mean(stat_mAA_mask_a)
+    final_clusterness_mask_a = np.mean(stat_clusterness_mask_a)
+
+    # private split
+    final_score_mask_b = np.mean(stat_score_mask_b)
+    final_mAA_mask_b = np.mean(stat_mAA_mask_b)
+    final_clusterness_mask_b = np.mean(stat_clusterness_mask_b)
+
+    print(f'averaged on datasets (all)          : mAA = {final_mAA * 100:.2f} %, clusterness = {final_clusterness * 100:.2f} %, combined = {final_score * 100:.2f} %')
+    print(f'averaged on datasets (public split) : mAA = {final_mAA_mask_a * 100:.2f} %, clusterness = {final_clusterness_mask_a * 100:.2f} %, combined = {final_score_mask_a * 100:.2f} %')
+    print(f'averaged on datasets (private split): mAA = {final_mAA_mask_b * 100:.2f} %, clusterness = {final_clusterness_mask_b * 100:.2f} %, combined = {final_score_mask_b * 100:.2f} %')
+
+    return final_score, final_score_mask_a, final_score_mask_b
 
 
-    # generate a simple greedy submission by exahustive brute force
+def fuse_score(mAA_score, cluster_score, combo_mode):
+    if combo_mode =='harmonic':
+        # it is basically the F1 score
+        if (mAA_score + cluster_score) == 0:
+            score = 0
+        else:
+            score = 2 * mAA_score * cluster_score / (mAA_score + cluster_score)
+    elif combo_mode == 'geometric':
+        score = (mAA_score * cluster_score) ** 0.5
+    elif combo_mode == 'arithmetic':
+        # to be avoided, since if one of the mAA or clusterness score is zero is not zero
+        score = (mAA_score + cluster_score) * 0.5
+    elif combo_mode == 'mAA':
+        score = mAA_score
+    elif combo_mode == 'clusterness':
+        score = cluster_score
+    
+    return score
 
-    # for each dataset in kaggle_data colmap is used with imped to generate a 3D reconstruction,
-    # the best model with highest number of registered images is selected,
-    # the process is repeated removing these images to generate the next cluster
-    # until the number of registered images is greater than the min model size,
-    # remaining images are put in the outlier cluster
-    submission = make_todo(img_file='../data/imc2025/kaggle_data', rec_file='../data/imc2025/kaggle_submission')
-    to_csv(submission, csv_file='../data/imc2025/kaggle_submission/submission.csv')    
 
+def get_clusterness_score(best_cluster, best_user_scene_sum):
+    n = np.sum(best_cluster)
+    m = np.sum(best_user_scene_sum)
+    if m == 0:
+        cluster_score = 0
+    else:
+        cluster_score = n / m  
+
+    return cluster_score          
+
+
+def get_mAA_score(best_gt_scene_sum, best_gt_scene, thresholds, dataset, best_model, best_err, skip_top_thresholds, to_dec, lt):
+    n = np.sum(best_gt_scene_sum)
+    a = 0
+    for i, scene in enumerate(best_gt_scene):
+        if not isinstance(thresholds, dict):
+            ths = thresholds
+        else:
+            if (dataset in thresholds) and (scene in thresholds[dataset]):                  
+                ths = thresholds[dataset][scene]
+            else:
+                ths = thresholds['default']
+        
+        if len(best_model[i]) < 1: continue
+        
+        tmp = best_err[i][:, skip_top_thresholds:] < np.expand_dims(np.asarray(ths[skip_top_thresholds:]), axis=0)
+        a = a + np.sum(np.maximum(np.sum(tmp, axis=0) - to_dec, 0))
+        
+    b = max(0, lt * (n - len(best_gt_scene) * to_dec))
+    if b == 0:
+        mAA_score = 0
+    else:
+        mAA_score = a / b        
+
+    return mAA_score          
+    
+
+def make_mask_csv(gt_filename, pct=0.5, mask_filename='split_mask.csv'):
+    '''IMC2025 generate/write split labels'''
+
+    data_list = []
+    label_idx = {}
+
+    with open(gt_filename, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                for i, name in enumerate(row): label_idx[name] = i
+                continue
+            
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]         
+
+            data_list.append([dataset, scene, image])
+    
+    idx = np.random.permutation(len(data_list))[:round(pct*len(data_list))]
+    mask = np.zeros(len(data_list), dtype=bool)
+    mask[idx] = True
+    
+    with open(mask_filename, 'w') as f:      
+        f.write('dataset,scene,image,mask\n')
+
+        data =  {}
+        for i, el in enumerate(data_list):    
+            dataset, scene, image = el
+    
+            if not (dataset in data):
+                data[dataset] = {}
+            
+            if not (scene in data[dataset]):
+                data[dataset][scene] = {}
+                
+            data[dataset][scene][image] = bool(mask[i])
+
+            f.write(f'{dataset},{scene},{image},{str(bool(mask[i]))}\n')
+    
+    return data
+
+
+def read_mask_csv(mask_filename='split_mask.csv'):
+    '''IMC2025 read split labels'''
+
+    data =  {}
+    label_idx = {}
+
+    with open(mask_filename, newline='\n') as csvfile:    
+        csv_lines = csv.reader(csvfile, delimiter=',')
+
+        header = True
+        for row in csv_lines:
+            if header:
+                header = False
+                for i, name in enumerate(row): label_idx[name] = i
+                continue
+            
+            dataset = row[label_idx['dataset']]
+            scene = row[label_idx['scene']]
+            image = row[label_idx['image']]            
+            label = row[label_idx['mask']] == 'True'
+
+            if not (dataset in data):
+                data[dataset] = {}
+            
+            if not (scene in data[dataset]):
+                data[dataset][scene] = {}
+                
+            data[dataset][scene][image] = label
+    
+    return data
+
+
+if __name__ == '__main__':  
+    # public/private split percentage
+    pct = 0.5
+    
+    # generate public/private split labels should be run only once and kept fixed
+    make_mask_csv(gt_filename='gt.csv', pct=pct, mask_filename='split_mask.csv')
 
     # check gt 
     print('GT vs GT')
-    score_all_ext('../data/imc2025/kaggle_data/gt.csv', '../data/imc2025/kaggle_data/gt.csv', thresholds='../data/imc2025/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
-
+    score_all_with_split('gt.csv', 'gt.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv', pct=pct)
+    # old code
+    score_all_ext('gt.csv', 'gt.csv', thresholds='thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
 
     # submission score
     print('GT vs submission')
-    score_all_ext('../data/imc2025/kaggle_data/gt.csv', '../data/imc2025/kaggle_submission/submission.csv', thresholds='../data/imc2025/kaggle_data/thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
+    score_all_with_split('gt.csv', 'submission.csv', thresholds='thresholds.csv', inl_cf=0, strict_cf=-1, mask_csv='split_mask.csv', pct=pct)
+    # old code
+    score_all_ext('gt.csv', 'submission.csv', thresholds='thresholds.csv', per_th=False, strict_cluster=False, inl_cf=0, strict_cf=-1)
+

@@ -12,6 +12,11 @@ imped_lib = True
 if imped_lib:
     try:
         import imped
+        from core import run_pairs
+        from colmap_fun import merge_colmap_db, to_colmap_module
+        from ensemble import image_muxer_module, pair_rot4, pipe_max_matches
+        from filters import poselib_module
+        from matchers import deep_joined_module, lightglue_module
     except:
         warnings.warn("imped unavailable, using base colmap")
         imped_lib = False
@@ -286,8 +291,7 @@ if imped_lib:
     
         if shared_hdf5 and os.path.isfile(hdf5_db):
             # remove processed images from the colmap db
-            imped.device = torch.device('cpu')                    
-            imped.merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
+            merge_colmap_db([os.path.join(aux_path, 'cluster0/database.db')], db, to_filter=[image_pair_list], how_filter=['include'])
         else:    
             if shared_hdf5:
                 for image in os.listdir(abs_scene):
@@ -299,18 +303,17 @@ if imped_lib:
                 image_location = abs_scene
                         
             # imped pipeline
-            imped.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')            
             with torch.inference_mode():    
                 pipeline = [
-                    imped.image_muxer_module(pair_generator=imped.pair_rot4, cache_path=cache_path, pipe_gather=imped.pipe_max_matches, pipeline=[
-                        imped.deep_joined_module(what='aliked'),
-                        imped.lightglue_module(what='aliked'),
-                        imped.poselib_module(),
+                    image_muxer_module(pair_generator=pair_rot4, cache_path=cache_path, pipe_gather=pipe_max_matches, pipeline=[
+                        deep_joined_module(what='aliked'),
+                        lightglue_module(what='aliked'),
+                        poselib_module(),
                     ]),
-                    imped.to_colmap_module(db=db, id_more=colmap_id),
+                    to_colmap_module(db=db, id_more=colmap_id),
                 ]       
                         
-                imped.run_pairs(pipeline, image_location, db_name=hdf5_db)
+                run_pairs(pipeline, image_location, db_name=hdf5_db)
                 
 else:
     def compute_matches_db(db, abs_3d, abs_scene, shared_hdf5=False):

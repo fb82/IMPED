@@ -4,7 +4,7 @@ import cv2
 import kornia as K
 import matplotlib.pyplot as plt
 
-from core import homo2laf, set_args
+from core import homo2laf, set_args, plot_lock
 
 
 class show_kpts_module:
@@ -58,7 +58,12 @@ class show_kpts_module:
         return
 
     
-    def run(self, **args): 
+    def run(self, **args):
+        with plot_lock:
+            return self._run(**args)
+
+
+    def _run(self, **args):
         if not self.single_image:
             idxs = [0, 1]
         else:

@@ -1,6 +1,7 @@
 import os
 import warnings
 
+import pycolmap
 from PIL import Image
 
 from colmap_fun import coldb_ext
@@ -19,6 +20,9 @@ class image_pairs:
     specific images or pairs based on:
     - Direct filename lists.
     - Pre-existing COLMAP databases (checking for prior matches or keypoints).
+    - COLMAP model folders (containing images.bin or images.txt): the images
+      registered in the model (`colmap_has_pose=True`) or the ones that are
+      not (`colmap_has_pose=False`).
     - Image validity (verifying that files are not corrupt).
 
     Attributes:
@@ -41,13 +45,26 @@ class image_pairs:
         self.current = (self.current + 1) % self.n_chunk
         return current != self.chunk_id
 
-    def init_additional_image_pair_check(self, colmap_db_or_list, mode, colmap_req, colmap_min_matches):
+    def init_additional_image_pair_check(self, colmap_db_or_list, mode, colmap_req, colmap_min_matches, colmap_has_pose):
 
         self.additional_colmap_db = None     
         self.additional_img_list = None
         self.additional_pair_list = None       
 
-        if isinstance(colmap_db_or_list, str) and os.path.isdir(colmap_db_or_list):
+        if isinstance(colmap_db_or_list, str) and any(os.path.isfile(os.path.join(colmap_db_or_list, f)) for f in ['images.bin', 'images.txt']):
+            model = pycolmap.Reconstruction(colmap_db_or_list)
+            registered = {im.name for im in model.images.values() if im.has_pose}
+
+            if colmap_has_pose:
+                names = registered
+            elif self.iter_base:
+                names = {os.path.split(i)[-1] for i in self.imgs} - registered
+            else:
+                names = {os.path.split(i)[-1] for pair in self.imgs for i in pair} - registered
+
+            self.additional_img_list = {i: True for i in names}
+
+        elif isinstance(colmap_db_or_list, str) and os.path.isdir(colmap_db_or_list):
             file_list = os.listdir(colmap_db_or_list)                    
 
             self.additional_img_list = {}
@@ -139,7 +156,7 @@ class image_pairs:
         return must_skip
     
 
-    def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, chunk_id=None, n_chunk=None, computed_pairs=None):
+    def __init__(self, to_list, add_path='', check_img=True, colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, chunk_id=None, n_chunk=None, computed_pairs=None, colmap_has_pose=True):
         imgs = []
 
         self.computed_pairs = computed_pairs
@@ -225,7 +242,7 @@ class image_pairs:
             self.k = 0
             self.check_img = check_img            
     
-        self.init_additional_image_pair_check(colmap_db_or_list, mode, colmap_req, colmap_min_matches)
+        self.init_additional_image_pair_check(colmap_db_or_list, mode, colmap_req, colmap_min_matches, colmap_has_pose)
 
         if self.iter_base and self.additional_colmap_db is not None:
             existing_names = {name for _, name in self.additional_colmap_db.get_images()}

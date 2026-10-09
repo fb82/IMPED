@@ -7,6 +7,8 @@ from .matchformer_module import matchformer_module
 from .lightglue_module import lightglue_module, deep_joined_module
 from .loftr_module import loftr_module
 from .smnn_module import smnn_module
+from .smnn_extended_module import smnn_extended_module
+from .similarity_matrix_module import similarity_matrix_module
 from .roma_module import roma_module
 from .romav2_module import romav2_module
 from .mast3r_module import mast3r_module

@@ -7,7 +7,7 @@ import torch
 import plot.utils as viz_utils
 import plot.viz2d as viz
 from core import device as global_device
-from core import set_args
+from core import set_args, plot_lock
 
 
 class show_matches_module:
@@ -63,7 +63,12 @@ class show_matches_module:
         return
 
     
-    def run(self, **args):         
+    def run(self, **args):
+        with plot_lock:
+            return self._run(**args)
+
+
+    def _run(self, **args):
         im0 = os.path.splitext(os.path.split(args['img'][0])[1])[0]
         im1 = os.path.splitext(os.path.split(args['img'][1])[1])[0]
 

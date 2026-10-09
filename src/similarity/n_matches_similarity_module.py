@@ -22,12 +22,14 @@ class n_matches_similarity_module:
         self.pipeliner = False
         self.pass_through = False
         self.add_to_cache = True
+        self.force_no_cache = True
 
         self.args = {
             'id_more': '',
         }
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        if 'force_no_cache' in args.keys(): self.force_no_cache = args['force_no_cache']
 
         self.id_string, self.args = set_args('n_matches_similarity', args, self.args)
 

@@ -22,7 +22,6 @@ class dino_filter_module:
             'resize': 518,
             'sim_th': 0.5,
             'cache_max': 64,
-            'stage': 'matches',
             }
         self.device = torch.device(global_device)
         if 'device' in args:
@@ -32,8 +31,6 @@ class dino_filter_module:
             self.add_to_cache = args['add_to_cache']
 
         self.id_string, self.args = set_args('dino_filter', args, self.args)
-        if self.args['stage'] == 'keypoints':
-            self.id_string += '_keypoints'
 
         self.model = torch.hub.load('facebookresearch/dinov2', self.args['model']).to(self.device).eval()
         self.mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
@@ -84,9 +81,6 @@ class dino_filter_module:
 
 
     def run(self, **args):
-        if self.args['stage'] == 'keypoints':
-            return self.run_keypoints(**args)
-
         m_idx = args['m_idx']
         m_mask = args['m_mask']
 
@@ -106,19 +100,3 @@ class dino_filter_module:
             m_mask = m_mask[:, None]
 
         return {'m_mask': torch.cat([m_mask, keep[:, None]], dim=1)}
-
-
-    def run_keypoints(self, **args):
-        feats = [self.get_features(img) for img in args['img']]
-
-        keypt_mask = []
-        for i in [0, 1]:
-            feat, W, H = feats[i]
-            other = feats[1 - i][0].flatten(2)[0]
-            f = self.sample(feat, args['kp'][i].to(self.device), W, H)
-            keep = ((f @ other).max(dim=1).values >= self.args['sim_th']).cpu()
-            if 'keypt_mask' in args:
-                keep = keep & args['keypt_mask'][i].cpu()
-            keypt_mask.append(keep)
-
-        return {'keypt_mask': keypt_mask}

@@ -2,6 +2,8 @@
 
 **IMPED** is a modular image matching and feature pipeline toolkit. It provides a unified, composable interface for building, testing, and benchmarking image matching pipelines, from keypoint detection and description to geometric filtering, COLMAP integration, and ensemble methods.
 
+![IMPED: image collections go through pipelines of detectors, descriptors, matchers and filters, producing matches, COLMAP databases, 3D reconstructions and evaluations](docs/images/imped_overview.svg)
+
 ---
 
 ## Overview
@@ -11,7 +13,8 @@ IMPED is designed around a simple principle: a pipeline is a list of modules. Ea
 Key features:
 - **Modular by design**: mix and match detectors, descriptors, matchers, and filters in any combination.
 - **Broad method coverage**: includes SIFT, R2D2, KeyNet, HardNet, LightGlue, LoFTR, LoMa, RoMa, MASt3R, DUSt3R, VGGT-Omega, MapAnything, MatchFormer, ASpanFormer, and more.
-- **Semantic filtering**: SegFormer and DINOv2 can flag keypoints and matches on unwanted content, either before matching (`keypt_mask`, honoured by `smnn_module`) or after it (an extra `m_mask` column).
+- **Semantic filtering**: SegFormer and DINOv2 can flag matches on unwanted content (an extra `m_mask` column).
+- **Multi-descriptor matching**: per-keypoint descriptors of any kind (SIFT, DINOv2 features, semantic classes) are combined through their similarity matrices before nearest-neighbor matching.
 - **Ensemble support**: union, muxing, pyramid, and sampling utilities for combining multiple pipelines.
 - **COLMAP integration**: export/import features and matches, use COLMAP databases for pair selection, and merge reconstructions.
 - **Benchmarking tools**: built-in support for MegaDepth-1500, ScanNet-1500, IMC PhotoTourism, and planar datasets with standard pose and homography metrics.
@@ -23,11 +26,22 @@ Key features:
 - **Incremental 3D reconstruction**: `reconstruct_module` runs COLMAP's incremental mapper once per round of a transitive pipeline, continuing from the previous round's model and reconstructing in the background while the next round matches; `hierarchical_reconstruct_module` also keeps disconnected sub-models and tries to merge them.
 - **Multi-dataset pipelines**: `kfc_module(multi_dataset=True)` splits a mixed image set into separate datasets by cutting the global-similarity spanning tree, so the rest of the pipeline can run on, and reconstruct, each one independently.
 
-For a quick tour of what is possible, browse `src/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
+For a quick tour of what is possible, browse `src/imped_tests/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
 
 ---
 
 ## Installation
+
+Several methods are integrated as git submodules under `external/`, so clone the repository with them:
+
+```bash
+git clone --recursive <repository-url>
+cd IMPED
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+Then create the environment:
 
 ```bash
 python -m venv imped
@@ -35,17 +49,35 @@ source imped/bin/activate
 pip install -r src/requirements.txt
 ```
 
+Model weights (DINOv2, SALAD, SegFormer, VGGT-Omega, MapAnything, ...) are downloaded automatically on first use.
+
 ---
 
 ## Usage
 
-The main entry point is `src/imped.py`. The quickest way to get started is to point it to one of the predefined pipelines in `src/test_pipelines.py`, or define your own directly.
+The main entry point is `src/imped.py`. The quickest way to get started is to point it to one of the predefined pipelines in `src/imped_tests/test_pipelines.py`, or define your own directly.
+
+### Working with IMPED
+
+![Working with IMPED: define, select, run, inspect, iterate](docs/images/working_with_imped.svg)
+
+1. **Define**: write a function in `src/imped_tests/test_pipelines.py` that builds the list of modules and calls `run_pairs()` (see the examples below).
+2. **Select**: call that function in the `__main__` block of `src/imped.py`.
+3. **Run**: run `python src/imped.py`; every image pair goes through the modules in order.
+4. **Inspect**: drawn matches go to `show_imgs/` (`show_matches_module`), results to the HDF5 database given as `db_name`, and matches to the COLMAP database when the pipeline ends with `to_colmap_module`.
+5. **Iterate**: change the pipeline and run it again.
+
+**How the cache behaves across iterations.** Each result is stored under the image (single-image modules) or the pair (pair modules) and the chain of modules that produced it. Changing or adding a module therefore reuses everything computed by the modules before it. A module's identity does not include its parameters, though: after changing a parameter, give the module a new `id_more` (e.g. `smnn_module(th=0.9, id_more='th09')`) or call `run_pairs(..., force=True)`, otherwise the previous results are read back from the cache.
+
+From a working prototype, the following sections cover the next steps: comparing pipelines with the benchmarking tools in `src/benchmark/`, scaling to large datasets with a [transitive pipeline](#automatic-pair-selection-with-a-transitive-pipeline), [3D reconstruction](#incremental-3d-reconstruction-with-reconstruct_module), and re-matching only the images a first reconstruction could not register.
 
 ### Running a predefined pipeline
 
 Edit `src/imped.py` to select a pipeline:
 
 ```python
+from imped_tests import test_pipelines
+
 if __name__ == '__main__':
     with torch.inference_mode():
         test_pipelines.pipeline15()
@@ -57,7 +89,13 @@ Then run:
 python src/imped.py
 ```
 
+The example pipelines use paths relative to `src/` (e.g. `../data/ET`, `output_tests/`), so `imped.py` moves into `src/` when it starts and can be launched from any folder. `src/imped_tests/good_tests.py` runs the reference set of test pipelines in the same way (`python src/imped_tests/good_tests.py`).
+
 ### Defining a custom pipeline
+
+![A pipeline is a list of modules, each adding its own keys to the pipeline data](docs/images/pipeline_anatomy.svg)
+
+`run_pairs()` passes every image pair through the modules in order: each module reads what the previous ones produced (keypoints `kp`, descriptors `desc`, matches `m_idx`, inlier mask `m_mask`, ...) and adds its own output. Single-image modules (detectors, descriptors) run once per image, pair modules (matchers, filters) once per pair, and both are cached.
 
 A pipeline is a Python list of module instances. The following example runs a classic detect-describe-match-filter pipeline with match visualization:
 
@@ -140,15 +178,15 @@ if __name__ == '__main__':
     with torch.inference_mode():
         advanced_ensemble_pipeline()
 ```
-This pipeline is already implemented in `src/test_pipelines.py` as `pipeline42()`.
+This pipeline is already implemented in `src/imped_tests/test_pipelines.py` as `pipeline42()`.
 
 ### Module options
 
-Each module exposes a number of configuration options. These are not yet fully documented; please refer to the source code of each module for the available arguments.
+Each module exposes a number of configuration options; please refer to the source code of each module for the available arguments.
 
 ### Adding custom modules
 
-Writing a new module is intentionally simple: implement the required interface and drop the file into the appropriate subdirectory. The module can then be composed into any pipeline just like a built-in one. Contributions and new integrations are welcome feel free to open a pull request.
+Writing a new module is intentionally simple: implement the required interface and drop the file into the appropriate subdirectory. The module can then be composed into any pipeline just like a built-in one. Contributions and new integrations are welcome: feel free to open a pull request.
 
 ### Device control
 
@@ -161,6 +199,20 @@ pipeline = [
 ]
 ```
 
+### Parallel sub-pipelines
+
+![pipeline_muxer_module runs several branches in parallel and merges their matches; image_muxer_module runs a sub-pipeline on four rotations of the second image](docs/images/muxers.svg)
+
+`pipeline_muxer_module` runs its sub-pipelines in parallel by default, each one in its own thread, so their CPU work (image loading, Python code, OpenCV) overlaps. Their GPU kernels are queued on the same CUDA stream, so the results are exactly those of running the sub-pipelines one after the other. The sub-pipelines share the HDF5 database through a lock, each one gets its own copy of the pipeline data, and the inference/grad mode of the caller is carried over to every thread. Modules that draw with matplotlib and modules with shared class-level caches (`segformer_module`) serialize the critical part with a lock. Since the visualization modules only save figures to file, `core` sets matplotlib to the non-interactive `Agg` backend, which, unlike GUI backends such as TkAgg, works from any thread; to show figures interactively in your own scripts, call `matplotlib.use(...)` with a GUI backend after importing `core`.
+
+Since every sub-pipeline is on the GPU at the same time, peak memory grows with the number of sub-pipelines; pass `parallel=False` to run them one after the other:
+
+```python
+pipeline_muxer_module(pipe_gather=pipe_union, parallel=False, pipeline=[...])
+```
+
+Each sub-pipeline must use its own module instances, as in every example in `src/imped_tests/test_pipelines.py`.
+
 ### `run_pairs()` options
 
 | Argument | Description |
@@ -171,12 +223,15 @@ pipeline = [
 | `db_mode` | Database open mode, typically `'a'` to append |
 | `force` | If `True`, rerun modules even when cached results exist |
 | `add_path` | Prefix applied to image paths when passing relative pairs |
-| `colmap_db_or_list` | Optional COLMAP database or pair list for pair selection |
+| `colmap_db_or_list` | Optional COLMAP database, COLMAP model folder, image list or pair list for pair selection |
+| `colmap_has_pose` | With a COLMAP model folder: `True` selects the images registered in the model, `False` the ones that are not (default: `True`) |
 | `mode` | Pairing mode for `image_pairs` (default: `'exclude'`) |
 | `colmap_req` | Required COLMAP data type (default: `'geometry'`) |
 | `colmap_min_matches` | Minimum match count for COLMAP-based pairing |
 
 ### Automatic pair selection with a transitive pipeline
+
+![Pass 1 selects seed pairs from a global similarity table; pass 2 matches them round by round and proposes new pairs by transitive closure](docs/images/transitive.svg)
 
 For datasets too large to match exhaustively, a **transitive pipeline** builds the pair list for a real matching pipeline automatically: a cheap global-descriptor pass scores every candidate pair, `kfc_module` picks a well-connected seed set from that score table, and `transitive_module` grows the match graph transitively from there (if A-B and B-C are confirmed, A-C is tried next), so most of the dataset never needs to be scored pairwise.
 
@@ -202,7 +257,7 @@ transitive = transitive_module(pairs=current_pairs, sim_db=global_db, threshold=
 match_pipeline = [
     dog_module(), sift_module(), smnn_module(), magsac_module(),
     transitive,
-    to_colmap_module(db='match.db', worklist=transitive),
+    to_colmap_module(db='match.db', worklist=current_pairs),
 ]
 
 while current_pairs:
@@ -211,19 +266,17 @@ while current_pairs:
 
 `transitive` is placed in the pipeline like any other module. `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation) and `sim_min`/`sim_quantile` (pass-1 similarity, to skip weak transitive candidates without ever matching them). The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
 
-Other modules placed after `transitive` can take a `worklist=transitive` reference and check `worklist.args['continue']` in their own `finalize()` (set by `transitive.finalize()` to whether another round is coming) to defer expensive teardown (closing a database, stopping a live view) until the closure is actually done, instead of doing it after every round. `to_colmap_module` and `live_pair_graph` both do this already.
+Modules placed after `transitive` can defer expensive teardown (closing a database, waiting for a reconstruction) until the closure is actually done, instead of doing it after every round. `to_colmap_module` and `reconstruct_module` take `worklist=current_pairs`, the same list, and only tear down once it is empty; `live_pair_graph` needs more than that (queued pairs, threshold, round numbers), so it takes `worklist=transitive` and reads `transitive.args['continue']`, which `transitive.finalize()` sets to whether another round is coming.
 
-**Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round (or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round) rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline52()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/test_pipelines.py` for complete examples.
+**Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round (or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round) rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline52()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/imped_tests/test_pipelines.py` for complete examples.
 
 ### Global descriptors
 
 A **global descriptor** is one embedding vector per image, computed once and reused for every pair that image is part of: the cheap alternative to matching keypoints between every pair directly. `salad_module` computes it with DINOv2-SALAD Izquierdo & Civera, "Optimal Transport Aggregation for Visual Place Recognition", adapted from [serizba/salad](https://github.com/serizba/salad): each image is resized to 322×322 and passed once through a DINOv2 backbone plus a SALAD aggregation head, giving a single embedding cached per image (`global_desc`), with no pair-specific computation at all.
 
-Two pair-level modules turn a pair of global descriptors into a single `pair_sim` score: `cosine_similarity_module` (cosine similarity) and `l2_similarity_module` (negative L2 distance, so higher is still "more similar", same sign convention as the cosine version). Both are what feeds `kfc_module`/`conf_module` in a transitive pipeline (see below), and both cache their result per pair like any other module.
+Two pair-level modules turn a pair of global descriptors into a single `pair_sim` score: `cosine_similarity_module` (cosine similarity) and `l2_similarity_module` (negative L2 distance, so higher is still "more similar", same sign convention as the cosine version). Both are what feeds `kfc_module`/`conf_module` in a transitive pipeline (see above), and both cache their result per pair like any other module.
 
 `n_matches_similarity_module` produces the same `pair_sim` output from a different source, the number of RANSAC inliers surviving a real (if downscaled) SIFT + MAGSAC pass, so it can be dropped into the same `kfc_module` pipeline as a similarity source when a real geometric check is affordable for the whole dataset, instead of a learned global descriptor. `pipeline_ssma_transitive` uses this variant; `pipeline_ssma_transitive_salad` and `full_pipeline_ssma` use SALAD's cosine similarity instead.
-
-**Computing the full similarity matrix instead of one pair at a time**: for very large datasets, scoring every pair one by one (N(N-1)/2 calls through `run_pairs`) is the bottleneck even though the global descriptor itself is computed only once per image (see `full_pipeline_ssma` for a worked example). `cosine_similarity_module(mode='table', sim_db=global_db)` sidesteps this: pass it just enough pairs to touch every image once (e.g. a chain `(img0,img1), (img1,img2), …`, N-1 pairs instead of N(N-1)/2), and instead of scoring pairs one at a time, it collects every image's descriptor as it's seen and computes the entire similarity matrix in one shot in `finalize()` (`descs @ descs.T`), saving every pair's score at once as the `/sim_table` entry of `sim_db`, which `kfc_module` and `transitive_module` then read.
 
 ### Multi-dataset pipelines
 
@@ -233,10 +286,10 @@ When a folder mixes images of different scenes, `kfc_module(multi_dataset=True)`
 datasets = []
 global_pipeline = [
     salad_module(),
-    cosine_similarity_module(mode='table', sim_db=global_db),
+    cosine_similarity_module(),
     kfc_module(datasets=datasets, sim_db=global_db, out_path=None, multi_dataset=True),
 ]
-run_pairs(global_pipeline, list(zip(imgs, imgs[1:])), db_name=global_db)
+run_pairs(global_pipeline, images_folder, db_name=global_db)
 
 for i, current_pairs in enumerate(datasets):
     transitive = transitive_module(pairs=current_pairs, sim_db=global_db, ...)
@@ -253,20 +306,20 @@ The split (`kfc_module.split_datasets`) works on the maximum spanning tree of th
 
 If the number of datasets is known, `n_datasets=N` replaces steps 1-2: tree edges are cut by increasing similarity relative to their neighbours (still honouring `min_dataset_size`) until there are `N` datasets. Every accepted cut is printed (`kfc_module: cut at similarity ... -> A / B images`), together with the final dataset sizes, which is the quickest way to tune `cut_ratio`/`sep_ratio` on new data.
 
-Each dataset then gets its own `transitive_module`, COLMAP database and reconstruction; since seeds are chosen within a dataset and transitive candidates only grow from confirmed pairs, matching never crosses datasets. See `full_pipeline_ssma_multi_dataset()` and `pipeline57()` (three IMC 2025 scenes mixed in one folder) in `src/test_pipelines.py`.
+Each dataset then gets its own `transitive_module`, COLMAP database and reconstruction; since seeds are chosen within a dataset and transitive candidates only grow from confirmed pairs, matching never crosses datasets. See `pipeline64()` in `src/imped_tests/test_pipelines.py`.
 
 ### Incremental 3D reconstruction with `reconstruct_module`
 
 `reconstruct_module` runs COLMAP's incremental mapper (`pycolmap.incremental_mapping`) once per round of a transitive pipeline, continuing from the previous round's model instead of starting over: the first round reconstructs from scratch, every later round feeds the previous round's output back in as `input_path`, so newly confirmed matches (and pairs the mapper skipped the first time) extend the existing reconstruction rather than triggering a full rebuild. When COLMAP returns several disconnected sub-models, the one with the most registered images is kept.
 
-Placed right after `to_colmap_module` (same `db`, so it always reads that round's committed matches) and given the same `worklist=transitive`, each round's reconstruction runs in a background thread while the next round's matching proceeds. `finalize()` only blocks when it needs to start a new round's reconstruction and the previous one hasn't finished yet, since it needs that output to continue from:
+Placed right after `to_colmap_module` (same `db`, so it always reads that round's committed matches) and given the same `worklist=current_pairs`, each round's reconstruction runs in a background thread while the next round's matching proceeds. `finalize()` only blocks when it needs to start a new round's reconstruction and the previous one hasn't finished yet, since it needs that output to continue from:
 
 ```python
 match_pipeline = [
     dog_module(), sift_module(), smnn_module(), magsac_module(),
     transitive,
-    to_colmap_module(db='match.db', worklist=transitive, no_unmatched=False),
-    reconstruct_module(db='match.db', images='../data/ET', output='model', worklist=transitive),
+    to_colmap_module(db='match.db', worklist=current_pairs, no_unmatched=False),
+    reconstruct_module(db='match.db', images='../data/ET', output='model', worklist=current_pairs),
 ]
 ```
 
@@ -274,34 +327,53 @@ match_pipeline = [
 
 Without a `worklist`, it runs synchronously at the end of a single, non-transitive `run_pairs()` call, so the same module works for both kinds of pipeline.
 
-Matchers whose keypoints depend on the pair rather than on the single image (dense or detector-free ones such as RoMa, LoMa, VGGT-Omega and MapAnything) add new keypoints to an image every time it appears in a new pair, so a model built in an earlier round can't be continued. Use them in a single `run_pairs()` call, or reconstruct from scratch after they run.
-
 **`hierarchical_reconstruct_module`** is a drop-in replacement that keeps every sub-model instead of only the largest one. Each round it continues every model kept so far, also reconstructs from scratch, and then tries to merge the candidates pairwise: two models sharing at least `overlap_threshold` of their images are treated as duplicates and the better one is kept; otherwise they are aligned (`pycolmap.align_reconstructions_via_points`), re-triangulated and bundle-adjusted, and the merge is rejected if it loses registered images or the reprojection error grows by more than `reproj_error_factor`. The remaining models are written to `output/0`, `output/1`, …; merged models are appended last, so the last one is usually the most complete.
 
-**Recovering unregistered images**: a fast reconstruction can be followed by a more robust matcher run only where it's needed. `image_pairs` keeps just the pairs involving at least one image of a list with `colmap_db_or_list=missing, mode='include'`, so the second pass matches the unregistered images against everything else and exports into the same COLMAP database before reconstructing again. See `pipeline58()` (SuperPoint first, then rotation-robust RoMaV2 via `pair_rot4`).
+**Recovering unregistered images**: a fast reconstruction can be followed by a more robust matcher run only where it's needed. `colmap_db_or_list` also accepts a COLMAP model folder (recognized by its `images.bin`/`images.txt`): with `colmap_db_or_list=fast_model, mode='include', colmap_has_pose=False`, `image_pairs` keeps just the pairs involving at least one image *not* registered in that model, so the second pass matches the unregistered images against everything else and exports into the same COLMAP database before reconstructing again. See `pipeline58()` (SuperPoint first, then rotation-robust RoMaV2 via `pair_rot4`).
 
 ### Semantic filtering with SegFormer and DINOv2
 
-`segformer_module` and `dino_filter_module` never remove anything: they annotate keypoints or matches, so the unfiltered data stays available to every later module. Both have two stages:
+`segformer_module` and `dino_filter_module` never remove anything: they annotate matches, so the unfiltered data stays available to every later module. Both are placed after the matcher and append a column to `m_mask`:
 
-| Stage | Placed | Kept by `segformer_module` when | Kept by `dino_filter_module` when | Output |
-|---|---|---|---|---|
-| `'keypoints'` | after the detector/descriptor, before matching | the keypoint is not on an excluded Cityscapes class (sky, people, vehicles by default) | the keypoint's DINOv2 feature has a max cosine similarity of at least `sim_th` with the other image's patches, i.e. its content appears in the other image | `keypt_mask` |
-| `'matches'` | after the matcher | neither end of the match is on an excluded class | the DINOv2 features at the two ends of the match have cosine similarity of at least `sim_th` | extra column of `m_mask` |
+| Module | A match is kept when |
+|---|---|
+| `segformer_module(stage='matches')` | neither end of the match lies on an excluded Cityscapes class (sky, people and vehicles by default, see `exclude_classes`) |
+| `dino_filter_module` | the DINOv2 features at the two ends of the match have a cosine similarity of at least `sim_th` |
 
-`dino_filter_module` uses `dinov2_vits14` patch features (resized to `resize`=518 px on the longest side) and is a pair module in both stages, since it needs the other image. In the `'keypoints'` stage it ANDs its verdict with an existing `keypt_mask`, so the two filters can be chained. `smnn_module(use_keypt_mask=True)` then matches only the kept keypoints, mapping the indices back so `m_idx` still refers to the full keypoint list:
+`dino_filter_module` uses `dinov2_vits14` patch features (resized to `resize`=518 px on the longest side). See `pipeline51()` and `pipeline61()` in `src/imped_tests/test_pipelines.py`.
+
+### Combining descriptors with similarity matrices
+
+![Several descriptors of the same keypoints give one similarity matrix each; their product is matched by smnn_extended_module](docs/images/similarity_matrices.svg)
+
+Several descriptors of the *same* keypoints can be combined into a single matching decision, so that semantic information contributes to the choice of each match instead of only accepting or rejecting it afterwards:
+
+1. `similarity_matrix_module(metric=...)` turns the descriptors `desc` of the two images into their [N0, N1] similarity matrix `sm`, with values in [0, 1] and higher meaning more similar:
+   - `'cosine'`: cosine similarity, clamped at 0;
+   - `'l2'` / `'l1'`: `1 / (1 + d)`, with `d` the L2 / L1 distance;
+   - `'equal'`: 1 where the descriptors are equal, 0 otherwise.
+2. A `pipeline_muxer_module` runs one branch per descriptor (descriptor module followed by `similarity_matrix_module`), and `pipe_sm_product` combines the branch matrices by element-wise product, so a keypoint pair stays similar only if it is similar for every descriptor.
+3. `smnn_extended_module` runs the same Symmetric Mutual Nearest Neighbors matching as `smnn_module` on that matrix, converting it to the distance matrix `1 - sm` that kornia expects right before matching, instead of computing distances from `desc`.
 
 ```python
 pipeline = [
-    dog_module(), patch_module(), deep_descriptor_module(),
-    segformer_module(stage='keypoints'),
-    dino_filter_module(stage='keypoints'),
-    smnn_module(use_keypt_mask=True),
+    dog_module(),
+    pipeline_muxer_module(pipe_gather=pipe_sm_product, add_to_cache=False, pipeline=[
+        [sift_module(), similarity_matrix_module(metric='l2')],
+        [dino_descriptor_module(), similarity_matrix_module(metric='cosine')],
+        [segformer_module(stage='descriptor'), similarity_matrix_module(metric='equal')],
+    ]),
+    smnn_extended_module(),
     magsac_module(),
 ]
 ```
 
-Other matchers ignore `keypt_mask` for now.
+Any per-keypoint quantity can be used as a descriptor this way:
+
+- `dino_descriptor_module` is a single-image descriptor module like `sift_module`: it gives each keypoint already detected the L2-normalized DINOv2 patch feature sampled at its position. It can also be used on its own with `smnn_module` (see `pipeline60()`): on normalized vectors the L2 distance ranks neighbors exactly like the cosine similarity.
+- `segformer_module(stage='descriptor')` gives each keypoint its Cityscapes class id as a one-value descriptor. With `metric='equal'` its matrix is 1 for keypoints on the same class and 0 otherwise, so the product removes every candidate match between different classes.
+
+The keypoints must be detected before the muxer, so that every branch describes the same ones and the matrices line up. `smnn_module` is unchanged. Similarity matrices grow with the product of the two keypoint counts (8000 keypoints per image give 64M entries per pair), so `similarity_matrix_module` doesn't cache them and the muxer is created with `add_to_cache=False`; the per-image descriptors and the final matches are cached as usual. See `pipeline59()` and `pipeline65()` (the metrics and the matching alone, on synthetic descriptors) in `src/imped_tests/test_pipelines.py`.
 
 ### In-memory database cache
 
@@ -309,12 +381,12 @@ Every HDF5 database opened by `run_pairs()` goes through `pickled_hdf5` (`extern
 
 - **Writes** (`add`) are buffered in memory and written to disk in a single batch once the cache holds `cache_size` entries (default `1000`), or when the database is closed. Removals (`remove`) are deferred the same way.
 - **Reads** (`get`) keep the loaded entry in memory, so reading the same entry again doesn't touch the disk.
+- **Isolation**: entries are kept in memory in their serialized form, and every `get` returns a fresh copy, so modifying the returned object never alters what is cached or later written to disk.
 - **Consistency**: `get`, `contain` and `get_keys` all take the cache into account: an entry that was just added but not yet flushed is already visible, and one that was removed is already hidden.
 - **HDF5 chunk cache**: the underlying `h5py` file is also opened with a larger chunk cache (`rdcc_nbytes`, default 64 MB).
+- **What is kept in memory**: `add` and `get` take a `force_no_cache` flag that bypasses the in-memory cache, writing straight to the file and reading without caching. A module opts in by setting `self.force_no_cache = True` (or `force_no_cache=True` in its constructor); it defaults to `False`, and it is independent of `add_to_cache`, which decides whether the result is stored in the file at all. The pair similarity modules (`cosine_similarity_module`, `l2_similarity_module`, `n_matches_similarity_module`) set it, since each pair's score is used once: with `salad_module` and `cosine_similarity_module` the SALAD descriptors, read again for every pair an image is part of, stay in memory while each pair's similarity goes straight to the file.
 
-`cache_size=0` disables the buffering: every write goes to disk immediately. Since buffered entries only reach the disk on a flush, a run killed before `run_pairs()` closes its database loses at most the last `cache_size` uncommitted entries, which are simply recomputed on the next run.
-
-
+`cache_size=0` disables the buffering: every write goes to disk immediately. Since buffered entries only reach the disk on a flush, a run killed before `run_pairs()` closes its database loses at most the last `cache_size` uncommitted entries, which are simply recomputed on the next run. See `pipeline62()` in `src/imped_tests/test_pipelines.py`.
 
 ### Matching with 3D foundation models: VGGT-Omega and MapAnything
 
@@ -325,13 +397,13 @@ Every HDF5 database opened by `run_pairs()` goes through `pickled_hdf5` (`extern
 3. A match is kept only if the projected depth agrees with the depth predicted for the second image within `depth_tol` (relative), which removes occluded points.
 4. Matches are scored by the geometric mean of the two confidences, the best `max_keypoints` are kept, and their coordinates are mapped back to the original image resolution.
 
-Their output (`kp`, `kH`, `kr`, `m_idx`, `m_val`, `m_mask`) is the same as any other matcher's, so they can be followed by `magsac_module`, `to_colmap_module` or used inside a `pipeline_muxer_module`. Both models live in the `external/vggt-omega` and `external/map-anything` submodules and download their weights from Hugging Face on first use. See `pipeline55()` and `pipeline56()` in `src/test_pipelines.py`.
+Their output (`kp`, `kH`, `kr`, `m_idx`, `m_val`, `m_mask`) is the same as any other matcher's, so they can be followed by `magsac_module`, `to_colmap_module` or used inside a `pipeline_muxer_module`. Both models live in the `external/vggt-omega` and `external/map-anything` submodules and download their weights from Hugging Face on first use. See `pipeline55()` and `pipeline56()` in `src/imped_tests/test_pipelines.py`.
 
 ### Distributed / multi-machine processing
 
 Split the image set across machines with `split_images(imgs, n_chunks, chunk_idx)`: it divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group), copying the same script and images to each machine and giving every worker its own `chunk_idx`, then merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
 
-See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/merge path.
+See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example of the split/merge path.
 
 ---
 
@@ -341,19 +413,19 @@ See `pipeline44()` in `src/test_pipelines.py` for a worked example of the split/
 `dog_module` · `hz_module` · `r2d2_module` · `keynet_module`
 
 ### Descriptors
-`patch_module` · `deep_descriptor_module` · `sift_module`
+`patch_module` · `deep_descriptor_module` · `sift_module` · `dino_descriptor_module`
 
 ### Matchers
-`smnn_module` · `lightglue_module` · `loftr_module` · `roma_module` ·  `romav2_module` ·  `loma_module` · `vggt_omega_module` · `mapanything_module` · `mast3r_module` · `dust3r_module` · `matchformer_module` · `aspanformer_module`
+`smnn_module` · `smnn_extended_module` · `similarity_matrix_module` · `lightglue_module` · `loftr_module` · `roma_module` ·  `romav2_module` ·  `loma_module` · `vggt_omega_module` · `mapanything_module` · `mast3r_module` · `dust3r_module` · `matchformer_module` · `aspanformer_module`
 
 ### Filters
 `magsac_module` · `poselib_module` · `adalam_module` · `gms_module` · `lpm_module` · `dtm_module` · `fcgnn_module` · `oanet_module` · `acne_module` · `mop_miho_ncc_module` · `dino_filter_module`
 
 ### Segmentation
-`segformer_module`: SegFormer semantic segmentation (Cityscapes labels), flags keypoints/matches falling on specific classes
+`segformer_module`: SegFormer semantic segmentation (Cityscapes labels), flags matches falling on specific classes or gives each keypoint its class as a descriptor
 
 ### Ensemble
-`image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pair_rot4` · `pair_pyramid` · `sampling_module`
+`image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pipe_sm_product` · `pair_rot4` · `pair_pyramid` · `sampling_module`
 
 ### Global Descriptors & Similarity
 `salad_module` · `cosine_similarity_module` · `l2_similarity_module` · `n_matches_similarity_module`
@@ -379,6 +451,7 @@ src/
 ├── core/
 │   ├── device.py              # Device setup, global flags
 │   ├── pipeline.py            # run_pipeline, run_pairs, finalize_pipeline
+│   ├── image_pairs.py         # image_pairs iterator
 │   ├── geometry.py            # Homography and LAF utilities
 │   └── utils.py               # Argument handling, serialization, math utils
 │
@@ -391,10 +464,13 @@ src/
 ├── descriptors/
 │   ├── patch_module.py
 │   ├── deep_descriptor.py
+│   ├── dino_descriptor_module.py
 │   └── sift_module.py
 │
 ├── matchers/
 │   ├── smnn_module.py
+│   ├── smnn_extended_module.py
+│   ├── similarity_matrix_module.py
 │   ├── lightglue_module.py
 │   ├── loftr_module.py
 │   ├── roma_module.py
@@ -420,7 +496,7 @@ src/
 │   ├── acne_module.py
 │   ├── dtm_module.py
 │   ├── mop_miho_ncc_module.py
-│   └── dino_filter_module.py      # DINOv2 feature-consistency filter for keypoints/matches
+│   └── dino_filter_module.py      # DINOv2 feature-consistency match filter
 │
 ├── segmentators/
 │   └── segformer_module.py
@@ -468,20 +544,31 @@ src/
 │   ├── colorize.py
 │   └── live_pair_graph.py     # interactive live pair-graph viewer
 │
-└── image_pairs.py             # image_pairs iterator
+├── imc/
+│   ├── imc.py                 # IMC 2025 ground truth generation and evaluation
+│   ├── imc_other.py
+│   └── imc_split.py
+│
+├── imped_tests/
+│   ├── test_pipelines.py      # ready-to-run example and test pipelines
+│   └── good_tests.py          # runs the reference set of test pipelines
+│
+└── imped.py                   # main entry point
 ```
+
+Third-party code lives outside `src/`, in `external/`: the integrated methods are git submodules (`external/<name>`), while `external/modified/` holds third-party code adapted for IMPED and maintained in this repository: ACNe (`acne`), OANet (`oanet`), the LightGlue plotting helpers (`plot`) and the COLMAP database script (`colmap_db`). Both `external/` and `external/modified/` are added to the Python path by `src/imped.py` and by the test scripts.
 
 ---
 
 ## Notes
 
-- `src/test_pipelines.py` contains many complete working examples. It is the recommended starting point for understanding how pipelines are composed.
+- `src/imped_tests/test_pipelines.py` contains many complete working examples. It is the recommended starting point for understanding how pipelines are composed.
 - Ensemble utilities (`pipe_union`, `sampling_module`, `image_muxer_module`, `pipeline_muxer_module`) are useful for combining outputs from multiple sub-pipelines, deduplicating matches, and consolidating results.
 - COLMAP integration supports exporting features and matches, importing COLMAP keypoints back into the pipeline, using COLMAP databases for pair selection, and merging results across computation paths.
 - The `imgs` argument to `run_pairs()` accepts either a directory path or an explicit list of image paths.
 - Results are cached in HDF5 format; set `force=True` to reprocess from scratch.
 - `run_pairs()` is fully generic: it has no special handling for transitive pipelines, `live_pair_graph`, or `reconstruct_module`: it just runs `pipeline` once over the given pairs and calls `finalize_pipeline(pipeline)`. All the round-by-round behaviour lives in the modules themselves (`transitive_module.finalize()`) and in the `while` loop the caller writes around `run_pairs()`.
-- `segformer_module` and `dino_filter_module` never remove keypoints or matches; they only annotate them (`keypt_mask`, an extra column on `m_mask`), so the original, unfiltered data stays available to any module placed after them.
+- `segformer_module` and `dino_filter_module` never remove matches; they only annotate them (an extra column on `m_mask`), so the original, unfiltered data stays available to any module placed after them.
 
 ---
 

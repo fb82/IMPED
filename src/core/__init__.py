@@ -2,7 +2,7 @@ __version__ = "0.1.0"
 
 from . import kornia_compat as kornia_compat  
 
-from .device import device, pipe_color, show_progress, enable_quadtree
+from .device import device, pipe_color, show_progress, enable_quadtree, plot_lock
 
 from .pipeline import (
     run_pipeline,
@@ -35,6 +35,5 @@ from .utils import (
     affine_matrix_from_points
 )
 
-#from ..image_pairs import image_pairs
 
 #__all__ = ["main_function", "helper1", "helper2"]

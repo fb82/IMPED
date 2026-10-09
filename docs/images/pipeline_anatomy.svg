@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="450" viewBox="0 0 1000 450"><rect x="0.5" y="0.5" width="999" height="449" rx="16" fill="#FFFFFF" stroke="#E5E7EB"/>
+<text x="40" y="46" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#111827" text-anchor="start">A pipeline is a list of modules</text>
+<text x="40" y="72" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4B5563" text-anchor="start">run_pairs() passes every image pair through the modules in order: each one reads the pipeline data and adds or updates its keys.</text>
+<rect x="40" y="110" width="130" height="74" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="105.0" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="105.0" y="155.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">image pair</text>
+<text x="105.0" y="172.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">img0, img1</text>
+<path d="M 170.0 147.0 L 187.0 147.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="195.0,147.0 187.0,151.5 187.0,142.5" fill="#6B7280"/>
+<rect x="197" y="110" width="135" height="74" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+<text x="264.5" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#2563EB" text-anchor="middle" letter-spacing="0.08em">DETECTOR</text>
+<text x="264.5" y="161.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">dog_module</text>
+<text x="264.5" y="206" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">kp, kH, kr</text>
+<path d="M 264.5 216 L 264.5 262" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3 4"/>
+<path d="M 334.0 147.0 L 344.0 147.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="352.0,147.0 344.0,151.5 344.0,142.5" fill="#6B7280"/>
+<rect x="354" y="110" width="135" height="74" rx="10" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.5"/>
+<text x="421.5" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#4F46E5" text-anchor="middle" letter-spacing="0.08em">DESCRIPTOR</text>
+<text x="421.5" y="161.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">sift_module</text>
+<text x="421.5" y="206" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">desc</text>
+<path d="M 421.5 216 L 421.5 262" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3 4"/>
+<path d="M 491.0 147.0 L 501.0 147.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="509.0,147.0 501.0,151.5 501.0,142.5" fill="#6B7280"/>
+<rect x="511" y="110" width="135" height="74" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+<text x="578.5" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#15803D" text-anchor="middle" letter-spacing="0.08em">MATCHER</text>
+<text x="578.5" y="161.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">smnn_module</text>
+<text x="578.5" y="206" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">m_idx, m_val, m_mask</text>
+<path d="M 578.5 216 L 578.5 262" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3 4"/>
+<path d="M 648.0 147.0 L 658.0 147.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="666.0,147.0 658.0,151.5 658.0,142.5" fill="#6B7280"/>
+<rect x="668" y="110" width="135" height="74" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1.5"/>
+<text x="735.5" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#B45309" text-anchor="middle" letter-spacing="0.08em">FILTER</text>
+<text x="735.5" y="161.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">magsac_module</text>
+<text x="735.5" y="206" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">m_mask, F or H</text>
+<path d="M 735.5 216 L 735.5 262" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3 4"/>
+<path d="M 805.0 147.0 L 815.0 147.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="823.0,147.0 815.0,151.5 815.0,142.5" fill="#6B7280"/>
+<rect x="825" y="110" width="135" height="74" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="892.5" y="127" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE185D" text-anchor="middle" letter-spacing="0.08em">COLMAP</text>
+<text x="892.5" y="161.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">to_colmap_module</text>
+<text x="892.5" y="206" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">COLMAP database</text>
+<path d="M 892.5 216 L 892.5 262" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3 4"/>
+<rect x="40" y="262" width="920" height="62" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="60" y="287" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#111827" text-anchor="start">HDF5 cache (db_name)</text>
+<text x="60" y="307" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">Results are stored per image (single-image modules) or per pair (pair modules), keyed by the modules that produced them: unchanged steps are reused.</text>
+<rect x="40" y="346" width="920" height="62" rx="10" fill="#0F172A" stroke="#0F172A" stroke-width="1.5"/>
+<text x="60" y="372" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="normal" fill="#E2E8F0" text-anchor="start">pipeline = [dog_module(), sift_module(), smnn_module(), magsac_module(), to_colmap_module(db=&#39;colmap.db&#39;)]</text>
+<text x="60" y="392" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="normal" fill="#E2E8F0" text-anchor="start">run_pairs(pipeline, &#39;../data/ET&#39;, db_name=&#39;database.hdf5&#39;)</text>
+</svg>

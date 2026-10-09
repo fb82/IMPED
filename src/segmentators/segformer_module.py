@@ -1,5 +1,6 @@
 
 import os
+import threading
 from collections import OrderedDict
 
 import torch
@@ -25,30 +26,28 @@ DEFAULT_EXCLUDE = [
 
 class segformer_module:
     """
-    Semantic-segmentation-based keypoint/match annotator using SegFormer.
+    Semantic-segmentation-based match annotator and keypoint descriptor
+    using SegFormer.
 
-    Runs SegFormer-B0 on Cityscapes labels to build a per-pixel keep/discard
-    mask ('seg_mask', one per image), then, non-destructively, marks which
-    keypoints ('keypt_mask') and matches (an extra column appended to
-    'm_mask') fall on an excluded semantic class. Nothing is removed — all
-    original keypoints/matches are preserved so the pre-filtering data stays
-    available for later use.
+    Runs SegFormer-B0 on Cityscapes labels to get a per-pixel class map.
+    Nothing is removed: matches are only annotated, so the pre-filtering
+    data stays available for later use.
 
-    The dense per-pixel class map used to build 'seg_mask' (the full
-    segmented-instances output, one class id per pixel) is heavier than a
-    binary mask, so it isn't stored in the hdf5 dict: it's cached to files
-    under `seg_cache_dir`, mirroring the image it came from, plus an
-    in-process LRU cache for repeated lookups within a run.
+    The dense per-pixel class map (one class id per pixel) isn't stored in
+    the hdf5 dict: it's cached to files under `seg_cache_dir`, mirroring the
+    image it came from, plus an in-process LRU cache for repeated lookups
+    within a run.
 
     Two stages are supported, selected via `stage`:
-    - 'keypoints' (default, single_image module): if 'kp' is present for the
-      image, computes 'keypt_mask' — one bool per keypoint.
-    - 'matches' (pair module, place after the matcher/geometric-verification
+    - 'matches' (default, pair module, place after the matcher/geometric-verification
       modules in the pipeline): if 'm_idx'/'m_mask' are present, appends a
       segmentation column to 'm_mask', turning it from [M] into [M, 2]. Since
       this changes 'm_mask' from 1D to 2D, any module placed after this one
       that expects a 1D 'm_mask' must be updated accordingly — this module is
       meant to be the last one touching 'm_mask' in a pipeline.
+    - 'descriptor' (single_image module): gives each keypoint its semantic
+      class id as a one-value descriptor 'desc' [N, 1], to be compared with
+      similarity_matrix_module(metric='equal').
 
     Attributes:
         exclude_classes: Cityscapes class names to discard. Defaults to sky,
@@ -56,7 +55,7 @@ class segformer_module:
             and city squares.
         model_name: HuggingFace model id. Must be a SegFormer trained on
             Cityscapes (19-class label space).
-        stage: 'keypoints' or 'matches' — see above.
+        stage: 'matches' or 'descriptor' — see above.
         seg_cache_dir: Directory the dense per-pixel class maps are cached
             to, one file per (model_name, image).
     """
@@ -66,21 +65,24 @@ class segformer_module:
     # Shared across all instances: (model_name, img_path) -> CPU seg_map (argmax class ids)
     # LRU-capped so it never accumulates unbounded across a large image set.
     _SEGMAP_CACHE: OrderedDict = OrderedDict()
+    # Guards the two shared caches above when instances run in parallel
+    # sub-pipelines of a pipeline_muxer_module.
+    _LOCK = threading.Lock()
 
     def __init__(
         self,
         exclude_classes=None,
         model_name='nvidia/segformer-b0-finetuned-cityscapes-512-1024',
-        stage='keypoints',
+        stage='matches',
         seg_cache_dir='aux/seg_cache',
         segmap_cache_max=_MASK_CACHE_MAX,
         **args,
     ):
-        if stage not in ('keypoints', 'matches'):
-            raise ValueError(f"stage must be 'keypoints' or 'matches', got {stage!r}")
+        if stage not in ('matches', 'descriptor'):
+            raise ValueError(f"stage must be 'matches' or 'descriptor', got {stage!r}")
 
         self.stage = stage
-        self.single_image = stage == 'keypoints'
+        self.single_image = stage == 'descriptor'
         self.pipeliner = False
         self.pass_through = False
         self.add_to_cache = True
@@ -106,9 +108,10 @@ class segformer_module:
         self._model = None
 
         classes_tag = '_'.join(c.replace(' ', '') for c in self.exclude_classes)
-        stage_tag = 'matches_' if stage == 'matches' else ''
         id_more = args.get('id_more', '')
-        self.id_string = f'segformer_{stage_tag}{classes_tag}'
+        self.id_string = f'segformer_matches_{classes_tag}'
+        if stage == 'descriptor':
+            self.id_string = 'segformer_descriptor'
         if id_more:
             self.id_string += f'_{id_more}'
 
@@ -133,6 +136,10 @@ class segformer_module:
         return os.path.join(self.seg_cache_dir, self.model_name.replace('/', '_'), name + '.pt')
 
     def _get_seg_map(self, img_path: str, W: int, H: int) -> torch.Tensor:
+        with segformer_module._LOCK:
+            return self._get_seg_map_unlocked(img_path, W, H)
+
+    def _get_seg_map_unlocked(self, img_path: str, W: int, H: int) -> torch.Tensor:
         cache_key = (self.model_name, img_path)
         cache = segformer_module._SEGMAP_CACHE
         if cache_key in cache:
@@ -183,26 +190,22 @@ class segformer_module:
         segformer_module._SEGMAP_CACHE.clear()
 
     def run(self, **args):
-        if self.stage == 'matches':
-            return self._run_matches(**args)
-        return self._run_keypoints(**args)
+        if self.stage == 'descriptor':
+            return self._run_descriptor(**args)
+        return self._run_matches(**args)
 
-    def _run_keypoints(self, **args):
+    def _run_descriptor(self, **args):
         idx = args['idx']
         img_path = args['img'][idx]
 
         W, H = Image.open(img_path).size
-        keep_px = self._get_keep_mask(img_path, W, H)
+        seg_map = self._get_seg_map(img_path, W, H)
 
-        result = {'seg_mask': keep_px.cpu()}
+        kp = args['kp'][idx]
+        xs = kp[:, 0].long().clamp(0, W - 1)
+        ys = kp[:, 1].long().clamp(0, H - 1)
 
-        if 'kp' in args:
-            kp = args['kp'][idx]           # [N, 2]  (x=col, y=row)
-            xs = kp[:, 0].long().clamp(0, W - 1)
-            ys = kp[:, 1].long().clamp(0, H - 1)
-            result['keypt_mask'] = keep_px[ys, xs].cpu()  # [N] bool, non-destructive
-
-        return result
+        return {'desc': seg_map[ys, xs].float()[:, None]}
 
     def _run_matches(self, **args):
         if 'm_idx' not in args:

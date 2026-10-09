@@ -1,8 +1,6 @@
-import numpy as np
 import torch
 
-import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from core import device as global_device, set_args, check_data
+from core import set_args, check_data
 
 
 class cosine_similarity_module:
@@ -19,21 +17,16 @@ class cosine_similarity_module:
         self.pipeliner = False
         self.pass_through = False
         self.add_to_cache = True
+        self.force_no_cache = True
 
         self.args = {
             'id_more': '',
-            'mode': 'pair',
-            'sim_db': None,
         }
 
         if 'add_to_cache' in args.keys(): self.add_to_cache = args['add_to_cache']
+        if 'force_no_cache' in args.keys(): self.force_no_cache = args['force_no_cache']
 
         self.id_string, self.args = set_args('cosine_similarity', args, self.args)
-
-        if self.args['mode'] == 'table':
-            self.add_to_cache = False
-
-        self._descs = {}
 
         self.required_input = {'global_desc': 2}
 
@@ -43,10 +36,7 @@ class cosine_similarity_module:
 
 
     def finalize(self):
-        if self.args['mode'] == 'table':
-            db = pickled_hdf5.pickled_hdf5(self.args['sim_db'])
-            db.add('/sim_table', cosine_similarity_table(self._descs))
-            db.close()
+        return
 
 
     def run(self, **args):
@@ -55,23 +45,6 @@ class cosine_similarity_module:
         d0 = args['global_desc'][0]
         d1 = args['global_desc'][1]
 
-        if self.args['mode'] == 'table':
-            self._descs[args['img'][0]] = d0
-            self._descs[args['img'][1]] = d1
-
         sim = torch.nn.functional.cosine_similarity(d0.unsqueeze(0), d1.unsqueeze(0)).item()
 
         return {'pair_sim': sim}
-
-
-def cosine_similarity_table(descs):
-    imgs = sorted(descs)
-
-    stacked = torch.stack([descs[img] for img in imgs]).to(global_device)
-    stacked = torch.nn.functional.normalize(stacked, dim=1)
-    sim = (stacked @ stacked.T).cpu().numpy()
-
-    rows, cols = np.triu_indices(len(imgs), k=1)
-    values = sim[rows, cols].tolist()
-
-    return {(imgs[i], imgs[j]): v for i, j, v in zip(rows.tolist(), cols.tolist(), values)}

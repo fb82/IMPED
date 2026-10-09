@@ -1,4 +1,6 @@
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
@@ -156,6 +158,26 @@ def pipe_max_matches(pipe_block):
     best = n_matches.max(0)[1]
     
     return pipe_block[best]
+
+
+def pipe_sm_product(pipe_block):
+    """
+    Combines the similarity matrices 'sm' of the sub-pipelines of a
+    pipeline_muxer_module by element-wise product, so that a keypoint pair
+    is similar only if it is similar for every descriptor. All sub-pipelines
+    must share the same keypoints.
+
+    Args:
+        pipe_block (list): A list of dictionary objects, each with a 'sm'.
+
+    Returns:
+        dict: {'sm': the element-wise product of all the matrices}.
+    """
+    sm = pipe_block[0]['sm']
+    for pipe_data in pipe_block[1:]:
+        sm = sm * pipe_data['sm'].to(sm.device)
+
+    return {'sm': sm}
         
 
 
@@ -311,13 +333,21 @@ class pipeline_muxer_module:
     This is particularly useful for achieving high robustness across 
     diverse datasets where a single model might fail.
 
+    With `parallel=True` (default) each sub-pipeline runs in its own thread,
+    sharing the database through a lock: their CPU work overlaps, while their
+    GPU kernels are queued on the same CUDA stream, so results are the same
+    as running them one after the other. The sub-pipelines must not share
+    module instances. All of them are on the GPU at the same time, so set
+    `parallel=False` to run them one after the other if memory is tight.
+
     Attributes:
         pipeline (list): A list of pipeline definitions to be executed.
         pipe_gather (function): The method used to combine results from 
             different pipelines (defaults to pipe_union).
         id_more (str): An optional suffix to differentiate multiple muxers.
+        parallel (bool): Run the sub-pipelines in parallel (default True).
     """
-    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None, add_to_cache=True):
+    def __init__(self, id_more='', pipe_gather=pipe_union, pipeline=None, add_to_cache=True, parallel=True):
         self.single_image = False
         self.pipeliner = True
         self.pass_through = False
@@ -325,6 +355,7 @@ class pipeline_muxer_module:
         self.id_more = id_more                
         self.pipe_gather = pipe_gather
         self.add_to_cache = add_to_cache
+        self.parallel = parallel
         
         if pipeline is None: pipeline = []
         self.pipeline = pipeline        
@@ -349,14 +380,46 @@ class pipeline_muxer_module:
         from core import run_pipeline
         if pipe_data is None: pipe_data = {}
 
-        pipe_data_block = []
-        
-        for pipeline in self.pipeline:
-            pipe_data_in = pipe_data.copy()
-            pair = pipe_data['img']
-                                       
-            pipe_data_out, pipe_name_out = run_pipeline(pair, pipeline, db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)        
-            pipe_data_block.append(pipe_data_out)
-        
+        def run_branch(pipeline, branch_db):
+            pipe_data_in = {k: list(v) if isinstance(v, list) else v for k, v in pipe_data.items()}
+            pipe_data_out, pipe_name_out = run_pipeline(pipe_data['img'], pipeline, branch_db, force=force, pipe_data=pipe_data_in, pipe_name=pipe_name)
+            return pipe_data_out
+
+        if not self.parallel or len(self.pipeline) < 2:
+            return self.pipe_gather([run_branch(pipeline, db) for pipeline in self.pipeline])
+
+        locked = locked_db(db)
+        inference = torch.is_inference_mode_enabled()
+        grad = torch.is_grad_enabled()
+
+        def run_parallel(pipeline):
+            with torch.inference_mode(inference), torch.set_grad_enabled(grad):
+                return run_branch(pipeline, locked)
+
+        with ThreadPoolExecutor(max_workers=len(self.pipeline)) as executor:
+            pipe_data_block = list(executor.map(run_parallel, self.pipeline))
+
         return self.pipe_gather(pipe_data_block)
+
+
+class locked_db:
+    """
+    Wraps a pickled_hdf5 database so that every method call holds a lock,
+    letting the sub-pipelines of a parallel pipeline_muxer_module share it.
+    """
+    def __init__(self, db):
+        self.db = db
+        self.lock = threading.Lock()
+
+
+    def __getattr__(self, name):
+        attr = getattr(self.db, name)
+        if not callable(attr):
+            return attr
+
+        def locked(*args, **kwargs):
+            with self.lock:
+                return attr(*args, **kwargs)
+
+        return locked
 

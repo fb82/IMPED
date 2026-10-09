@@ -9,7 +9,7 @@ from tqdm import tqdm
 from PIL import Image
 
 import pickled_hdf5.pickled_hdf5 as pickled_hdf5
-from image_pairs import image_pairs
+from .image_pairs import image_pairs
 
 from .device import device, show_progress
 
@@ -42,7 +42,7 @@ def resolve_image_folder(folder):
     return imgs
 
 
-def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0):
+def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False, add_path='', colmap_db_or_list=None, mode='exclude', colmap_req='geometry', colmap_min_matches=0, colmap_has_pose=True):
     """
     Runs `pipeline` once over pairs built from `imgs` (or the explicit list
     of pairs passed in), then calls `finalize_pipeline(pipeline)`.
@@ -75,6 +75,7 @@ def run_pairs(pipeline, imgs, db_name='database.hdf5', db_mode='a', force=False,
         mode=mode,
         colmap_req=colmap_req,
         colmap_min_matches=colmap_min_matches,
+        colmap_has_pose=colmap_has_pose,
     )
 
     db = pickled_hdf5.pickled_hdf5(db_name, mode=db_mode)
@@ -200,6 +201,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
         pipe_name_prev = pipe_name            
         pipe_name = pipe_name + pipe_id
 
+        no_cache = getattr(pipe_module, 'force_no_cache', False)
+
         
         
         if hasattr(pipe_module, 'single_image') and pipe_module.single_image:            
@@ -207,7 +210,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                 im = os.path.split(pipe_data['img'][n])[-1]
                 data_key = '/' + im + pipe_name + key_data                    
 
-                out_data, is_found = db.get(data_key)                    
+                out_data, is_found = db.get(data_key, force_no_cache=no_cache)
                 if (not is_found) or force:
                     start_time = time.time()
 
@@ -218,8 +221,8 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
                     out_data = pipe_module.run(idx=n, **pipe_data)
                     stop_time = time.time()
                     out_data['running_time'] = stop_time - start_time
-                    if pipe_module.add_to_cache: db.add(data_key, out_data)
-                del out_data['running_time']
+                    if pipe_module.add_to_cache: db.add(data_key, out_data, force_no_cache=no_cache)
+                out_data.pop('running_time', None)
 
                 for k, v in out_data.items():
                     if k in pipe_data:
@@ -235,7 +238,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
             im1 = os.path.split(pipe_data['img'][1])[-1]
             data_key = '/' + im0 + '/' + im1 + pipe_name + key_data 
 
-            out_data, is_found = db.get(data_key)                    
+            out_data, is_found = db.get(data_key, force_no_cache=no_cache)
             if (not is_found) or force:
                 start_time = time.time()
 
@@ -249,7 +252,7 @@ def run_pipeline(pair, pipeline, db, force=False, pipe_data=None, pipe_name='/',
 
                 stop_time = time.time()
                 out_data['running_time'] = stop_time - start_time
-                if pipe_module.add_to_cache: db.add(data_key, out_data)
+                if pipe_module.add_to_cache: db.add(data_key, out_data, force_no_cache=no_cache)
             out_data['running_time']
                 
             

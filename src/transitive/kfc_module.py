@@ -22,8 +22,8 @@ class kfc_module:
 
     finalize():
       * merges in the table already saved under '/sim_table' in `sim_db`
-        (e.g. by cosine_similarity_module(mode='table')), if any, and saves
-        the result back there as a single entry;
+        by a previous run, if any, and saves the result back there as a
+        single entry;
       * builds a graph weighted by 'pair_sim';
       * extracts `n_mst` successive maximum spanning trees, removing every
         edge picked by the earlier trees before computing the next one
@@ -183,9 +183,14 @@ class kfc_module:
             tree.remove_edge(u, v)
             g0 = nx.node_connected_component(tree, u)
             g1 = nx.node_connected_component(tree, v)
-            if len(g0) >= min_size and len(g1) >= min_size and (n_datasets is not None or
-                    mean_sim(g0, g1) < sep_ratio * min(mean_sim(g0, g0), mean_sim(g1, g1))):
-                print(f"kfc_module: cut at similarity {sim:.4g} -> {len(g0)} / {len(g1)} images")
+            keep = len(g0) >= min_size and len(g1) >= min_size
+            msg = ''
+            if keep and n_datasets is None:
+                sep = mean_sim(g0, g1) / min(mean_sim(g0, g0), mean_sim(g1, g1))
+                keep = sep < sep_ratio
+                msg = f", between/within similarity {sep:.3g} (sep_ratio {sep_ratio})"
+            if keep:
+                print(f"kfc_module: cut at similarity {sim:.4g} -> {len(g0)} / {len(g1)} images{msg}")
                 n_groups += 1
             else:
                 tree.add_edge(u, v, weight=sim)
