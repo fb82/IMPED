@@ -1721,11 +1721,10 @@ def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
     global_db = str(output_path / 'global_sim.hdf5')
 
     datasets = []
-    allowed = set()
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(datasets=datasets, allowed=allowed, sim_db=global_db, out_path=None, n_mst=2, multi_dataset=True, cut_ratio=1.0, n_datasets=n_datasets, sim_quantile=0.75),
+        kfc_module(datasets=datasets, sim_db=global_db, out_path=None, n_mst=2, multi_dataset=True, cut_ratio=1.0, n_datasets=n_datasets, sim_quantile=0.75),
     ]
     run_pairs(global_pipeline, str(imgs_dir), db_name=global_db)
 
@@ -1734,7 +1733,6 @@ def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
 
         transitive = transitive_module(
             pairs=current_pairs,
-            allowed=allowed,
             threshold=3,
             max_iterations=3,
             out_path=str(output_path / f'dataset_{i}_transitive_pairs.hdf5'),
@@ -2209,7 +2207,7 @@ def pipeline_ssma_transitive(
     max_iterations=10,
     min_matches=0,
     sim_quantile=0.7,
-    sim_min=None,
+    sim_th=None,
 ):
     """
     Full split-SSMA run, SIFT global-similarity variant: two passes over
@@ -2225,8 +2223,8 @@ def pipeline_ssma_transitive(
     picks the seed pairs as `n_mst` successive maximum spanning trees.
 
     Pass 2 - transitive closure, inlined below. `sim_quantile`
-    (0..1) / `sim_min` make kfc_module keep only the strongest pairs in
-    `allowed`, so weak transitive candidates are never matched.
+    (0..1) / `sim_th` make kfc_module drop the seed pairs whose pass-1
+    similarity is below the cut.
     """
     print("\n \n")
     print("=" * 50)
@@ -2244,7 +2242,6 @@ def pipeline_ssma_transitive(
     # GB for data that is only used to produce one number per pair. The run
     # still resumes at pair granularity from the cached 'pair_sim'.
     current_pairs = []
-    allowed = set()
     global_db = str(output_path / 'ssma_global_sim.hdf5')
     global_pipeline = [
         image_muxer_module(
@@ -2264,7 +2261,7 @@ def pipeline_ssma_transitive(
             ],
         ),
         n_matches_similarity_module(),
-        kfc_module(pairs=current_pairs, allowed=allowed, sim_db=global_db, out_path=kfc_pairs_path, n_mst=n_mst, sim_quantile=sim_quantile, sim_min=sim_min),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=kfc_pairs_path, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
     ]
     run_pairs(global_pipeline, images_folder, db_name=global_db)
     # current_pairs is already filled in place by kfc_module - no file read needed
@@ -2274,9 +2271,8 @@ def pipeline_ssma_transitive(
     # round over current_pairs; transitive.finalize() then drops the pairs
     # just matched and appends the next round's candidates, emptying it once
     # `max_iterations` is reached, which ends the while loop below.
-    # `sim_min` / `sim_quantile` gate which transitive candidates are queued
-    # at all: kfc_module fills `allowed` with the pairs above the cut. `min_matches`
-    # gates confirmation on the pass-2 match result.
+    # `sim_th` / `sim_quantile` only cut the seed pairs, in kfc_module.
+    # `min_matches` gates confirmation on the pass-2 match result.
     transitive_pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
     match_db = str(output_path / 'ssma_transitive.db')
 
@@ -2290,7 +2286,6 @@ def pipeline_ssma_transitive(
 
     transitive = transitive_module(
         pairs=current_pairs,
-        allowed=allowed,
         threshold=min_matches,
         max_iterations=max_iterations,
         out_path=transitive_pairs_path,
@@ -2321,7 +2316,7 @@ def pipeline_ssma_transitive_salad(
     max_iterations=3,
     min_matches=3,
     sim_quantile=0.0,
-    sim_min=None,
+    sim_th=None,
 ):
     """
     Full split-SSMA run, SALAD global-similarity variant.
@@ -2334,8 +2329,8 @@ def pipeline_ssma_transitive_salad(
     seed selection.
 
     Pass 2 - transitive closure, inlined below. `sim_quantile`
-    (0..1) / `sim_min` make kfc_module keep only the strongest pairs in
-    `allowed`, so weak transitive candidates are never matched.
+    (0..1) / `sim_th` make kfc_module drop the seed pairs whose pass-1
+    similarity is below the cut.
     """
     print("\n \n")
     print("=" * 50)
@@ -2348,12 +2343,11 @@ def pipeline_ssma_transitive_salad(
 
     # --- pass 1: SALAD global-descriptor similarity + KFC seed selection ---
     current_pairs = []
-    allowed = set()
     global_db = str(output_path / 'ssma_global_sim.hdf5')
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(pairs=current_pairs, allowed=allowed, sim_db=global_db, out_path=kfc_pairs_path, n_mst=n_mst, sim_quantile=sim_quantile, sim_min=sim_min),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=kfc_pairs_path, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
     ]
     run_pairs(global_pipeline, images_folder, db_name=global_db)
     # current_pairs is already filled in place by kfc_module - no file read needed
@@ -2363,9 +2357,8 @@ def pipeline_ssma_transitive_salad(
     # round over current_pairs; transitive.finalize() then drops the pairs
     # just matched and appends the next round's candidates, emptying it once
     # `max_iterations` is reached, which ends the while loop below.
-    # `sim_min` / `sim_quantile` gate which transitive candidates are queued
-    # at all: kfc_module fills `allowed` with the pairs above the cut. `min_matches`
-    # gates confirmation on the pass-2 match result.
+    # `sim_th` / `sim_quantile` only cut the seed pairs, in kfc_module.
+    # `min_matches` gates confirmation on the pass-2 match result.
     transitive_pairs_path = str(output_path / 'ssma_transitive_pairs.hdf5')
     match_db = str(output_path / 'ssma_transitive.db')
 
@@ -2379,7 +2372,6 @@ def pipeline_ssma_transitive_salad(
 
     transitive = transitive_module(
         pairs=current_pairs,
-        allowed=allowed,
         threshold=min_matches,
         max_iterations=max_iterations,
         out_path=transitive_pairs_path,
@@ -2410,7 +2402,7 @@ def full_pipeline_ssma(
     max_iterations=3,
     min_matches=3,
     sim_quantile=0.75,
-    sim_min=None,
+    sim_th=None,
 ):
     print("\n \n")
     print("=" * 50)
@@ -2423,12 +2415,11 @@ def full_pipeline_ssma(
     match_db = str(output_path / 'full_ssma_transitive.db')
 
     current_pairs = []
-    allowed = set()
     global_db = str(output_path / 'full_ssma_global_sim.hdf5')
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(pairs=current_pairs, allowed=allowed, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_min=sim_min),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
     ]
     run_pairs(global_pipeline, images_folder, db_name=global_db)
 
@@ -2440,7 +2431,6 @@ def full_pipeline_ssma(
 
     transitive = transitive_module(
         pairs=current_pairs,
-        allowed=allowed,
         threshold=min_matches,
         max_iterations=max_iterations,
         out_path=transitive_pairs_path,
@@ -2483,7 +2473,7 @@ def full_pipeline_ssma_hierarchical(
     max_iterations=3,
     min_matches=3,
     sim_quantile=0.75,
-    sim_min=None,
+    sim_th=None,
 ):
     print("\n \n")
     print("=" * 50)
@@ -2496,12 +2486,11 @@ def full_pipeline_ssma_hierarchical(
     match_db = str(output_path / 'full_ssma_hierarchical_transitive.db')
 
     current_pairs = []
-    allowed = set()
     global_db = str(output_path / 'full_ssma_hierarchical_global_sim.hdf5')
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(pairs=current_pairs, allowed=allowed, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_min=sim_min),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
     ]
     run_pairs(global_pipeline, images_folder, db_name=global_db)
 
@@ -2513,7 +2502,6 @@ def full_pipeline_ssma_hierarchical(
 
     transitive = transitive_module(
         pairs=current_pairs,
-        allowed=allowed,
         threshold=min_matches,
         max_iterations=max_iterations,
         out_path=transitive_pairs_path,
@@ -2564,7 +2552,7 @@ def full_pipeline_ssma_hierarchical_dino(
     max_iterations=3,
     min_matches=3,
     sim_quantile=0.75,
-    sim_min=None,
+    sim_th=None,
     global_db=None,
 ):
     # global_db: path to an existing global-similarity hdf5 (e.g. the
@@ -2581,13 +2569,12 @@ def full_pipeline_ssma_hierarchical_dino(
     match_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.db')
 
     current_pairs = []
-    allowed = set()
     if global_db is None:
         global_db = str(output_path / 'full_ssma_hierarchical_dino_global_sim.hdf5')
     global_pipeline = [
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(pairs=current_pairs, allowed=allowed, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_min=sim_min),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
     ]
     run_pairs(global_pipeline, images_folder, db_name=global_db)
 
@@ -2599,7 +2586,6 @@ def full_pipeline_ssma_hierarchical_dino(
 
     transitive = transitive_module(
         pairs=current_pairs,
-        allowed=allowed,
         threshold=min_matches,
         max_iterations=max_iterations,
         out_path=transitive_pairs_path,

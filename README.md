@@ -239,22 +239,21 @@ Pass 1: global similarity, computed exhaustively but cheaply (one descriptor per
 
 ```python
 current_pairs = []
-allowed = set()
 global_db = 'database_global.hdf5'
 global_pipeline = [
     salad_module(),
     cosine_similarity_module(),
-    kfc_module(pairs=current_pairs, allowed=allowed, sim_quantile=0.75, sim_db=global_db, out_path='kfc_pairs.hdf5', n_mst=2),
+    kfc_module(pairs=current_pairs, sim_db=global_db, out_path='kfc_pairs.hdf5', n_mst=2),
 ]
 run_pairs(global_pipeline, '../data/ET', db_name=global_db)
 ```
 
-`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs` is filled in place, so it's ready as soon as `run_pairs()` returns. The full similarity table is saved as a single `/sim_table` entry in `sim_db`. When given a set as `allowed`, `kfc_module` also fills it with the pairs whose similarity is at least `sim_min`, or at least the `sim_quantile` quantile (0..1) of the table when `sim_min` is not set; `sim_quantile` is scale-independent, so the same setting works whether pass 1 produced SIFT match counts or SALAD cosine similarities.
+`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs` is filled in place, so it's ready as soon as `run_pairs()` returns. The full similarity table is saved as a single `/sim_table` entry in `sim_db`. With `sim_th`, or with `sim_quantile` (0..1, the quantile of the table's values, used when `sim_th` is not set), `kfc_module` also drops the seed pairs whose similarity is below that cut; `sim_quantile` is scale-independent, so the same setting works whether pass 1 produced SIFT match counts or SALAD cosine similarities.
 
 Pass 2: the real matching pipeline, driven round by round:
 
 ```python
-transitive = transitive_module(pairs=current_pairs, allowed=allowed, threshold=0, max_iterations=10)
+transitive = transitive_module(pairs=current_pairs, threshold=0, max_iterations=10)
 match_pipeline = [
     dog_module(), sift_module(), smnn_module(), magsac_module(),
     transitive,
@@ -265,11 +264,41 @@ while current_pairs:
     run_pairs(match_pipeline, current_pairs, db_name='database_match.hdf5')
 ```
 
-`transitive` is placed in the pipeline like any other module. `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation) and `allowed` (pass-1 similarity, to skip weak transitive candidates without ever matching them). The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
+`transitive` is placed in the pipeline like any other module. `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation). The pass-1 global similarity only selects the seed pairs: being a coarse estimate, it is not used to discard the candidates suggested by the transitive closure. The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
 
 Modules placed after `transitive` can defer expensive teardown (closing a database, waiting for a reconstruction) until the closure is actually done, instead of doing it after every round. `to_colmap_module` and `reconstruct_module` take `worklist=current_pairs`, the same list, and only tear down once it is empty; `live_pair_graph` needs more than that (queued pairs, threshold, round numbers), so it takes `worklist=transitive` and reads `transitive.args['continue']`, which `transitive.finalize()` sets to whether another round is coming.
 
-**Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round (or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round) rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline52()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/imped_tests/test_pipelines.py` for complete examples.
+**Watching it live**: `live_pair_graph`, placed after `transitive` with `worklist=transitive`, renders the pair graph as an interactive HTML page (pyvis/vis.js), redrawn once per round (or every `redraw_every` confirmed pairs, for finer-grained feedback within a long round) rather than after every single pair. Confirmed edges are colored by which round confirmed them (`transitive.pair_round`): blue for the seed round, green for later transitive rounds; pending candidates show as dashed orange, rejected pairs as dashed red. See `pipeline52()`, `pipeline_ssma_transitive()` and `pipeline_ssma_transitive_salad()` in `src/imped_tests/test_pipelines.py` for complete examples. The page and its controls are described in [Exploring the pair graph](#exploring-the-pair-graph).
+
+### Exploring the pair graph
+
+The pair graph can be drawn in two ways, both producing the same interactive HTML page:
+
+- `live_pair_graph`, inside a transitive pipeline (see above), redraws the page while the pipeline runs.
+- `db_pair_graph` draws the pair graph already stored in a COLMAP database, with no pipeline involved:
+
+```python
+from visualization import db_pair_graph
+
+graph = db_pair_graph('colmap.db', min_inliers=15, open_browser=False)
+```
+
+Pairs with at least `min_inliers` verified matches (`two_view_geometries`) become blue edges labelled with the inlier count; a database with no verified pair falls back to the raw `matches` count. The other pairs are drawn as dashed red "rejected" edges unless `show_rejected=False`. The page is written next to the database as `<db>_pair_graph.html` (or to `save_to`) and the function returns the `networkx` graph of the confirmed pairs. On a machine without a browser, pass `open_browser=False` and open the HTML file locally.
+
+Nodes can be dragged and the view zoomed and panned. The bar in the top-left corner adds:
+
+- **Search**: typing part of an image name colors the matching nodes orange, shows how many were found and fits the view on them.
+- **Image folder**: selects the local folder holding the images, matched to the nodes by file name. Nothing is loaded until an image is requested, and the folder has to be selected again after reloading the page.
+- **Spread nodes**: moves the nodes to a precomputed layout that makes the structure of the graph readable. Images are grouped into tightly connected blocks (Louvain communities), each drawn as a disc of evenly spaced nodes; blocks weakly connected to the rest end up on the outside, images with fewer pairs towards the rim of their disc, and images without any pair in a disc of their own. Requires `networkx>=2.8`.
+
+With an image folder selected, images open in a panel on the right:
+
+- **Double click** on a node shows its image.
+- **Right click** on a node shows its image, framed in orange, followed by the images it is paired with (confirmed pairs only).
+- **Right click** on an image in the panel does the same for that image, so the graph can be followed from one image to the next.
+- Every image has a `×` button to close it, and opening a new selection closes the previous one.
+
+The selected node is always the only orange one; after a right click its neighbours turn yellow. Node colors work without an image folder too.
 
 ### Global descriptors
 
@@ -435,7 +464,7 @@ See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example o
 `conf_module` · `transitive.kfc_module` · `transitive.transitive_module`
 
 ### Visualization
-`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` 
+`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` · `db_pair_graph`
 
 ### COLMAP
 `to_colmap_module` · `from_colmap_module` · `merge_colmap_db` · `filter_colmap_reconstruction` · `align_colmap_models`
@@ -543,7 +572,9 @@ src/
 │   ├── show_homography.py
 │   ├── show_patches.py
 │   ├── colorize.py
-│   └── live_pair_graph.py     # interactive live pair-graph viewer
+│   ├── live_pair_graph.py     # interactive live pair-graph viewer
+│   ├── db_pair_graph.py       # same viewer for the pair graph of a COLMAP database
+│   └── pair_graph_controls.html   # search, image preview and layout controls added to the page
 │
 ├── imc/
 │   ├── imc.py                 # IMC 2025 ground truth generation and evaluation

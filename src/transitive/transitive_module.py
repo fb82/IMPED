@@ -41,17 +41,12 @@ class transitive_module:
     Each run() records the pair just matched and, when its match count
     clears `threshold`, adds it to the confirmed graph.
 
-    Two independent gates keep the closure from growing to the full graph:
-
-    * `threshold` - on the *matching* result of pass 2: a pair only becomes a
-      confirmed edge (and can therefore spawn transitive candidates) when its
-      match count exceeds this. Natural for SIFT (inlier count); pass an
-      appropriate value for whatever 'pair_sim' the pipeline produces.
-
-    * `allowed` - on the *global similarity* of pass 1: the set of pairs
-      kfc_module kept with its `sim_min` / `sim_quantile` cut. A transitive
-      candidate a-c is only queued if it is in this set, so weak pairs are
-      never matched at all. Without `allowed`, every candidate is queued.
+    `threshold` keeps the closure from growing to the full graph: a pair
+    only becomes a confirmed edge (and can therefore spawn transitive
+    candidates) when its match count exceeds it. Natural for SIFT (inlier
+    count); pass an appropriate value for whatever 'pair_sim' the pipeline
+    produces. The pass-1 global similarity is not used here: it only decides
+    the seed pairs, in kfc_module.
     """
     def __init__(self, **args):
         self.single_image = False
@@ -60,7 +55,6 @@ class transitive_module:
         self.add_to_cache = False
 
         pairs = args.pop('pairs', None)
-        self.allowed = args.pop('allowed', None)
 
         self.args = {
             'id_more': '',
@@ -81,17 +75,9 @@ class transitive_module:
         self._computed_this_round = set()
         self.pair_round = {}
         self.iter = 0
-        self._n_skipped_low_sim = 0
 
     def get_id(self):
         return self.id_string
-
-    def _sim_ok(self, a, c):
-        """Whether pair (a, c) is among the pairs kfc_module allowed. True
-        when no `allowed` set was given."""
-        if self.allowed is None:
-            return True
-        return frozenset((os.path.basename(a), os.path.basename(c))) in self.allowed
 
     @staticmethod
     def _match_count(pipe_data):
@@ -145,9 +131,6 @@ class transitive_module:
                     if key in self._tried:
                         continue
                     self._tried.add(key)
-                    if not self._sim_ok(a, c):
-                        self._n_skipped_low_sim += 1
-                        continue
                     new_pairs.append((a, c))
             self.pp.extend(new_pairs)
 
@@ -156,8 +139,7 @@ class transitive_module:
 
         self._save()
         print(f"transitive_module: iteration {self.iter}, "
-              f"+{len(new_pairs)} transitive pairs "
-              f"({self._n_skipped_low_sim} skipped so far for low pass-1 similarity), "
+              f"+{len(new_pairs)} transitive pairs, "
               f"{len(self.pp)} left to do, "
               f"{self._graph.number_of_edges()} pairs confirmed so far")
 

@@ -1,10 +1,40 @@
+import json
+import math
 import os
 import webbrowser
+from itertools import combinations
 
 import networkx as nx
 from pyvis.network import Network
 
 MAX_VISUALIZED_CANDIDATES = 5000
+
+with open(os.path.join(os.path.dirname(__file__), 'pair_graph_controls.html')) as f:
+    CONTROLS = f.read()
+
+
+def spread_layout(graph, step=80):
+    isolated = set(nx.isolates(graph))
+    groups = nx.community.louvain_communities(graph.subgraph(set(graph) - isolated), seed=0) + [isolated]
+    groups = [frozenset(group) for group in groups if group]
+    group_of = {node: group for group in groups for node in group}
+    quotient = nx.Graph()
+    quotient.add_nodes_from(groups)
+    quotient.add_edges_from((group_of[a], group_of[b]) for a, b in graph.edges() if group_of[a] != group_of[b])
+    components = sorted(nx.connected_components(quotient), key=len, reverse=True)
+    for component in components[1:]:
+        quotient.add_edge(max(components[0], key=len), max(component, key=len))
+    centers = nx.kamada_kawai_layout(quotient)
+    scale = max((step * (math.sqrt(len(a)) + math.sqrt(len(b))) / math.dist(centers[a], centers[b])
+                 for a, b in combinations(groups, 2)), default=1)
+
+    pos = {}
+    for group in groups:
+        cx, cy = centers[group] * scale
+        for i, node in enumerate(sorted(group, key=graph.degree, reverse=True)):
+            radius, angle = step * math.sqrt(i), i * math.pi * (3 - math.sqrt(5))
+            pos[node] = (cx + radius * math.cos(angle), cy + radius * math.sin(angle))
+    return pos
 
 
 class live_pair_graph:
@@ -194,6 +224,9 @@ class live_pair_graph:
             "enabled": false,
             "stabilization": false
           },
+          "edges": {
+            "smooth": false
+          },
           "interaction": {
             "dragNodes": true,
             "zoomView": true,
@@ -202,3 +235,8 @@ class live_pair_graph:
         }
         """)
         net.write_html(self.save_to, notebook=False, open_browser=False)
+        with open(self.save_to) as f:
+            html = f.read()
+        with open(self.save_to, 'w') as f:
+            controls = CONTROLS.replace('SPREAD_POSITIONS', json.dumps(spread_layout(self.graph)))
+            f.write(html.replace('</body>', controls + '</body>'))

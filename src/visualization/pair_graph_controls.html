@@ -1,0 +1,96 @@
+<div style="position:fixed;top:10px;left:10px;z-index:10;padding:6px;background:#fff;border:1px solid #ccc;font:14px sans-serif">
+  <input id="pg-search" placeholder="search image name">
+  <span id="pg-found"></span>
+  <label>image folder <input id="pg-folder" type="file" webkitdirectory></label>
+  <button id="pg-spread">spread nodes</button>
+</div>
+<div id="pg-preview"></div>
+<style>
+  #pg-preview {position:fixed;top:60px;right:10px;z-index:10;width:35vw;max-height:calc(100vh - 80px);overflow:auto;display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;font:12px sans-serif}
+  .pg-card {position:relative;box-sizing:border-box;width:calc(50% - 4px);border:4px solid #ccc;background:#fff}
+  .pg-card.pg-selected {width:100%;border-color:#ff7f0e}
+  .pg-card:only-child {width:100%}
+  .pg-card img {display:block;width:100%;max-height:45vh;object-fit:contain}
+  .pg-card button {position:absolute;top:4px;right:4px;cursor:pointer}
+</style>
+<script>
+(function () {
+  const files = {};
+  const preview = document.getElementById('pg-preview');
+  let painted = [];
+
+  function paint(colors) {
+    nodes.update(painted.map(id => ({id: id, color: '#97c2fc'})));
+    painted = Object.keys(colors);
+    nodes.update(painted.map(id => ({id: id, color: colors[id]})));
+  }
+
+  function neighbours(node) {
+    const confirmed = edges.get(network.getConnectedEdges(node)).filter(edge => !edge.dashes);
+    return confirmed.map(edge => edge.from === node ? edge.to : edge.from);
+  }
+
+  function close(card) {
+    URL.revokeObjectURL(card.querySelector('img').src);
+    card.remove();
+  }
+
+  function select(node, linked) {
+    paint({...Object.fromEntries(linked.map(id => [id, '#ffd92f'])), [node]: '#ff7f0e'});
+    [...preview.children].forEach(close);
+    for (const id of [node, ...linked]) {
+      const file = files[id.split('/').pop()];
+      if (!file) continue;
+      const card = document.createElement('div');
+      const image = document.createElement('img');
+      const button = document.createElement('button');
+      const name = document.createElement('div');
+      card.className = id === node ? 'pg-card pg-selected' : 'pg-card';
+      card.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        select(id, neighbours(id));
+      });
+      image.src = URL.createObjectURL(file);
+      button.textContent = '\u00d7';
+      button.addEventListener('click', () => close(card));
+      name.textContent = id;
+      card.append(image, button, name);
+      preview.append(card);
+    }
+  }
+
+  document.getElementById('pg-search').addEventListener('input', event => {
+    const text = event.target.value.toLowerCase();
+    const found = text ? nodes.getIds().filter(id => id.toLowerCase().includes(text)) : [];
+    paint(Object.fromEntries(found.map(id => [id, '#ff7f0e'])));
+    document.getElementById('pg-found').textContent = text ? found.length + ' found' : '';
+    if (found.length) network.fit({nodes: found});
+  });
+
+  document.getElementById('pg-folder').addEventListener('change', event => {
+    for (const file of event.target.files) files[file.name] = file;
+  });
+
+  network.on('doubleClick', params => {
+    if (params.nodes.length) select(params.nodes[0], []);
+  });
+
+  network.on('oncontext', params => {
+    params.event.preventDefault();
+    const node = network.getNodeAt(params.pointer.DOM);
+    if (node !== undefined) select(node, neighbours(node));
+  });
+
+  document.getElementById('pg-spread').addEventListener('click', () => {
+    const moved = Object.entries(SPREAD_POSITIONS).map(([id, [x, y]]) => ({id: id, x: x, y: y}));
+    const xs = moved.map(node => node.x);
+    const ys = moved.map(node => node.y);
+    const box = document.getElementById('mynetwork');
+    nodes.update(moved);
+    network.moveTo({
+      position: {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2},
+      scale: 0.9 * Math.min(box.clientWidth / (Math.max(...xs) - Math.min(...xs) + 1), box.clientHeight / (Math.max(...ys) - Math.min(...ys) + 1)),
+    });
+  });
+})();
+</script>
