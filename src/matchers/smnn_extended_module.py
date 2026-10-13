@@ -7,14 +7,14 @@ from core import set_args, check_data, NMATCHES
 
 class smnn_extended_module:
     """
-    Symmetric Mutual Nearest Neighbors matching on a given similarity matrix.
+    Symmetric Mutual Nearest Neighbors matching on a given matrix.
 
     Same matching as smnn_module, but instead of computing the distances
-    from 'desc' it takes the [N0, N1] similarity matrix 'sm' (values in
-    [0, 1]) already in the pipeline data, e.g. from similarity_matrix_module
-    or the combination of several of them through a pipeline_muxer_module
-    with pipe_sm_product. It is turned into the distance matrix 1 - sm
-    expected by kornia right before matching.
+    from 'desc' it takes the [N0, N1] matrix 'sm' already in the pipeline
+    data, e.g. from similarity_matrix_module or the combination of several
+    of them through a pipeline_muxer_module with pipe_sm_product. 'sm' is
+    1 - similarity, i.e. a distance, and is passed to kornia as it is;
+    pairs at infinite distance are never matched.
 
     Attributes:
         th (float): The distance ratio threshold, as in smnn_module.
@@ -53,7 +53,7 @@ class smnn_extended_module:
 
 
     def run(self, **args):
-        dm = 1 - args['sm'].to(self.device)
+        dm = args['sm'].to(self.device)
 
         val, idxs = K.feature.match_smnn(dm.new_zeros((dm.shape[0], 1)), dm.new_zeros((dm.shape[1], 1)), self.args['th'], dm=dm)
 

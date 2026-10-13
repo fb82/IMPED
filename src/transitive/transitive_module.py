@@ -48,15 +48,10 @@ class transitive_module:
       match count exceeds this. Natural for SIFT (inlier count); pass an
       appropriate value for whatever 'pair_sim' the pipeline produces.
 
-    * `sim_min` / `sim_quantile` - on the *global similarity* of pass 1
-      (the '/sim_table' entry kfc_module saved in `sim_db`). A transitive candidate a-c
-      is only queued if its pass-1 similarity is high enough, so weak pairs
-      are never matched at all. `sim_quantile` (0..1) is scale-independent -
-      it cuts at that quantile of the table's values - so the same setting
-      works whether pass 1 produced SIFT match counts or SALAD cosine
-      similarities. `sim_min` sets an absolute cut instead and takes
-      precedence when given. With neither set, every candidate is queued
-      (previous behaviour).
+    * `allowed` - on the *global similarity* of pass 1: the set of pairs
+      kfc_module kept with its `sim_min` / `sim_quantile` cut. A transitive
+      candidate a-c is only queued if it is in this set, so weak pairs are
+      never matched at all. Without `allowed`, every candidate is queued.
     """
     def __init__(self, **args):
         self.single_image = False
@@ -65,15 +60,13 @@ class transitive_module:
         self.add_to_cache = False
 
         pairs = args.pop('pairs', None)
+        self.allowed = args.pop('allowed', None)
 
         self.args = {
             'id_more': '',
             'threshold': 0.0,
-            'sim_min': None,
-            'sim_quantile': 0.0,
             'max_iterations': 10,
             'out_path': 'transitive_pairs.hdf5',
-            'sim_db': None,
         }
 
         self.id_string, self.args = set_args('transitive', args, self.args)
@@ -81,17 +74,6 @@ class transitive_module:
         # start clean: the snapshot file is a fresh output, not an accumulator
         if os.path.exists(self.args['out_path']):
             os.remove(self.args['out_path'])
-
-        # pass-1 similarity, keyed by the unordered pair of basenames
-        self._sim = {}
-        if self.args['sim_db'] is not None:
-            db = pickled_hdf5.pickled_hdf5(self.args['sim_db'], mode='r')
-            sim_table, _ = db.get('/sim_table')
-            db.close()
-            for (a, b), v in sim_table.items():
-                self._sim[frozenset((os.path.basename(a), os.path.basename(b)))] = v
-
-        self._sim_cut = self._compute_sim_cut()
 
         self.pp = pairs if pairs is not None else []
         self._graph = nx.Graph()
@@ -101,31 +83,15 @@ class transitive_module:
         self.iter = 0
         self._n_skipped_low_sim = 0
 
-    def _compute_sim_cut(self):
-        if self.args['sim_min'] is not None:
-            return float(self.args['sim_min'])
-
-        q = self.args['sim_quantile']
-        if not self._sim or not q or q <= 0.0:
-            return None
-
-        vals = sorted(self._sim.values())
-        idx = min(len(vals) - 1, max(0, int(round(q * (len(vals) - 1)))))
-        cut = vals[idx]
-        print(f"transitive_module: pass-1 similarity cut at quantile {q} -> {cut:.4g} "
-              f"({len(vals)} scored pairs)")
-        return cut
-
     def get_id(self):
         return self.id_string
 
     def _sim_ok(self, a, c):
-        """Whether the pass-1 global similarity of pair (a, c) is high enough
-        to bother matching it. True when no similarity gate is configured."""
-        if self._sim_cut is None:
+        """Whether pair (a, c) is among the pairs kfc_module allowed. True
+        when no `allowed` set was given."""
+        if self.allowed is None:
             return True
-        v = self._sim.get(frozenset((os.path.basename(a), os.path.basename(c))))
-        return v is not None and v >= self._sim_cut
+        return frozenset((os.path.basename(a), os.path.basename(c))) in self.allowed
 
     @staticmethod
     def _match_count(pipe_data):

@@ -44,6 +44,12 @@ class kfc_module:
         run_pairs([..., kfc_module(pairs=pp, sim_db=..., n_mst=2)], imgs, db_name=...)
         # pp now holds the selected (img0, img1) pairs
 
+    Passing a set as `allowed` makes finalize() fill it, in place, with the
+    pairs (as frozensets of basenames) whose similarity is at least
+    `sim_min`, or at least the `sim_quantile` quantile (0..1) of the table
+    when `sim_min` is not set, or all pairs when neither is set; give the
+    same set to transitive_module so that it only proposes those pairs.
+
     With `multi_dataset=True`, finalize() first splits the images into
     separate datasets by cutting the first maximum spanning tree (see
     `split_datasets`), then runs the KFC selection on each one. `datasets`
@@ -58,6 +64,7 @@ class kfc_module:
 
         pairs = args.pop('pairs', None)
         datasets = args.pop('datasets', None)
+        allowed = args.pop('allowed', None)
 
         self.args = {
             'id_more': '',
@@ -69,6 +76,8 @@ class kfc_module:
             'sep_ratio': 0.8,
             'min_dataset_size': 3,
             'n_datasets': None,
+            'sim_min': None,
+            'sim_quantile': 0.0,
         }
 
         self.id_string, self.args = set_args('kfc', args, self.args)
@@ -76,6 +85,7 @@ class kfc_module:
         self._table = {}
         self.selected = pairs if pairs is not None else []
         self.datasets = datasets if datasets is not None else []
+        self.allowed = allowed
         self._n_seen = 0
 
     @staticmethod
@@ -212,6 +222,18 @@ class kfc_module:
         print(f"kfc_module: {len(groups)} dataset(s) found, sizes {[len(g) for g in groups]}")
         return [p for d in self.datasets for p in d]
 
+    def _fill_allowed(self):
+        cut = self.args['sim_min']
+        q = self.args['sim_quantile']
+        if cut is None and q and q > 0.0 and self._table:
+            vals = sorted(self._table.values())
+            cut = vals[min(len(vals) - 1, max(0, int(round(q * (len(vals) - 1)))))]
+        self.allowed.clear()
+        self.allowed.update(frozenset((os.path.basename(a), os.path.basename(b)))
+                            for (a, b), sim in self._table.items() if cut is None or sim >= cut)
+        cut_msg = 'no cut' if cut is None else f'similarity cut {cut:.4g}'
+        print(f"kfc_module: {cut_msg}, {len(self.allowed)} of {len(self._table)} pairs allowed")
+
     def finalize(self):
         if self.args['sim_db'] is not None:
             db = pickled_hdf5.pickled_hdf5(self.args['sim_db'])
@@ -221,6 +243,9 @@ class kfc_module:
                 self._table = table
             db.add('/sim_table', self._table)
             db.close()
+
+        if self.allowed is not None:
+            self._fill_allowed()
 
         # mutate the list in place (never reassign it) so that if `pairs` was
         # passed in at construction, the caller's own list object also ends

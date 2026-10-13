@@ -30,8 +30,8 @@
 <path d="M 784.0 160.0 L 800.0 160.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
 <polygon points="808.0,160.0 800.0,164.5 800.0,155.5" fill="#6B7280"/>
 <rect x="624" y="218" width="160" height="46" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 4"/>
-<text x="704" y="238" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">/sim_table</text>
-<text x="704" y="255" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">saved in sim_db</text>
+<text x="704" y="238" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">allowed</text>
+<text x="704" y="255" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">sim_min / sim_quantile cut</text>
 <path d="M 704.0 192.0 L 704.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
 <polygon points="704.0,216.0 699.5,208.0 708.5,208.0" fill="#6B7280"/>
 <rect x="810" y="218" width="150" height="46" rx="8" fill="#FFE4E6" stroke="#BE123C" stroke-width="1.5"/>
@@ -71,9 +71,9 @@
 <polygon points="808.0,358.0 800.0,362.5 800.0,353.5" fill="#6B7280"/>
 <path d="M 704.0 264.0 L 704.0 290.0 L 508.0 290.0 L 508.0 316.0" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-dasharray="5 4"/>
 <polygon points="508.0,324.0 503.5,316.0 512.5,316.0" fill="#6B7280"/>
-<text x="516" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="start">sim_quantile gate</text>
+<text x="516" y="286" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="start">only allowed pairs are proposed</text>
 <path d="M 508.0 390.0 L 508.0 430.0 L 105.0 430.0 L 105.0 400.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
 <polygon points="105.0,392.0 109.5,400.0 100.5,400.0" fill="#6B7280"/>
-<text x="120" y="452" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">Next round: a–c for every confirmed a–b, b–c, gated by threshold (matches) and sim_quantile (global similarity).</text>
+<text x="120" y="452" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">Next round: a–c for every confirmed a–b, b–c, gated by threshold (matches) and allowed (global similarity).</text>
 <text x="120" y="472" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">The loop ends when no candidates are left or max_iterations is reached.</text>
 </svg>

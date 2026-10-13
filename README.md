@@ -239,21 +239,22 @@ Pass 1: global similarity, computed exhaustively but cheaply (one descriptor per
 
 ```python
 current_pairs = []
+allowed = set()
 global_db = 'database_global.hdf5'
 global_pipeline = [
     salad_module(),
     cosine_similarity_module(),
-    kfc_module(pairs=current_pairs, sim_db=global_db, out_path='kfc_pairs.hdf5', n_mst=2),
+    kfc_module(pairs=current_pairs, allowed=allowed, sim_quantile=0.75, sim_db=global_db, out_path='kfc_pairs.hdf5', n_mst=2),
 ]
 run_pairs(global_pipeline, '../data/ET', db_name=global_db)
 ```
 
-`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs` is filled in place, so it's ready as soon as `run_pairs()` returns. The full similarity table is saved as a single `/sim_table` entry in `sim_db`, where `transitive_module` reads it back.
+`kfc_module` (Keypoint Filtering by Coverage, Bellavia et al., 2022) selects the seed pairs as `n_mst` successive maximum spanning trees over the similarity graph. `current_pairs` is filled in place, so it's ready as soon as `run_pairs()` returns. The full similarity table is saved as a single `/sim_table` entry in `sim_db`. When given a set as `allowed`, `kfc_module` also fills it with the pairs whose similarity is at least `sim_min`, or at least the `sim_quantile` quantile (0..1) of the table when `sim_min` is not set; `sim_quantile` is scale-independent, so the same setting works whether pass 1 produced SIFT match counts or SALAD cosine similarities.
 
 Pass 2: the real matching pipeline, driven round by round:
 
 ```python
-transitive = transitive_module(pairs=current_pairs, sim_db=global_db, threshold=0, max_iterations=10)
+transitive = transitive_module(pairs=current_pairs, allowed=allowed, threshold=0, max_iterations=10)
 match_pipeline = [
     dog_module(), sift_module(), smnn_module(), magsac_module(),
     transitive,
@@ -264,7 +265,7 @@ while current_pairs:
     run_pairs(match_pipeline, current_pairs, db_name='database_match.hdf5')
 ```
 
-`transitive` is placed in the pipeline like any other module. `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation) and `sim_min`/`sim_quantile` (pass-1 similarity, to skip weak transitive candidates without ever matching them). The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
+`transitive` is placed in the pipeline like any other module. `current_pairs` is the exact same list object `kfc_module` filled, so the `while` condition and `transitive.pp` always agree. Each `run_pairs()` call runs one round over the current pair list; by the time it returns, `finalize_pipeline()` has already called `transitive.finalize()`, which drops the pairs just tried and appends the next round's transitive candidates (a-c for every confirmed a-b, b-c), gated by `threshold` (pass-2 match confirmation) and `allowed` (pass-1 similarity, to skip weak transitive candidates without ever matching them). The loop ends once the pair list is empty, either because there's nothing left to try or `max_iterations` was reached.
 
 Modules placed after `transitive` can defer expensive teardown (closing a database, waiting for a reconstruction) until the closure is actually done, instead of doing it after every round. `to_colmap_module` and `reconstruct_module` take `worklist=current_pairs`, the same list, and only tear down once it is empty; `live_pair_graph` needs more than that (queued pairs, threshold, round numbers), so it takes `worklist=transitive` and reads `transitive.args['continue']`, which `transitive.finalize()` sets to whether another round is coming.
 
@@ -292,7 +293,7 @@ global_pipeline = [
 run_pairs(global_pipeline, images_folder, db_name=global_db)
 
 for i, current_pairs in enumerate(datasets):
-    transitive = transitive_module(pairs=current_pairs, sim_db=global_db, ...)
+    transitive = transitive_module(pairs=current_pairs, ...)
     match_pipeline = [..., transitive, to_colmap_module(db=f'dataset_{i}.db', worklist=current_pairs, ...), ...]
     while current_pairs:
         run_pairs(match_pipeline, current_pairs, db_name='match.hdf5')
@@ -348,17 +349,17 @@ Without a `worklist`, it runs synchronously at the end of a single, non-transiti
 
 Several descriptors of the *same* keypoints can be combined into a single matching decision, so that semantic information contributes to the choice of each match instead of only accepting or rejecting it afterwards:
 
-1. `similarity_matrix_module(metric=...)` turns the descriptors `desc` of the two images into their [N0, N1] similarity matrix `sm`, with values in [0, 1] and higher meaning more similar:
-   - `'cosine'`: cosine similarity, clamped at 0;
-   - `'l2'` / `'l1'`: `1 / (1 + d)`, with `d` the L2 / L1 distance;
-   - `'equal'`: 1 where the descriptors are equal, 0 otherwise.
-2. A `pipeline_muxer_module` runs one branch per descriptor (descriptor module followed by `similarity_matrix_module`), and `pipe_sm_product` combines the branch matrices by element-wise product, so a keypoint pair stays similar only if it is similar for every descriptor.
-3. `smnn_extended_module` runs the same Symmetric Mutual Nearest Neighbors matching as `smnn_module` on that matrix, converting it to the distance matrix `1 - sm` that kornia expects right before matching, instead of computing distances from `desc`.
+1. `similarity_matrix_module(metric=...)` compares the descriptors `desc` of the two images and returns the [N0, N1] matrix `sm` as `1 - similarity`, i.e. as a distance, where lower means more similar:
+   - `'cosine'`: 1 minus the cosine similarity (clamped at 0), in [0, 1];
+   - `'l2'` / `'l1'`: the L2 / L1 distance;
+   - `'equal'`: 0 where the descriptors are equal, 1 otherwise.
+2. A `pipeline_muxer_module` runs one branch per descriptor (descriptor module followed by `similarity_matrix_module`), and `pipe_sm_product` combines the branch matrices by element-wise product, so a keypoint pair stays close only if it is close for every descriptor. A branch can also act as a pure filter: `pipe_gather=partial(pipe_sm_product, th=[None, None, 0.5])` gives one entry per branch. With `None` the branch enters the product as it is; with a number only the pairs with `sm` below it are kept, and the others are set to infinity.
+3. `smnn_extended_module` runs the same Symmetric Mutual Nearest Neighbors matching as `smnn_module` on that matrix, instead of computing distances from `desc`. Pairs at infinity are never matched, whatever the ratio threshold.
 
 ```python
 pipeline = [
     dog_module(),
-    pipeline_muxer_module(pipe_gather=pipe_sm_product, add_to_cache=False, pipeline=[
+    pipeline_muxer_module(pipe_gather=partial(pipe_sm_product, th=[None, None, 0.5]), add_to_cache=False, pipeline=[
         [sift_module(), similarity_matrix_module(metric='l2')],
         [dino_descriptor_module(), similarity_matrix_module(metric='cosine')],
         [segformer_module(stage='descriptor'), similarity_matrix_module(metric='equal')],
@@ -371,9 +372,9 @@ pipeline = [
 Any per-keypoint quantity can be used as a descriptor this way:
 
 - `dino_descriptor_module` is a single-image descriptor module like `sift_module`: it gives each keypoint already detected the L2-normalized DINOv2 patch feature sampled at its position. It can also be used on its own with `smnn_module` (see `pipeline60()`): on normalized vectors the L2 distance ranks neighbors exactly like the cosine similarity.
-- `segformer_module(stage='descriptor')` gives each keypoint its Cityscapes class id as a one-value descriptor. With `metric='equal'` its matrix is 1 for keypoints on the same class and 0 otherwise, so the product removes every candidate match between different classes.
+- `segformer_module(stage='descriptor')` gives each keypoint its Cityscapes class id as a one-value descriptor. With `metric='equal'` its matrix is 0 for keypoints on the same class and 1 otherwise, so with a threshold such as 0.5 it removes every candidate match between different classes. Give `'equal'` a threshold, since its zeros would otherwise cancel the product, and leave at least one branch with `None`, since the kept pairs of thresholded branches all count the same.
 
-The keypoints must be detected before the muxer, so that every branch describes the same ones and the matrices line up. `smnn_module` is unchanged. Similarity matrices grow with the product of the two keypoint counts (8000 keypoints per image give 64M entries per pair), so `similarity_matrix_module` doesn't cache them and the muxer is created with `add_to_cache=False`; the per-image descriptors and the final matches are cached as usual. See `pipeline59()` and `pipeline65()` (the metrics and the matching alone, on synthetic descriptors) in `src/imped_tests/test_pipelines.py`.
+The keypoints must be detected before the muxer, so that every branch describes the same ones and the matrices line up. `smnn_module` is unchanged. The matrices grow with the product of the two keypoint counts (8000 keypoints per image give 64M entries per pair), so `similarity_matrix_module` doesn't cache them and the muxer is created with `add_to_cache=False`; the per-image descriptors and the final matches are cached as usual. See `pipeline59()` and `pipeline65()` (the metrics and the matching alone, on synthetic descriptors) in `src/imped_tests/test_pipelines.py`.
 
 ### In-memory database cache
 
@@ -425,7 +426,7 @@ See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example o
 `segformer_module`: SegFormer semantic segmentation (Cityscapes labels), flags matches falling on specific classes or gives each keypoint its class as a descriptor
 
 ### Ensemble
-`image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pipe_sm_product` · `pair_rot4` · `pair_pyramid` · `sampling_module`
+`image_muxer_module` · `pipeline_muxer_module` · `pipe_union` · `pipe_max_matches` · `pipe_sm_product` · `pipe_identity` · `pair_rot4` · `pair_pyramid` · `sampling_module`
 
 ### Global Descriptors & Similarity
 `salad_module` · `cosine_similarity_module` · `l2_similarity_module` · `n_matches_similarity_module`

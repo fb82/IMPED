@@ -100,29 +100,30 @@
 <text x="675.7" y="336" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#111827" text-anchor="middle">SegFormer</text>
 <text x="208" y="330" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="start">Dense and 3D matchers (LoFTR, RoMa,</text>
 <text x="208" y="344" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="start">MASt3R, VGGT-Ω, …) skip detect/describe.</text>
-<path d="M 772.0 225.0 L 780.0 225.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
-<polygon points="788.0,225.0 780.0,229.5 780.0,220.5" fill="#6B7280"/>
-<path d="M 788 133 L 788 319" fill="none" stroke="#6B7280" stroke-width="1.2"/>
-<path d="M 788.0 133.0 L 796.0 133.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
-<polygon points="804.0,133.0 796.0,137.5 796.0,128.5" fill="#6B7280"/>
-<rect x="806" y="108" width="154" height="50" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
-<text x="883.0" y="131.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Matches</text>
-<text x="883.0" y="148.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">keypoints and inliers</text>
-<path d="M 788.0 195.0 L 796.0 195.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
-<polygon points="804.0,195.0 796.0,199.5 796.0,190.5" fill="#6B7280"/>
-<rect x="806" y="170" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
-<text x="883.0" y="193.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">COLMAP database</text>
-<text x="883.0" y="210.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">merge across matchers</text>
-<path d="M 788.0 257.0 L 796.0 257.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
-<polygon points="804.0,257.0 796.0,261.5 796.0,252.5" fill="#6B7280"/>
-<rect x="806" y="232" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
-<text x="883.0" y="255.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">3D reconstruction</text>
-<text x="883.0" y="272.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">incremental, hierarchical</text>
-<path d="M 788.0 319.0 L 796.0 319.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
-<polygon points="804.0,319.0 796.0,323.5 796.0,314.5" fill="#6B7280"/>
-<rect x="806" y="294" width="154" height="50" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
-<text x="883.0" y="317.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Evaluation</text>
-<text x="883.0" y="334.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">pose, homography metrics</text>
+<path d="M 772.0 225.0 L 789.0 225.0 L 789.0 129.0 L 796.0 129.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="804.0,129.0 796.0,133.5 796.0,124.5" fill="#6B7280"/>
+<rect x="806" y="104" width="154" height="50" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+<text x="883.0" y="127.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Matches</text>
+<text x="883.0" y="144.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">keypoints and inliers</text>
+<path d="M 883.0 154.0 L 883.0 162.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="883.0,170.0 878.5,162.0 887.5,162.0" fill="#6B7280"/>
+<path d="M 960 129 L 976 129" fill="none" stroke="#6B7280" stroke-width="1.2"/>
+<rect x="806" y="172" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="883.0" y="195.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">COLMAP database</text>
+<text x="883.0" y="212.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">merge across matchers</text>
+<path d="M 883.0 222.0 L 883.0 230.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="883.0,238.0 878.5,230.0 887.5,230.0" fill="#6B7280"/>
+<path d="M 960 197 L 976 197" fill="none" stroke="#6B7280" stroke-width="1.2"/>
+<rect x="806" y="240" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="883.0" y="263.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">3D reconstruction</text>
+<text x="883.0" y="280.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">incremental, hierarchical</text>
+<path d="M 960 265 L 976 265" fill="none" stroke="#6B7280" stroke-width="1.2"/>
+<path d="M 976 129 L 976 341" fill="none" stroke="#6B7280" stroke-width="1.2"/>
+<path d="M 976.0 341.0 L 970.0 341.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="962.0,341.0 970.0,336.5 970.0,345.5" fill="#6B7280"/>
+<rect x="806" y="316" width="154" height="50" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+<text x="883.0" y="339.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">Evaluation</text>
+<text x="883.0" y="356.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">pose, homography metrics</text>
 <text x="40" y="384" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.1em">BUILT IN</text>
 <rect x="42.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
 <text x="104.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Ensembles</text>

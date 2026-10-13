@@ -7,14 +7,15 @@ from core import set_args, check_data
 
 class similarity_matrix_module:
     """
-    A pair module computing the similarity matrix between the descriptors
-    of the two images, to be matched afterwards by smnn_extended_module.
+    A pair module comparing the descriptors of the two images, to be
+    matched afterwards by smnn_extended_module.
 
-    `metric` sets how the [N0, N1] matrix 'sm' is built, always with values
-    in [0, 1] and higher meaning more similar:
-    - 'cosine': cosine similarity, clamped at 0;
-    - 'l2' / 'l1': 1 / (1 + d), with d the L2 / L1 distance;
-    - 'equal': 1 where the descriptors are equal, 0 otherwise (e.g. for
+    The [N0, N1] matrix 'sm' is returned as 1 - similarity, i.e. as a
+    distance: lower means more similar, as kornia's matchers expect.
+    `metric` sets how it is built:
+    - 'cosine': 1 - cosine similarity (clamped at 0), in [0, 1];
+    - 'l2' / 'l1': the L2 / L1 distance;
+    - 'equal': 0 where the descriptors are equal, 1 otherwise (e.g. for
       the per-keypoint semantic class given by segformer_module).
 
     The matrix is not cached by default, since it grows with the product
@@ -57,13 +58,13 @@ class similarity_matrix_module:
         d1 = args['desc'][1].to(self.device).float()
 
         if self.args['metric'] == 'cosine':
-            sm = (F.normalize(d0, dim=1) @ F.normalize(d1, dim=1).T).clamp(min=0)
+            sm = 1 - (F.normalize(d0, dim=1) @ F.normalize(d1, dim=1).T).clamp(min=0)
         elif self.args['metric'] == 'l2':
-            sm = 1 / (1 + torch.cdist(d0, d1))
+            sm = torch.cdist(d0, d1)
         elif self.args['metric'] == 'l1':
-            sm = 1 / (1 + torch.cdist(d0, d1, p=1))
+            sm = torch.cdist(d0, d1, p=1)
         elif self.args['metric'] == 'equal':
-            sm = (d0[:, None, :] == d1[None, :, :]).all(dim=2).float()
+            sm = 1 - (d0[:, None, :] == d1[None, :, :]).all(dim=2).float()
         else:
             raise ValueError(f"unknown metric {self.args['metric']!r}, use 'cosine', 'l2', 'l1' or 'equal'")
 

@@ -160,25 +160,53 @@ def pipe_max_matches(pipe_block):
     return pipe_block[best]
 
 
-def pipe_sm_product(pipe_block):
+def pipe_sm_product(pipe_block, th=None):
     """
-    Combines the similarity matrices 'sm' of the sub-pipelines of a
+    Combines the matrices 'sm' (1 - similarity, see
+    similarity_matrix_module) of the sub-pipelines of a
     pipeline_muxer_module by element-wise product, so that a keypoint pair
-    is similar only if it is similar for every descriptor. All sub-pipelines
+    is close only if it is close for every descriptor. All sub-pipelines
     must share the same keypoints.
+
+    `th` has one entry per sub-pipeline. With None, the matrix enters the
+    product as it is. With a number, the sub-pipeline only filters the
+    pairs: those with sm < th are kept, the others are set to infinity, so
+    that smnn_extended_module never matches them. Use a number for
+    metric='equal' (e.g. 0.5), whose zeros would otherwise cancel the
+    product, and leave at least one None, or all the kept pairs tie.
+    Set it with functools.partial, e.g.
+    `pipe_gather=partial(pipe_sm_product, th=[None, 0.5, None])`.
 
     Args:
         pipe_block (list): A list of dictionary objects, each with a 'sm'.
+        th (list): One threshold or None per sub-pipeline (default: all None).
 
     Returns:
-        dict: {'sm': the element-wise product of all the matrices}.
+        dict: {'sm': the combined matrix}.
     """
-    sm = pipe_block[0]['sm']
-    for pipe_data in pipe_block[1:]:
-        sm = sm * pipe_data['sm'].to(sm.device)
+    if th is None:
+        th = [None] * len(pipe_block)
+
+    sm = None
+    keep = None
+    for pipe_data, t in zip(pipe_block, th):
+        sm_ = pipe_data['sm']
+        if t is None:
+            sm = sm_ if sm is None else sm * sm_.to(sm.device)
+        else:
+            keep = sm_ < t if keep is None else keep & (sm_ < t).to(keep.device)
+
+    if sm is None:
+        sm = torch.ones(keep.shape, device=keep.device)
+    if keep is not None:
+        sm = sm.masked_fill(~keep.to(sm.device), torch.inf)
 
     return {'sm': sm}
-        
+
+
+def pipe_identity(pipe_block):
+    return pipe_block[0]
+
 
 
 class image_muxer_module:

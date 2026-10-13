@@ -49,7 +49,7 @@
 <rect x="810" y="189" width="150" height="60" rx="10" fill="#FEF3C7" stroke="#B45309" stroke-width="1.5"/>
 <text x="885.0" y="206" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#B45309" text-anchor="middle" letter-spacing="0.08em">FILTER</text>
 <text x="885.0" y="233.0" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">magsac_module</text>
-<text x="40" y="376" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#111827" text-anchor="start">Trying every rotation: image_muxer_module</text>
+<text x="40" y="376" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#111827" text-anchor="start">Handling non-upright images: image_muxer_module</text>
 <text x="40" y="402" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4B5563" text-anchor="start">The same sub-pipeline runs with the second image rotated by 0°, 90°, 180° and 270°; matches are mapped back and the best is kept.</text>
 <rect x="40" y="505" width="130" height="60" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
 <text x="105.0" y="522" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
