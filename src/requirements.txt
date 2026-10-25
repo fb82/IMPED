@@ -114,6 +114,7 @@ parso==0.8.6
 pexpect==4.9.0
 pillow==12.2.0
 platformdirs==4.9.6
+plyfile==1.1.5
 poselib==2.0.5
 prompt_toolkit==3.0.52
 propcache==0.4.1
@@ -174,9 +175,17 @@ tyro==1.0.13
 urllib3==2.6.3
 wandb==0.26.0
 wcwidth==0.6.0
+websockets==17.3
 wget==3.2
 wheel==0.46.3
 wrapt==2.1.2
 wurlitzer==3.1.1
 yacs==0.1.8
 yarl==1.23.0
+
+# FastGS CUDA extensions (gaussian_splatting/fastgs_module): they build against the
+# installed torch, so install them after the rest, from the repository root, e.g.
+# CUDA_HOME=/usr pip install --no-build-isolation -r src/requirements.txt
+./external/fastgs/submodules/diff-gaussian-rasterization_fastgs
+./external/fastgs/submodules/fused-ssim
+./external/fastgs/submodules/simple-knn

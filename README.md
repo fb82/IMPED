@@ -24,7 +24,10 @@ Key features:
 - **Automatic pair selection**: a transitive pipeline (`transitive.kfc_module` + `transitive.transitive_module`, driven by a plain `while` loop around `run_pairs()`) avoids exhaustive pairwise matching on large datasets by scoring pairs with a cheap global descriptor and growing the match graph transitively.
 - **Live graph visualization**: watch pairs get confirmed round by round on an interactive graph view.
 - **Incremental 3D reconstruction**: `reconstruct_module` runs COLMAP's incremental mapper once per round of a transitive pipeline, continuing from the previous round's model and reconstructing in the background while the next round matches; `hierarchical_reconstruct_module` also keeps disconnected sub-models and tries to merge them.
-- **Multi-dataset pipelines**: `kfc_module(multi_dataset=True)` splits a mixed image set into separate datasets by cutting the global-similarity spanning tree, so the rest of the pipeline can run on, and reconstruct, each one independently.
+- **Multi-dataset pipelines**: a mixed image set is matched and reconstructed as a whole, then `split_module` separates the scenes, as groups of Louvain communities of the covisibility graph weakly tied to each other, and reconstructs each one independently.
+- **Reconstruction repair**: `louvain_module` finds the parts of a model weakly tied to the rest (Louvain communities of the covisibility graph) and the pairs to match for them; `repair_reconstruction_module` registers them again with the new matches, the rest of the model kept fixed. Repairs can be chained, each with a more robust matcher (see `ssma_fast()`).
+- **3D inspection**: `louvain_3d` draws a model in an interactive three.js page, cameras and points colored by Louvain community with the weak ones highlighted and the repaired cameras linked to their old position; the pair graph page can group its nodes by the same communities.
+- **Gaussian splatting**: `fastgs_module` trains a 3D Gaussian Splatting model of a reconstruction with FastGS (CVPR 2026) in about 100 seconds.
 
 For a quick tour of what is possible, browse `src/imped_tests/test_pipelines.py`; it contains many ready-to-run examples covering a wide range of pipeline combinations.
 
@@ -50,6 +53,14 @@ pip install -r src/requirements.txt
 ```
 
 Model weights (DINOv2, SALAD, SegFormer, VGGT-Omega, MapAnything, ...) are downloaded automatically on first use.
+
+Gaussian splatting (`fastgs_module`) also needs the CUDA extensions of FastGS, compiled against the environment's PyTorch (a CUDA toolkit with `nvcc` matching PyTorch's CUDA version is required):
+
+```bash
+pip install plyfile websockets
+pip install --no-build-isolation external/fastgs/submodules/diff-gaussian-rasterization_fastgs \
+    external/fastgs/submodules/simple-knn external/fastgs/submodules/fused-ssim
+```
 
 ---
 
@@ -290,6 +301,7 @@ Nodes can be dragged and the view zoomed and panned. The bar in the top-left cor
 - **Search**: typing part of an image name colors the matching nodes orange, shows how many were found and fits the view on them.
 - **Image folder**: selects the local folder holding the images, matched to the nodes by file name. Nothing is loaded until an image is requested, and the folder has to be selected again after reloading the page.
 - **Spread nodes**: moves the nodes to a precomputed layout that makes the structure of the graph readable. Images are grouped into tightly connected blocks (Louvain communities), each drawn as a disc of evenly spaced nodes; blocks weakly connected to the rest end up on the outside, images with fewer pairs towards the rim of their disc, and images without any pair in a disc of their own. Requires `networkx>=2.8`.
+- **Model communities** (only when the page is given a reconstruction, `db_pair_graph(db, model=...)` or `live_pair_graph(..., model=...)`, with a model folder or a reconstruction module): an alternative to *Spread nodes*, which is left unchanged and switches back to the default grouping. The nodes are grouped into the Louvain communities of the model's covisibility graph, the ones `louvain_module` works on, and colored like `louvain_3d`: weak communities in strong colors, the others pale, images outside the model in grey (grouped by their pair graph clusters). The bar shows how many communities, weak communities and images outside the model there are.
 
 With an image folder selected, images open in a panel on the right:
 
@@ -310,33 +322,29 @@ Two pair-level modules turn a pair of global descriptors into a single `pair_sim
 
 ### Multi-dataset pipelines
 
-When a folder mixes images of different scenes, `kfc_module(multi_dataset=True)` first splits the images into separate datasets and then runs the usual KFC seed selection on each one. `datasets`, passed by reference like `pairs`, is filled with one seed-pair list per dataset:
+When a folder mixes images of different scenes, the whole set goes through the usual pipeline (one `kfc_module` selection, one transitive closure, one COLMAP database and one reconstruction), and `split_module`, placed at the end of the reconstruction pipeline with the same `worklist`, separates the scenes once the reconstruction is done. Different scenes are rarely matched to each other, so COLMAP usually puts them in separate models already; `split_module` handles the case where a few wrong matches glue them into one model.
 
 ```python
 datasets = []
-global_pipeline = [
-    salad_module(),
-    cosine_similarity_module(),
-    kfc_module(datasets=datasets, sim_db=global_db, out_path=None, multi_dataset=True),
+hierarchical = hierarchical_reconstruct_module(db='match.db', images=images_folder, output='model', worklist=current_pairs)
+match_pipeline = matchers + [
+    transitive,
+    to_colmap_module(db='match.db', worklist=current_pairs, no_unmatched=False, only_matched=True),
+    hierarchical,
+    split_module(db='match.db', images=images_folder, model=hierarchical, output='datasets',
+                 datasets=datasets, worklist=current_pairs),
 ]
-run_pairs(global_pipeline, images_folder, db_name=global_db)
-
-for i, current_pairs in enumerate(datasets):
-    transitive = transitive_module(pairs=current_pairs, ...)
-    match_pipeline = [..., transitive, to_colmap_module(db=f'dataset_{i}.db', worklist=current_pairs, ...), ...]
-    while current_pairs:
-        run_pairs(match_pipeline, current_pairs, db_name='match.hdf5')
+while current_pairs:
+    run_pairs(match_pipeline, current_pairs, db_name='match.hdf5')
 ```
 
-The split (`kfc_module.split_datasets`) works on the maximum spanning tree of the similarity table:
+The split (`split_groups`) works like the search for weak clusters of [`louvain_module`](#splitting-joining-and-repairing-reconstructions), but cuts the weak ties instead of repairing them:
 
-1. Every tree edge is compared with its *neighbours*, the other tree edges touching its two endpoints. It becomes a candidate cut when its similarity is below `cut_ratio` times their mean, so the threshold adapts to how similar each block of images is.
-2. Candidates are tried from the weakest. A cut is kept only if both sides have at least `min_dataset_size` images and the mean similarity *between* the two sides (over every pair in the table, not just tree edges) is below `sep_ratio` times the lower of the two within-side means, i.e. the two groups are really less similar to each other than to themselves.
-3. The connected components of the cut tree are the datasets.
+1. The covisibility graph of each model (one edge per pair of images, weighted by the 3D points they share) is split into Louvain communities. A scene is always split into several of them.
+2. The communities are merged, the most tied pair first, while two groups are tied by at least `min_tie` cameras' worth of covisibility (default `0.5`): the weight between them divided by the mean weighted degree of the cameras of the smaller one. Unlike the conductance used for weak clusters, this measure doesn't decrease as groups grow, so an elongated scene is merged back whole, while a few wrong matches between two scenes are worth a small fraction of a camera.
+3. The groups with at least `min_size` images (default `20`) are the scenes; smaller ones are parts of a scene placed wrong, so they join the group they are most tied to and are left to the repair step.
 
-If the number of datasets is known, `n_datasets=N` replaces steps 1-2: tree edges are cut by increasing similarity relative to their neighbours (still honouring `min_dataset_size`) until there are `N` datasets. Every accepted cut is printed (`kfc_module: cut at similarity ... -> A / B images`), together with the final dataset sizes, which is the quickest way to tune `cut_ratio`/`sep_ratio` on new data.
-
-Each dataset then gets its own `transitive_module`, COLMAP database and reconstruction; since seeds are chosen within a dataset and transitive candidates only grow from confirmed pairs, matching never crosses datasets. See `pipeline64()` in `src/imped_tests/test_pipelines.py`.
+Each group is then reconstructed on its own from the database (`reconstruct_clusters`), so the wrong matches between scenes no longer distort it: the i-th largest goes to `output/<i>/`, with the list of its images in `images.txt`, and `datasets`, a list filled in place like `kfc_module`'s `pairs`, gets the image names of each group. When `model` holds several models, each one is split, and an image already assigned to a group of a larger model is not assigned again. Each dataset can then be repaired with `louvain_module` and `repair_reconstruction_module`. See `pipeline57()` in `src/imped_tests/test_pipelines.py`, which mixes three IMC scenes and checks that they come out separated.
 
 ### Incremental 3D reconstruction with `reconstruct_module`
 
@@ -360,6 +368,108 @@ Without a `worklist`, it runs synchronously at the end of a single, non-transiti
 **`hierarchical_reconstruct_module`** is a drop-in replacement that keeps every sub-model instead of only the largest one. Each round it continues every model kept so far, also reconstructs from scratch, and then tries to merge the candidates pairwise: two models sharing at least `overlap_threshold` of their images are treated as duplicates and the better one is kept; otherwise they are aligned (`pycolmap.align_reconstructions_via_points`), re-triangulated and bundle-adjusted, and the merge is rejected if it loses registered images or the reprojection error grows by more than `reproj_error_factor`. The remaining models are written to `output/0`, `output/1`, …; merged models are appended last, so the last one is usually the most complete.
 
 **Recovering unregistered images**: a fast reconstruction can be followed by a more robust matcher run only where it's needed. `colmap_db_or_list` also accepts a COLMAP model folder (recognized by its `images.bin`/`images.txt`): with `colmap_db_or_list=fast_model, mode='include', colmap_has_pose=False`, `image_pairs` keeps just the pairs involving at least one image *not* registered in that model, so the second pass matches the unregistered images against everything else and exports into the same COLMAP database before reconstructing again. See `pipeline58()` (SuperPoint first, then rotation-robust RoMaV2 via `pair_rot4`).
+
+`hierarchical_reconstruct_module` can also start from models built earlier: `input` is a folder holding one model (`images.bin`) or one sub-folder per model, all continued in the first round, and `fresh=False` skips the reconstruction from scratch, so only those models are extended.
+
+### Splitting, joining and repairing reconstructions
+
+A transitive pipeline only matches the pairs it is led to, so the result can be split into several models, or contain groups of images held to the rest by very few points, and therefore often placed wrong. The tools below work on the COLMAP database and models of a finished run.
+
+**Reconstructing each cluster on its own**: `transitive.pair_clusters(graph)` splits a pair graph (`networkx`, one node per image, one edge per confirmed pair) into tightly connected clusters, the Louvain communities drawn by **Spread nodes** in the [pair graph viewer](#exploring-the-pair-graph); images without any pair are left out. `reconstruct.reconstruct_clusters(db, images, output, clusters, min_size=3)` then runs a separate incremental reconstruction for each cluster, all reading the same database: the models of the i-th largest cluster go to `output/<i>/`, next to the list of its images in `output/<i>/images.txt`, and clusters with fewer than `min_size` images are skipped. See `full_pipeline_ssma_clusters()`.
+
+**Joining the clusters**: `transitive.join_pairs(graph, clusters, sim_table, tried=(), min_links=3, per_link=5)` proposes the fewest new pairs that can connect the clusters, instead of trying every missing pair:
+
+1. Two clusters are *joined* when at least `min_links` confirmed pairs of `graph` connect them; joined clusters form groups.
+2. Two clusters of different groups are as close as their most similar pair in `sim_table` (`{(img0, img1): sim}`, the global similarity `kfc_module` saves as `/sim_table`).
+3. A maximum spanning tree over the groups picks the links that connect them all, each between the two closest clusters of the groups it joins, and for each link the `per_link` most similar pairs of those two clusters are returned.
+
+Pairs already in `graph` or in `tried` are never proposed again. Matching the proposed pairs and calling it again with the updated graph and the *same* clusters repeats the process; it returns `[]` once every cluster is joined or no candidate is left:
+
+```python
+clusters = pair_clusters(graph)
+tried = set()
+while new_pairs := join_pairs(graph, clusters, sim_table, tried):
+    tried |= {frozenset(pair) for pair in new_pairs}
+    run_pairs(matchers + [to_colmap_module(db='match.db', no_unmatched=False, only_matched=True)], new_pairs, db_name='match.hdf5')
+    graph = ...  # pair graph read again from match.db
+```
+
+The nodes of `graph` must be named like the images in `sim_table` (full paths). See `full_pipeline_ssma_join_clusters()` in `src/imped_tests/test_pipelines.py`, which also caps the number of rounds and repairs the model afterwards.
+
+**Repairing a model with `louvain_module` and `repair_reconstruction_module`**:
+
+![louvain_module picks the clusters to repair (weak parts of the largest model, matched images missing from it, images given by name) and the pairs that pair them with the nearest registered cameras; those pairs are matched by any pipeline, at the end of which repair_reconstruction_module builds the new model, the rest of the old one kept fixed](docs/images/repair.svg)
+
+Repairing the model with the most registered images takes three steps, in the same way as `kfc_module` feeds a matching pipeline: `louvain_module` finds what to repair and the pairs to match, any pipeline matches them, and `repair_reconstruction_module` builds the new model from the old one, removing the wrong cameras and registering them again with the new matches.
+
+1. **Clusters to repair** (`louvain_module`). With `auto=True` (default) these are:
+   - the *weak clusters*: the model's covisibility graph (one edge per pair of images, weighted by the 3D points they share) is split into Louvain communities, and a community of at most 100 images (and at most half the model) is weak when less than 10% of its covisibility weight leads outside it (conductance < 0.1);
+   - the images of the database with verified pairs that are *not in the model*, grouped by connected components of the pair graph.
+
+   The images named in `images_to_fix` form one more cluster, also with `auto=False`.
+2. **Pairs to match** (`louvain_module`, through `repair_pairs`). Each image of a cluster is paired with registered images outside its cluster:
+   - if it is registered, with the cameras closest to its own (projection center within the 50 nearest, viewing direction within 60°, farther than `min_dist`);
+   - if it isn't, with the cameras closest to its *anchors*, the registered images it already has verified pairs with; without anchors, with every registered image when `sim_table` is given.
+
+   With `skip_matched=True` (default) the pairs already verified in `db` are skipped. The candidates are sorted by `sim_table` similarity (or left in order of distance without it) and the first `per_image` are kept. The result is the dictionary `louvain.output`, also saved to `out_path` and read back with `louvain_module.load(out_path)`:
+
+   ```python
+   {
+       'model': 'model/2',                         # the analyzed model, the largest one
+       'clusters': [{'_DSC0101.JPG', ...}, ...],   # images to remove and register again
+       'pairs': [('/imgs/_DSC0101.JPG', '/imgs/_DSC0420.JPG'), ...],  # pairs to match
+   }
+   ```
+3. **Matching**: any pipeline over `pairs`, followed by a `to_colmap_module` writing into the same `db`.
+4. **New model** (`repair_reconstruction_module`). The images of the clusters are removed from the model, together with their observations (points left with fewer than two are dropped), and their cameras start from the median intrinsics of the kept cameras of the same model and size. COLMAP's incremental mapper then continues from this model with the kept poses fixed (`fix_existing_frames`) and without refining focal length or distortion. The result is aligned back onto the original model through the projection centers and written to `output` (default: the model folder with a `_fixed` suffix); it is also kept in `repaired`. The images of the clusters that don't register again are missing from the new model. The work is done in a copy of `db`, which is not modified.
+
+Like `reconstruct_module`, `repair_reconstruction_module` works in `finalize()`, so it goes at the end of the matching pipeline:
+
+```python
+# 1-2. clusters to repair and pairs to match
+louvain = louvain_module(model='model', db='match.db', images=images_folder,
+                         sim_table=sim_table, out_path='louvain.hdf5')
+louvain.finalize()
+repair = louvain.output
+
+# 3-4. ordinary matching, then the new model
+run_pairs(matchers + [
+    to_colmap_module(db='match.db', no_unmatched=False, only_matched=True),
+    repair_reconstruction_module(db='match.db', images=images_folder,
+                                 model=repair['model'], clusters=repair['clusters'],
+                                 output='model_fixed'),
+], repair['pairs'], db_name='match.hdf5')
+```
+
+`model` is either a reconstruction module, read once it is done, or the folder of an existing reconstruction (one model or one sub-folder per model). Like `kfc_module`, `louvain_module` can also be placed inside a pipeline: at the end of the pipeline that builds the model, with the same `worklist`, it runs once the model is done and fills the dict passed as `output`; at the end of a repair pipeline, after `repair_reconstruction_module`, it looks again at the repaired model, so repairs can be chained, each with a more robust matcher. See `ssma_fast()` in `src/imped_tests/test_pipelines.py`, which starts with ALIKED, then repairs with LoMa and finally with RoMaV2. `repair_reconstruction_module` can also be called directly with `finalize()`, and its `clusters` can be the `out_path` of `louvain_module` instead of the list.
+
+The matching pipeline doesn't have to be the one that built the model: a robust but slower matcher can be run only on the images known to be wrong, matching them again even with the images they were already paired with (`louvain_module(images_to_fix=[...], auto=False, min_dist=0.2, skip_matched=False)` followed by `[romav2_module(), magsac_module(), to_colmap_module(...), repair_reconstruction_module(...)]`).
+
+| `louvain_module` option | Meaning |
+|---|---|
+| `model` | reconstruction module, or folder of an existing reconstruction |
+| `db` / `images` | COLMAP database of the matches / image folder |
+| `out_path` | HDF5 file the output dictionary is saved to (default `louvain.hdf5`, `None` to skip) |
+| `sim_table` | global similarity `{(img0, img1): sim}` ranking the candidates |
+| `per_image` | pairs selected per image of a cluster (default `10`) |
+| `auto` | find weak clusters and images outside the model (default `True`) |
+| `images_to_fix` | image names repaired in any case |
+| `min_dist` | minimum distance between camera centers of a pair, in model units (default `0`) |
+| `skip_matched` | skip pairs already verified in `db` (default `True`) |
+| `output` | dict filled in place with `model`, `clusters` and `pairs` (also `louvain.output`) |
+| `worklist` | wait until this list is empty, to run at the end of the pipeline that builds the model |
+
+| `repair_reconstruction_module` option | Meaning |
+|---|---|
+| `model` | `louvain.output['model']`, or the same `model` given to `louvain_module` |
+| `clusters` | `louvain.output['clusters']`, or the `out_path` of `louvain_module` |
+| `db` / `images` | COLMAP database with the new matches / image folder |
+| `output` | output folder (default `<model>_fixed`) |
+| `worklist` | wait until this list is empty |
+
+**Seeing the communities in 3D**: `louvain_3d(model, save_to='louvain_3d.html')` (or `louvain_3d_module`, which does the same in `finalize()` and takes a `worklist`, to put at the end of a pipeline) writes an interactive three.js page of the model. Cameras are drawn as frustums and 3D points as a point cloud, both colored by the Louvain community of the covisibility graph, computed exactly as `louvain_module` does: weak communities in strong colors, the others in pale ones. A point takes the community of most of the cameras that see it, so the points in strong colors are the suspect ones. With `compare=` the previous model (same frame, e.g. the one `repair_reconstruction_module` started from) and `highlight=` the repaired clusters, the repaired cameras are drawn in white, joined by a yellow line to their old position, and the ones that didn't register again appear as grey ghosts. The panel lists the communities (size and conductance φ, weak ones first) with a checkbox to show or hide each one; clicking a name frames it. It also has a *weak only* switch, the points' real colors, a name search and, after choosing the local image folder, the image of the camera clicked. `ssma_fast()` writes one page per block, `<model>_louvain_3d.html`. Like the pair graph page, it can be opened locally when the pipeline runs on a machine without a browser; three.js is loaded from a CDN.
+
+See `full_pipeline_ssma_hierarchical_dino(fix=True)`, `full_pipeline_ssma_join_clusters()` and `full_pipeline_ssma_fix_romav2()` in `src/imped_tests/test_pipelines.py`.
 
 ### Semantic filtering with SegFormer and DINOv2
 
@@ -429,6 +539,31 @@ Every HDF5 database opened by `run_pairs()` goes through `pickled_hdf5` (`extern
 
 Their output (`kp`, `kH`, `kr`, `m_idx`, `m_val`, `m_mask`) is the same as any other matcher's, so they can be followed by `magsac_module`, `to_colmap_module` or used inside a `pipeline_muxer_module`. Both models live in the `external/vggt-omega` and `external/map-anything` submodules and download their weights from Hugging Face on first use. See `pipeline55()` and `pipeline56()` in `src/imped_tests/test_pipelines.py`.
 
+### Gaussian splatting with FastGS
+
+`fastgs_module` trains a 3D Gaussian Splatting model of a reconstruction with [FastGS](https://fastgs.github.io/) (Ren et al., "FastGS: Training 3D Gaussian Splatting in 100 Seconds", CVPR 2026), which reaches the quality of the other fast 3DGS methods in about 100 seconds of training on a single GPU by densifying and pruning the Gaussians according to their multi-view consistency. FastGS lives in the `external/fastgs` submodule and is run as a separate process, so its packages never mix with IMPED's.
+
+Like `reconstruct_module`, it works in `finalize()`, so it goes at the end of the pipeline that builds or repairs the model, with the same `worklist` inside a transitive pipeline, or is called directly:
+
+```python
+from gaussian_splatting import fastgs_module
+
+fastgs_module(model='model_fixed', images=images_folder, output='splats').finalize()
+```
+
+`model` is a reconstruction module or a model folder, of which the model with the most registered images is used. FastGS only reads undistorted (PINHOLE) cameras, so the model and its images are first undistorted with COLMAP into `output/scene`; the Gaussians are then written to `output/model/point_cloud/iteration_<iterations>/point_cloud.ply` (also in `fastgs.ply`), in the standard 3DGS format, which any 3DGS viewer opens.
+
+| Option | Meaning |
+|---|---|
+| `model` / `images` | reconstruction module or model folder / image folder |
+| `output` | output folder (default `fastgs`) |
+| `variant` | `'base'` (fastest, default) or `'big'` (denser, better quality, slightly slower), FastGS's two presets |
+| `iterations` | training iterations (default `30000`) |
+| `resolution` | FastGS's `-r`: `-1` (default) scales images wider than 1600 px down to 1600, `1`, `2`, `4`, `8` divide the original size |
+| `data_device` | `'cuda'` (default) or `'cpu'`, to keep the training images off the GPU on large datasets |
+| `train_args` | any other `train.py` argument, e.g. `['--mult', '0.7']` as FastGS uses on Tanks&Temples |
+| `worklist` | wait until this list is empty |
+
 ### Distributed / multi-machine processing
 
 Split the image set across machines with `split_images(imgs, n_chunks, chunk_idx)`: it divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group), copying the same script and images to each machine and giving every worker its own `chunk_idx`, then merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
@@ -461,16 +596,19 @@ See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example o
 `salad_module` · `cosine_similarity_module` · `l2_similarity_module` · `n_matches_similarity_module`
 
 ### Pair Selection
-`conf_module` · `transitive.kfc_module` · `transitive.transitive_module`
+`conf_module` · `transitive.kfc_module` · `transitive.transitive_module` · `transitive.pair_clusters` · `transitive.join_pairs`
 
 ### Visualization
-`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` · `db_pair_graph`
+`show_kpts_module` · `show_matches_module` · `show_patches_module` · `show_homography_module` · `live_pair_graph` · `db_pair_graph` · `louvain_3d` · `louvain_3d_module`
 
 ### COLMAP
 `to_colmap_module` · `from_colmap_module` · `merge_colmap_db` · `filter_colmap_reconstruction` · `align_colmap_models`
 
+### Gaussian Splatting
+`gaussian_splatting.fastgs_module`
+
 ### 3D Reconstruction
-`reconstruct.reconstruct_module` · `reconstruct.hierarchical_reconstruct_module`
+`reconstruct.reconstruct_module` · `reconstruct.hierarchical_reconstruct_module` · `reconstruct.reconstruct_clusters` · `reconstruct.louvain_module` · `reconstruct.repair_reconstruction_module` · `reconstruct.split_module`
 
 ---
 
@@ -549,7 +687,8 @@ src/
 │
 ├── transitive/
 │   ├── kfc_module.py           # Keypoint Filtering by Coverage (Bellavia et al., 2022), seed pair selection
-│   └── transitive_module.py    # round-by-round transitive-closure driver
+│   ├── transitive_module.py    # round-by-round transitive-closure driver
+│   └── clusters.py             # pair-graph clusters and the pairs that join them
 │
 ├── colmap_fun/
 │   ├── colmap_ext.py
@@ -558,8 +697,14 @@ src/
 │   └── merge_colmap.py
 │
 ├── reconstruct/
-│   ├── reconstruct_module.py   # incremental COLMAP reconstruction, round by round
-│   └── hierarchical_reconstruct_module.py   # keeps and merges disconnected sub-models
+│   ├── reconstruct_module.py   # incremental COLMAP reconstruction, round by round; model reading helpers
+│   ├── hierarchical_reconstruct_module.py   # keeps and merges disconnected sub-models
+│   ├── louvain_module.py       # covisibility graph, Louvain communities, weak clusters and the pairs to repair them
+│   ├── repair_reconstruction_module.py   # re-registers the weak clusters with the new matches
+│   └── split_module.py         # separates the scenes of a mixed reconstruction; one reconstruction per group of images
+│
+├── gaussian_splatting/
+│   └── fastgs_module.py       # 3D Gaussian Splatting with FastGS (external/fastgs)
 │
 ├── benchmark/
 │   ├── datasets.py            # MegaDepth, ScanNet, IMC, planar dataset setup
@@ -574,7 +719,9 @@ src/
 │   ├── colorize.py
 │   ├── live_pair_graph.py     # interactive live pair-graph viewer
 │   ├── db_pair_graph.py       # same viewer for the pair graph of a COLMAP database
-│   └── pair_graph_controls.html   # search, image preview and layout controls added to the page
+│   ├── pair_graph_controls.html   # search, image preview and layout controls added to the page
+│   ├── louvain_3d.py          # 3D page of a model colored by Louvain community
+│   └── louvain_3d.html        # three.js template of that page
 │
 ├── imc/
 │   ├── imc.py                 # IMC 2025 ground truth generation and evaluation

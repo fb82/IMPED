@@ -3,6 +3,8 @@
   <span id="pg-found"></span>
   <label>image folder <input id="pg-folder" type="file" webkitdirectory></label>
   <button id="pg-spread">spread nodes</button>
+  <button id="pg-model" hidden>model communities</button>
+  <span id="pg-model-info"></span>
 </div>
 <div id="pg-preview"></div>
 <style>
@@ -17,10 +19,12 @@
 (function () {
   const files = {};
   const preview = document.getElementById('pg-preview');
+  const MODEL = MODEL_COMMUNITIES;
   let painted = [];
+  let base = {};
 
   function paint(colors) {
-    nodes.update(painted.map(id => ({id: id, color: '#97c2fc'})));
+    nodes.update(painted.map(id => ({id: id, color: base[id] || '#97c2fc'})));
     painted = Object.keys(colors);
     nodes.update(painted.map(id => ({id: id, color: colors[id]})));
   }
@@ -81,8 +85,14 @@
     if (node !== undefined) select(node, neighbours(node));
   });
 
-  document.getElementById('pg-spread').addEventListener('click', () => {
-    const moved = Object.entries(SPREAD_POSITIONS).map(([id, [x, y]]) => ({id: id, x: x, y: y}));
+  function setBase(colors) {
+    base = colors;
+    painted = [];
+    nodes.update(nodes.getIds().map(id => ({id: id, color: base[id] || '#97c2fc'})));
+  }
+
+  function moveAll(positions) {
+    const moved = Object.entries(positions).map(([id, [x, y]]) => ({id: id, x: x, y: y}));
     const xs = moved.map(node => node.x);
     const ys = moved.map(node => node.y);
     const box = document.getElementById('mynetwork');
@@ -91,6 +101,22 @@
       position: {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2},
       scale: 0.9 * Math.min(box.clientWidth / (Math.max(...xs) - Math.min(...xs) + 1), box.clientHeight / (Math.max(...ys) - Math.min(...ys) + 1)),
     });
+  }
+
+  document.getElementById('pg-spread').addEventListener('click', () => {
+    setBase({});
+    document.getElementById('pg-model-info').textContent = '';
+    moveAll(SPREAD_POSITIONS);
   });
+
+  if (MODEL) {
+    const button = document.getElementById('pg-model');
+    button.hidden = false;
+    button.addEventListener('click', () => {
+      setBase(MODEL.colors);
+      document.getElementById('pg-model-info').textContent = MODEL.info;
+      moveAll(MODEL.positions);
+    });
+  }
 })();
 </script>

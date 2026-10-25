@@ -5,3 +5,4 @@ from .colorize import colorize_plane
 from .show_patches import show_patches_module
 from .live_pair_graph import live_pair_graph
 from .db_pair_graph import db_pair_graph, read_db_pairs
+from .louvain_3d import louvain_3d, louvain_3d_module

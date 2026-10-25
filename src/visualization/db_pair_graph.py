@@ -30,12 +30,14 @@ def read_db_pairs(db):
     return list(names.values()), pairs
 
 
-def db_pair_graph(db, save_to=None, open_browser=True, min_inliers=1, show_rejected=True):
+def db_pair_graph(db, save_to=None, open_browser=True, min_inliers=1, show_rejected=True, model=None):
     """
     Static counterpart of live_pair_graph: draws the pair graph stored in a
     COLMAP database. Pairs with at least `min_inliers` verified matches are
     confirmed edges labelled with the inlier count (the raw match count when
     the database has no two_view_geometries row), the others are rejected.
+    With `model`, the page can also group the nodes by the Louvain
+    communities of that reconstruction (see live_pair_graph).
     Returns the networkx graph of the confirmed pairs.
     """
     if save_to is None:
@@ -44,7 +46,7 @@ def db_pair_graph(db, save_to=None, open_browser=True, min_inliers=1, show_rejec
     imgs, pairs = read_db_pairs(db)
     verified = any(n_inliers is not None for _, n_inliers in pairs.values())
 
-    live = live_pair_graph(imgs, save_to=save_to, open_browser=False)
+    live = live_pair_graph(imgs, save_to=save_to, open_browser=False, model=model)
     for (img_a, img_b), (n_matches, n_inliers) in pairs.items():
         n = (n_inliers if verified else n_matches) or 0
         if n >= min_inliers:

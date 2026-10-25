@@ -6,7 +6,7 @@ import numpy as np
 import pycolmap
 
 from core import set_args
-from .reconstruct_module import reconstruct_module
+from .reconstruct_module import model_paths, reconstruct_module
 
 
 class hierarchical_reconstruct_module(reconstruct_module):
@@ -21,12 +21,17 @@ class hierarchical_reconstruct_module(reconstruct_module):
             'align_min_common_observations': 3,
             'align_max_error': 0.005,
             'align_min_inlier_ratio': 0.9,
+            'input': None,
+            'fresh': True,
         }
         self.id_string, self.args = set_args('hierarchical_reconstruct', args, self.args)
 
-        self._pool = []
+        self._pool = model_paths(self.args['input']) if self.args['input'] is not None else []
         self.n_models_built = 0
         self.n_merges = 0
+
+    def _results(self):
+        return self._pool
 
     def _map(self, database_path):
         with tempfile.TemporaryDirectory() as tmp:
@@ -42,12 +47,15 @@ class hierarchical_reconstruct_module(reconstruct_module):
                 if models:
                     candidates.append(max(models.values(), key=lambda m: m.num_reg_images()))
 
-            fresh = pycolmap.incremental_mapping(
-                database_path=database_path,
-                image_path=self.args['images'],
-                output_path=os.path.join(tmp, 'fresh'),
-            )
-            candidates.extend(fresh.values())
+            # with 'fresh' False only the models in 'input' are continued,
+            # without a new reconstruction from scratch
+            if self.args['fresh']:
+                fresh = pycolmap.incremental_mapping(
+                    database_path=database_path,
+                    image_path=self.args['images'],
+                    output_path=os.path.join(tmp, 'fresh'),
+                )
+                candidates.extend(fresh.values())
             self.n_models_built += len(candidates)
 
             if not candidates:

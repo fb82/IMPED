@@ -7,15 +7,62 @@ from itertools import combinations
 import networkx as nx
 from pyvis.network import Network
 
+from reconstruct.louvain_module import is_weak, louvain_communities
+from reconstruct.reconstruct_module import largest_model
+from transitive import pair_clusters
+from .louvain_3d import louvain_colors
+
 MAX_VISUALIZED_CANDIDATES = 5000
 
 with open(os.path.join(os.path.dirname(__file__), 'pair_graph_controls.html')) as f:
     CONTROLS = f.read()
 
 
-def spread_layout(graph, step=80):
-    isolated = set(nx.isolates(graph))
-    groups = nx.community.louvain_communities(graph.subgraph(set(graph) - isolated), seed=0) + [isolated]
+def model_communities(graph, model):
+    """
+    The Louvain communities of the covisibility graph of the largest model
+    of `model` (as louvain_module computes them), mapped onto the nodes of
+    the pair graph by image name: {'positions': spread layout with one disc
+    per community, 'colors': {node: color}, 'info': summary}, or None when
+    there is no model yet. The images outside the model keep their pair
+    graph clusters, in grey.
+    """
+    if isinstance(model, str) and not os.path.isdir(model):
+        return None
+    _, rec = largest_model(model)
+    if rec is None:
+        return None
+
+    covisibility, communities = louvain_communities(rec)
+    communities = sorted(communities, key=len, reverse=True)
+    weak = [is_weak(covisibility, community) for community in communities]
+    colors = louvain_colors(weak)
+
+    node_of = {os.path.basename(node): node for node in graph}
+    groups, color_of = [], {}
+    for community, color in zip(communities, colors):
+        group = {node_of[name] for name in (os.path.basename(rec.images[i].name) for i in community) if name in node_of}
+        groups.append(group)
+        color_of.update(dict.fromkeys(group, color))
+
+    outside = graph.subgraph(set(graph) - set(color_of))
+    isolated = set(nx.isolates(outside))
+    groups += pair_clusters(outside) + [isolated]
+    color_of.update(dict.fromkeys(outside, '#c7c7c7'))
+
+    return {
+        'positions': spread_layout(graph, groups=groups),
+        'colors': color_of,
+        'info': f"{len(communities)} communities, {sum(weak)} weak, {len(outside)} images outside the model",
+    }
+
+
+def spread_layout(graph, step=80, groups=None):
+    # groups: the blocks to draw as discs, covering every node; default the
+    # pair graph clusters plus one block of isolated nodes
+    if groups is None:
+        isolated = set(nx.isolates(graph))
+        groups = pair_clusters(graph) + [isolated]
     groups = [frozenset(group) for group in groups if group]
     group_of = {node: group for group in groups for node in group}
     quotient = nx.Graph()
@@ -57,8 +104,13 @@ class live_pair_graph:
     (default when a `worklist` is given) disables it, leaving only the
     once-per-round redraw. Without a `worklist` there is no notion of
     "round" at all, so `redraw_every` defaults to 1 (redraw on every pair).
+
+    With `model` (a reconstruction module or a model folder), the page also
+    gets a "model communities" button, which groups and colors the nodes by
+    the Louvain communities of the model's covisibility graph (see
+    model_communities), next to the default grouping of "spread nodes".
     """
-    def __init__(self, imgs, save_to='live_pair_graph.html', open_browser=True, worklist=None, redraw_every=None):
+    def __init__(self, imgs, save_to='live_pair_graph.html', open_browser=True, worklist=None, redraw_every=None, model=None):
         self.single_image = False
         self.pipeliner = False
         self.pass_through = True
@@ -70,6 +122,7 @@ class live_pair_graph:
         self.rejected = {}
         self.pending = {}
         self.save_to = save_to
+        self.model = model
         self.worklist = worklist
         self.redraw_every = redraw_every if redraw_every is not None else (None if worklist is not None else 1)
         self._pairs_since_redraw = 0
@@ -238,5 +291,7 @@ class live_pair_graph:
         with open(self.save_to) as f:
             html = f.read()
         with open(self.save_to, 'w') as f:
+            communities = model_communities(self.graph, self.model) if self.model is not None else None
             controls = CONTROLS.replace('SPREAD_POSITIONS', json.dumps(spread_layout(self.graph)))
+            controls = controls.replace('MODEL_COMMUNITIES', json.dumps(communities))
             f.write(html.replace('</body>', controls + '</body>'))

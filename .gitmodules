@@ -52,3 +52,6 @@
 [submodule "external/map-anything"]
 	path = external/map-anything
 	url = https://github.com/facebookresearch/map-anything.git
+[submodule "external/fastgs"]
+	path = external/fastgs
+	url = https://github.com/fastgs/FastGS.git

@@ -116,7 +116,7 @@
 <path d="M 960 197 L 976 197" fill="none" stroke="#6B7280" stroke-width="1.2"/>
 <rect x="806" y="240" width="154" height="50" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
 <text x="883.0" y="263.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#111827" text-anchor="middle">3D reconstruction</text>
-<text x="883.0" y="280.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">incremental, hierarchical</text>
+<text x="883.0" y="280.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">repaired, Gaussian splats</text>
 <path d="M 960 265 L 976 265" fill="none" stroke="#6B7280" stroke-width="1.2"/>
 <path d="M 976 129 L 976 341" fill="none" stroke="#6B7280" stroke-width="1.2"/>
 <path d="M 976.0 341.0 L 970.0 341.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
@@ -132,7 +132,7 @@
 <rect x="306.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
 <text x="368.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Pair selection</text>
 <rect x="438.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
-<text x="500.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Multi-dataset split</text>
+<text x="500.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">Repair &amp; split</text>
 <rect x="570.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>
 <text x="632.0" y="414" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#6D28D9" text-anchor="middle">HDF5 caching</text>
 <rect x="702.0" y="394" width="124" height="32" rx="16" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1"/>

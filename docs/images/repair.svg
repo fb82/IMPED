@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520"><rect x="0.5" y="0.5" width="999" height="519" rx="16" fill="#FFFFFF" stroke="#E5E7EB"/>
+<text x="40" y="46" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#111827" text-anchor="start">Repairing a reconstruction</text>
+<text x="40" y="72" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4B5563" text-anchor="start">louvain_module finds what to repair and the pairs to match; any pipeline matches them and repair_reconstruction_module builds the new model.</text>
+<text x="40" y="104" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.08em">1-2 · CLUSTERS AND PAIRS TO MATCH</text>
+<text x="960" y="104" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="normal" fill="#4B5563" text-anchor="end">louvain_module.finalize()</text>
+<rect x="40" y="176" width="140" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="110.0" y="193" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="110.0" y="216" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">model + db</text>
+<text x="110.0" y="233" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">largest model</text>
+<rect x="216" y="116" width="250" height="56" rx="10" fill="#CCFBF1" stroke="#0F766E" stroke-width="1.5"/>
+<text x="341.0" y="130" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0F766E" text-anchor="middle" letter-spacing="0.08em">WEAK · AUTO</text>
+<text x="341.0" y="147" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">weak_clusters</text>
+<text x="341.0" y="163" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">Louvain on covisibility, conductance &lt; 0.1</text>
+<rect x="216" y="180" width="250" height="56" rx="10" fill="#CCFBF1" stroke="#0F766E" stroke-width="1.5"/>
+<text x="341.0" y="194" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0F766E" text-anchor="middle" letter-spacing="0.08em">OUTSIDE · AUTO</text>
+<text x="341.0" y="211" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">unregistered_clusters</text>
+<text x="341.0" y="227" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">matched images missing from the model</text>
+<rect x="216" y="244" width="250" height="56" rx="10" fill="#FFE4E6" stroke="#BE123C" stroke-width="1.5"/>
+<text x="341.0" y="258" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE123C" text-anchor="middle" letter-spacing="0.08em">GIVEN</text>
+<text x="341.0" y="275" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">images_to_fix</text>
+<text x="341.0" y="291" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">image names, one more cluster</text>
+<rect x="506" y="176" width="200" height="64" rx="10" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+<text x="606.0" y="193" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0369A1" text-anchor="middle" letter-spacing="0.08em">PAIR SELECTION</text>
+<text x="606.0" y="216" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">repair_pairs</text>
+<text x="606.0" y="233" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">nearest cameras, per_image</text>
+<rect x="746" y="176" width="214" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="853.0" y="193" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">OUTPUT</text>
+<text x="853.0" y="216" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">louvain.output</text>
+<text x="853.0" y="233" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="middle">{model, clusters, pairs}</text>
+<path d="M 180.0 208.0 L 198.0 208.0 L 198.0 144.0 L 208.0 144.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="216.0,144.0 208.0,148.5 208.0,139.5" fill="#6B7280"/>
+<path d="M 180.0 208.0 L 208.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="216.0,208.0 208.0,212.5 208.0,203.5" fill="#6B7280"/>
+<path d="M 198.0 208.0 L 198.0 272.0 L 208.0 272.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="216.0,272.0 208.0,276.5 208.0,267.5" fill="#6B7280"/>
+<path d="M 466.0 144.0 L 486.0 144.0 L 486.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<path d="M 466.0 272.0 L 486.0 272.0 L 486.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<path d="M 466.0 208.0 L 498.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="506.0,208.0 498.0,212.5 498.0,203.5" fill="#6B7280"/>
+<path d="M 706.0 208.0 L 738.0 208.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="746.0,208.0 738.0,212.5 738.0,203.5" fill="#6B7280"/>
+<rect x="506" y="262" width="200" height="46" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="606.0" y="282" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">sim_table</text>
+<text x="606.0" y="299" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">ranks the candidates</text>
+<path d="M 606.0 262.0 L 606.0 248.0" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-dasharray="5 4"/>
+<polygon points="606.0,240.0 610.5,248.0 601.5,248.0" fill="#6B7280"/>
+<text x="40" y="344" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#4B5563" text-anchor="start" letter-spacing="0.08em">3-4 · MATCHING AND NEW MODEL</text>
+<text x="960" y="344" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="normal" fill="#4B5563" text-anchor="end">run_pairs(matchers + [to_colmap_module, repair_reconstruction_module], pairs)</text>
+<rect x="40" y="356" width="130" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="105.0" y="373" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="105.0" y="396" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">pairs</text>
+<text x="105.0" y="413" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">from louvain.output</text>
+<rect x="194" y="356" width="150" height="64" rx="10" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+<text x="269.0" y="373" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#15803D" text-anchor="middle" letter-spacing="0.08em">MATCHING</text>
+<text x="269.0" y="396" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">matchers</text>
+<text x="269.0" y="413" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">any pipeline</text>
+<rect x="368" y="356" width="160" height="64" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="448.0" y="373" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE185D" text-anchor="middle" letter-spacing="0.08em">COLMAP</text>
+<text x="448.0" y="396" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">to_colmap_module</text>
+<text x="448.0" y="413" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">same db</text>
+<rect x="552" y="356" width="250" height="64" rx="10" fill="#FCE7F3" stroke="#BE185D" stroke-width="1.5"/>
+<text x="677.0" y="373" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#BE185D" text-anchor="middle" letter-spacing="0.08em">3D</text>
+<text x="677.0" y="396" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">repair_reconstruction_module</text>
+<text x="677.0" y="413" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="middle">fix_existing_frames</text>
+<rect x="826" y="356" width="134" height="64" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+<text x="893.0" y="373" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" text-anchor="middle" letter-spacing="0.08em">OUTPUT</text>
+<text x="893.0" y="396" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">output</text>
+<text x="893.0" y="413" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" font-weight="normal" fill="#4B5563" text-anchor="middle">&lt;model&gt;_fixed</text>
+<path d="M 170.0 388.0 L 186.0 388.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="194.0,388.0 186.0,392.5 186.0,383.5" fill="#6B7280"/>
+<path d="M 344.0 388.0 L 360.0 388.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="368.0,388.0 360.0,392.5 360.0,383.5" fill="#6B7280"/>
+<path d="M 528.0 388.0 L 544.0 388.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="552.0,388.0 544.0,392.5 544.0,383.5" fill="#6B7280"/>
+<path d="M 802.0 388.0 L 818.0 388.0" fill="none" stroke="#6B7280" stroke-width="1.6"/>
+<polygon points="826.0,388.0 818.0,392.5 818.0,383.5" fill="#6B7280"/>
+<rect x="577" y="448" width="200" height="46" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="677.0" y="468" font-family="'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">model, clusters</text>
+<text x="677.0" y="485" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#4B5563" text-anchor="middle">from louvain.output</text>
+<path d="M 677.0 448.0 L 677.0 428.0" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-dasharray="5 4"/>
+<polygon points="677.0,420.0 681.5,428.0 672.5,428.0" fill="#6B7280"/>
+<text x="40" y="462" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">The clusters are removed from the old model and registered</text>
+<text x="40" y="480" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">again with the new matches; the rest of the model keeps its</text>
+<text x="40" y="498" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4B5563" text-anchor="start">poses, and the result is aligned back onto it.</text>
+</svg>

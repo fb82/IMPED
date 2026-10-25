@@ -9,6 +9,37 @@ import pycolmap
 from core import set_args
 
 
+def snapshot_db(db):
+    folder = tempfile.mkdtemp()
+    path = os.path.join(folder, 'snapshot.db')
+
+    source = sqlite3.connect(db)
+    target = sqlite3.connect(path)
+    source.backup(target)
+    target.close()
+    source.close()
+
+    return path
+
+
+def model_paths(folder):
+    if os.path.exists(os.path.join(folder, 'images.bin')):
+        return [folder]
+    return [os.path.join(folder, name) for name in sorted(os.listdir(folder)) if os.path.isdir(os.path.join(folder, name))]
+
+
+def largest_model(model):
+    """
+    The model with the most registered images, as (path, Reconstruction):
+    `model` is a reconstruction module (its models are read through
+    _results()) or the folder of an existing reconstruction, holding one
+    model or one sub-folder per model.
+    """
+    paths = model._results() if hasattr(model, '_results') else model_paths(model)
+    models = [(path, pycolmap.Reconstruction(path)) for path in paths]
+    return max(models, key=lambda m: m[1].num_reg_images(), default=(None, None))
+
+
 class reconstruct_module:
     def __init__(self, **args):
         self.single_image = False
@@ -37,16 +68,7 @@ class reconstruct_module:
         return {}
 
     def _snapshot(self):
-        folder = tempfile.mkdtemp()
-        path = os.path.join(folder, 'snapshot.db')
-
-        source = sqlite3.connect(self.args['db'])
-        target = sqlite3.connect(path)
-        source.backup(target)
-        target.close()
-        source.close()
-
-        return path
+        return snapshot_db(self.args['db'])
 
     def _reconstruct(self, database_path):
         try:
@@ -89,3 +111,6 @@ class reconstruct_module:
             self._future.result()
             self._future = None
             self._executor.shutdown(wait=True)
+
+    def _results(self):
+        return [self._model_path] if self._model_path else []

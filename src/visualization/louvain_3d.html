@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Louvain 3D</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: rgba(23, 26, 33, 0.94); --text: #e6e8eb; --muted: #9aa1ab;
+    --border: #2a2f3a; --accent: #ff9f0a; --field: #0f1115; --button: #232834;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.4 -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  #view { position: fixed; inset: 0; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  #panel { position: fixed; top: 12px; left: 12px; bottom: 12px; width: 310px; display: flex; flex-direction: column; overflow: hidden; }
+  #panel > section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 15px; margin: 0 0 4px; word-break: break-all; }
+  .muted { color: var(--muted); }
+  .stats { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-variant-numeric: tabular-nums; }
+  .stats span:nth-child(odd) { color: var(--muted); }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  button { background: var(--button); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; cursor: pointer; font: inherit; }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  input[type=search] { flex: 1; min-width: 0; background: var(--field); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font: inherit; }
+  input[type=range] { flex: 1; }
+  label.file { cursor: pointer; color: var(--muted); }
+  label.file input { display: none; }
+  #legend { overflow: auto; padding: 6px 8px; flex: 1; }
+  .item { display: grid; grid-template-columns: auto 12px 1fr auto; gap: 8px; align-items: center; padding: 3px 6px; border-radius: 6px; }
+  .item:hover { background: rgba(255, 255, 255, 0.05); }
+  .item .name { cursor: pointer; }
+  .item.weak .name { font-weight: 600; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .tag { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sep { margin: 8px 6px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); }
+  #info { position: fixed; right: 12px; bottom: 12px; width: 340px; padding: 10px 12px; display: none; }
+  #info img { display: block; width: 100%; margin-top: 8px; border-radius: 6px; }
+  #info .close { float: right; }
+  #help { position: fixed; right: 12px; top: 12px; padding: 8px 12px; color: var(--muted); font-size: 12px; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="panel" class="card">
+  <section>
+    <h1 id="title"></h1>
+    <div class="stats" id="stats"></div>
+  </section>
+  <section>
+    <div class="row">
+      <button id="weak-only">weak only</button>
+      <button id="colors">real colors</button>
+      <button id="fit">fit view</button>
+    </div>
+    <div class="row"><span class="muted">point size</span><input id="size" type="range" min="1" max="8" step="0.5" value="2"></div>
+    <div class="row"><input id="search" type="search" placeholder="search image name"><span id="found" class="tag"></span></div>
+    <div class="row"><label class="file">image folder: <span id="folder">none (click to choose)</span><input id="folder-input" type="file" webkitdirectory></label></div>
+  </section>
+  <div id="legend"></div>
+</div>
+<div id="help" class="card">drag: rotate · right drag: pan · wheel: zoom · click a camera: details</div>
+<div id="info" class="card"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const DATA = /*DATA*/null;
+
+function bytes(b64) {
+  const s = atob(b64), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+const f32 = b64 => new Float32Array(bytes(b64).buffer);
+
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0f1115);
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, DATA.scale * 0.01, DATA.scale * 1e5);
+camera.up.set(...DATA.up);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const WHITE = new THREE.Color('#ffffff');
+const GHOST = new THREE.Color('#6b7280');
+const MOVE = new THREE.Color('#ffd60a');
+const pointMaterials = [];
+const pickables = [];
+let realColors = false;
+let weakOnly = false;
+
+function frustumLines(cameras, colorOf) {
+  // 8 segments per camera: apex to the 4 corners, and the 4 sides of the far rectangle
+  const pos = [], col = [];
+  for (const cam of cameras) {
+    const c = cam.c, f = cam.f, color = colorOf(cam);
+    const corner = i => [f[3 * i], f[3 * i + 1], f[3 * i + 2]];
+    for (let i = 0; i < 4; i++) {
+      pos.push(...c, ...corner(i), ...corner(i), ...corner((i + 1) % 4));
+      for (let k = 0; k < 4; k++) col.push(color.r, color.g, color.b);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true }));
+}
+
+function centerPoints(cameras, colorOf, size) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(cameras.flatMap(cam => cam.c), 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(cameras.flatMap(cam => colorOf(cam).toArray()), 3));
+  return new THREE.Points(geometry, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true }));
+}
+
+const groups = DATA.communities.map((community, k) => {
+  const group = new THREE.Group();
+  const color = new THREE.Color(community.color);
+
+  const xyz = f32(community.points);
+  const rgb = bytes(community.rgb);
+  const n = xyz.length / 3;
+  const louvain = new Float32Array(3 * n), real = new Float32Array(3 * n);
+  const pointColor = community.weak ? color : color.clone().multiplyScalar(0.8);
+  for (let i = 0; i < n; i++) {
+    louvain.set([pointColor.r, pointColor.g, pointColor.b], 3 * i);
+    real.set([rgb[3 * i] / 255, rgb[3 * i + 1] / 255, rgb[3 * i + 2] / 255], 3 * i);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(louvain, 3));
+  const material = new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true });
+  pointMaterials.push(material);
+  const points = new THREE.Points(geometry, material);
+  points.userData = { louvain, real };
+  group.add(points);
+
+  const colorOf = cam => (cam.h ? WHITE : color);
+  group.add(frustumLines(community.cameras, colorOf));
+  const centers = centerPoints(community.cameras, colorOf, community.weak ? 6 : 4);
+  centers.userData = { community: k, cameras: community.cameras };
+  pickables.push(centers);
+  group.add(centers);
+
+  const moved = community.cameras.filter(cam => cam.o);
+  if (moved.length) {
+    const pos = moved.flatMap(cam => [...cam.o, ...cam.c]);
+    const lines = new THREE.BufferGeometry();
+    lines.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    group.add(new THREE.LineSegments(lines, new THREE.LineBasicMaterial({ color: MOVE })));
+    group.add(centerPoints(moved.map(cam => ({ c: cam.o })), () => GHOST, 4));
+  }
+
+  scene.add(group);
+  return group;
+});
+
+let lostGroup = null;
+if (DATA.lost.length) {
+  lostGroup = new THREE.Group();
+  lostGroup.add(frustumLines(DATA.lost, () => GHOST));
+  const centers = centerPoints(DATA.lost, () => GHOST, 5);
+  centers.userData = { community: null, cameras: DATA.lost };
+  pickables.push(centers);
+  lostGroup.add(centers);
+  scene.add(lostGroup);
+}
+
+const markerGeometry = new THREE.BufferGeometry();
+const marker = new THREE.Points(markerGeometry, new THREE.PointsMaterial({ size: 12, sizeAttenuation: false, color: 0xff9f0a, transparent: true, opacity: 0.85 }));
+scene.add(marker);
+
+function mark(cameras) {
+  markerGeometry.setAttribute('position', new THREE.Float32BufferAttribute(cameras.flatMap(cam => cam.c), 3));
+  markerGeometry.computeBoundingSphere();
+}
+mark([]);
+
+function fit(positions) {
+  if (!positions.length) return;
+  const box = new THREE.Box3().setFromPoints(positions.map(p => new THREE.Vector3(...p)));
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const radius = Math.max(sphere.radius, DATA.scale * 4);
+  const direction = camera.position.clone().sub(controls.target);
+  if (direction.lengthSq() === 0) direction.set(1, 1, 1);
+  direction.normalize().multiplyScalar(radius * 2.5);
+  controls.target.copy(sphere.center);
+  camera.position.copy(sphere.center).add(direction);
+  controls.update();
+}
+
+const allCameras = () => DATA.communities.flatMap(c => c.cameras);
+const fitAll = () => fit(allCameras().map(cam => cam.c));
+
+// panel
+document.getElementById('title').textContent = DATA.title;
+const nWeak = DATA.communities.filter(c => c.weak).length;
+const stats = [
+  ['cameras', DATA.n_images],
+  ['points', `${DATA.n_drawn.toLocaleString()} of ${DATA.n_points.toLocaleString()} drawn`],
+  ['communities', `${DATA.communities.length}, ${nWeak} weak`],
+];
+if (DATA.n_highlight) {
+  stats.push(['repaired', `${DATA.n_back} of ${DATA.n_highlight} back in the model`]);
+  if (DATA.compare) stats.push(['compared with', DATA.compare]);
+  if (DATA.median_move !== null) stats.push(['median move', DATA.median_move.toPrecision(3)]);
+}
+document.getElementById('stats').innerHTML = stats.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+
+const legend = document.getElementById('legend');
+function addItem(label, tag, color, group, weak, cameras) {
+  const item = document.createElement('div');
+  item.className = 'item' + (weak ? ' weak' : '');
+  item.innerHTML = `<input type="checkbox" checked><span class="sw" style="background:${color}"></span><span class="name"></span><span class="tag"></span>`;
+  item.querySelector('.name').textContent = label;
+  item.querySelector('.tag').textContent = tag;
+  const box = item.querySelector('input');
+  box.addEventListener('change', () => { group.visible = box.checked; });
+  item.querySelector('.name').addEventListener('click', () => { fit(cameras.map(cam => cam.c)); mark(cameras); });
+  item.box = box;
+  legend.appendChild(item);
+  return item;
+}
+const items = [];
+const order = DATA.communities.map((c, k) => k).sort((a, b) => DATA.communities[b].weak - DATA.communities[a].weak);
+let section = null;
+for (const k of order) {
+  const c = DATA.communities[k];
+  if (section !== c.weak) {
+    section = c.weak;
+    legend.insertAdjacentHTML('beforeend', `<div class="sep">${c.weak ? 'WEAK COMMUNITIES' : 'OTHER COMMUNITIES'}</div>`);
+  }
+  items[k] = addItem(`community ${k}`, `${c.size} cams · φ ${c.conductance}`, c.color, groups[k], c.weak, c.cameras);
+}
+if (lostGroup) {
+  legend.insertAdjacentHTML('beforeend', '<div class="sep">REPAIRED, NOT REGISTERED AGAIN</div>');
+  addItem('lost cameras', `${DATA.lost.length} cams`, '#6b7280', lostGroup, false, DATA.lost);
+}
+
+document.getElementById('weak-only').addEventListener('click', event => {
+  weakOnly = !weakOnly;
+  event.target.classList.toggle('on', weakOnly);
+  DATA.communities.forEach((c, k) => {
+    if (!c.weak) { groups[k].visible = !weakOnly; items[k].box.checked = !weakOnly; }
+  });
+});
+document.getElementById('colors').addEventListener('click', event => {
+  realColors = !realColors;
+  event.target.classList.toggle('on', realColors);
+  for (const group of groups) {
+    const points = group.children[0];
+    points.geometry.setAttribute('color', new THREE.BufferAttribute(realColors ? points.userData.real : points.userData.louvain, 3));
+  }
+});
+document.getElementById('fit').addEventListener('click', () => { mark([]); fitAll(); });
+document.getElementById('size').addEventListener('input', event => {
+  for (const material of pointMaterials) material.size = Number(event.target.value);
+});
+
+document.getElementById('search').addEventListener('input', event => {
+  const query = event.target.value.trim().toLowerCase();
+  const found = query ? allCameras().concat(DATA.lost).filter(cam => cam.n.toLowerCase().includes(query)) : [];
+  document.getElementById('found').textContent = query ? `${found.length} found` : '';
+  mark(found);
+  if (found.length) fit(found.map(cam => cam.c));
+});
+
+const files = {};
+document.getElementById('folder-input').addEventListener('change', event => {
+  for (const file of event.target.files) files[file.name] = file;
+  document.getElementById('folder').textContent = `${event.target.files.length} files`;
+});
+
+// picking
+const info = document.getElementById('info');
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let down = null;
+renderer.domElement.addEventListener('pointerdown', event => { down = [event.clientX, event.clientY]; });
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!down || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) return;
+  pointer.set(event.clientX / window.innerWidth * 2 - 1, -event.clientY / window.innerHeight * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  raycaster.params.Points.threshold = DATA.scale * 0.5;
+  const hits = raycaster.intersectObjects(pickables.filter(p => p.parent.visible), false);
+  if (!hits.length) return;
+  const { community, cameras } = hits[0].object.userData;
+  show(cameras[hits[0].index], community);
+});
+
+function show(cam, k) {
+  const rows = [];
+  if (k === null) {
+    rows.push('repaired, not registered again: drawn at its old position');
+  } else {
+    const c = DATA.communities[k];
+    rows.push(`community ${k} · ${c.weak ? '<b>weak</b>' : 'not weak'} · ${c.size} cameras · conductance ${c.conductance}`);
+    if (cam.h) rows.push(cam.o ? `repaired, moved ${Math.hypot(cam.c[0] - cam.o[0], cam.c[1] - cam.o[1], cam.c[2] - cam.o[2]).toPrecision(3)} from its old position` : 'repaired, not in the compared model');
+  }
+  info.innerHTML = '<button class="close">×</button><b class="cam-name"></b><div class="muted">' + rows.join('<br>') + '</div>';
+  info.querySelector('.cam-name').textContent = cam.n;
+  info.querySelector('.close').addEventListener('click', () => { info.style.display = 'none'; mark([]); });
+  const file = files[cam.n.split('/').pop()];
+  if (file) {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    info.appendChild(img);
+  }
+  info.style.display = 'block';
+  mark([cam]);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+camera.position.set(...DATA.up.map(v => v * DATA.scale * 50));
+camera.position.add(new THREE.Vector3(DATA.scale * 30, 0, 0));
+fitAll();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 import inspect
+from collections import Counter
 from functools import partial
 
 project_root = Path(__file__).parent.parent.resolve()
@@ -54,7 +55,7 @@ from similarity import (
     n_matches_similarity_module,
 )
 from confidence import conf_module
-from transitive import kfc_module, transitive_module
+from transitive import join_pairs, kfc_module, pair_clusters, transitive_module
 from core.image_pairs import image_pairs
 from detectors import dog_module, hz_module, r2d2_module
 from matchers import (
@@ -98,11 +99,15 @@ from ensemble import (
     pipeline_muxer_module,
     sampling_module,
 )
-from reconstruct import hierarchical_reconstruct_module, reconstruct_module
+from reconstruct import hierarchical_reconstruct_module, louvain_module, reconstruct_clusters, reconstruct_module, repair_reconstruction_module, split_module
+from gaussian_splatting import fastgs_module
 from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module, oanet_module, dino_filter_module
 from segmentators import segformer_module
 from visualization import (
+    db_pair_graph,
     live_pair_graph,
+    louvain_3d_module,
+    read_db_pairs,
     show_homography_module,
     show_kpts_module,
     show_matches_module,
@@ -1700,7 +1705,11 @@ def pipeline56():
     run_pairs(pipeline, imgs, db_name=name_db)
 
 
-def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
+def pipeline57(output_folder=OUTPUT_DIR):
+    # Three IMC scenes mixed in one folder: one KFC selection, one
+    # transitive closure and one reconstruction of everything, then
+    # split_module separates the scenes, by the Louvain communities of the
+    # covisibility graph, and reconstructs each one on its own.
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
     print("=" * 50)
@@ -1719,67 +1728,58 @@ def pipeline57(output_folder=OUTPUT_DIR, n_datasets=None):
             sources[img] = d
 
     global_db = str(output_path / 'global_sim.hdf5')
+    match_db = str(output_path / 'match.db')
+    datasets_dir = output_path / 'datasets'
 
-    datasets = []
-    global_pipeline = [
+    current_pairs = []
+    run_pairs([
         salad_module(),
         cosine_similarity_module(),
-        kfc_module(datasets=datasets, sim_db=global_db, out_path=None, n_mst=2, multi_dataset=True, cut_ratio=1.0, n_datasets=n_datasets, sim_quantile=0.75),
+        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, sim_quantile=0.75),
+    ], str(imgs_dir), db_name=global_db)
+
+    datasets = []
+    hierarchical = hierarchical_reconstruct_module(db=match_db, images=str(imgs_dir), output=str(output_path / 'model'), worklist=current_pairs)
+    match_pipeline = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                smnn_module(),
+            ],
+        ]),
+        magsac_module(),
+        transitive_module(pairs=current_pairs, threshold=3, max_iterations=3, out_path=str(output_path / 'transitive_pairs.hdf5')),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+        hierarchical,
+        split_module(db=match_db, images=str(imgs_dir), model=hierarchical, output=str(datasets_dir), datasets=datasets, worklist=current_pairs),
     ]
-    run_pairs(global_pipeline, str(imgs_dir), db_name=global_db)
 
-    for i, current_pairs in enumerate(datasets):
-        match_db = str(output_path / f'dataset_{i}.db')
+    while current_pairs:
+        run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'match.hdf5'))
 
-        transitive = transitive_module(
-            pairs=current_pairs,
-            threshold=3,
-            max_iterations=3,
-            out_path=str(output_path / f'dataset_{i}_transitive_pairs.hdf5'),
-        )
+    for dataset in datasets:
+        print(f"{name_example}: {len(dataset)} images, from {dict(Counter(sources[n] for n in dataset))}")
 
-        hierarchical = hierarchical_reconstruct_module(
-            db=match_db,
-            images=str(imgs_dir),
-            output=str(output_path / f'dataset_{i}_model'),
-            worklist=current_pairs,
-        )
-
-        match_pipeline = [
-            pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
-                [
-                    deep_joined_module(what='aliked'),
-                    lightglue_module(what='aliked'),
-                ],
-                [
-                    deep_joined_module(what='superpoint'),
-                    lightglue_module(what='superpoint'),
-                ],
-                [
-                    dog_module(),
-                    patch_module(),
-                    deep_descriptor_module(),
-                    smnn_module(),
-                ],
-            ]),
-            magsac_module(),
-            transitive,
-            to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
-            hierarchical,
-        ]
-
-        while current_pairs:
-            run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'match.hdf5'))
-
-    model_dirs = sorted(output_path.glob('dataset_*_model'))
+    model_dirs = sorted(d for d in datasets_dir.iterdir() if d.is_dir())
     assert len(model_dirs) == 3, f"{len(model_dirs)} datasets found instead of 3"
 
     found = []
     for model_dir in model_dirs:
         names = set()
-        for d in os.listdir(model_dir):
-            model = pycolmap.Reconstruction(str(model_dir / d))
-            names |= {im.name for im in model.images.values() if im.has_pose}
+        for d in model_dir.iterdir():
+            if d.is_dir():
+                model = pycolmap.Reconstruction(str(d))
+                names |= {im.name for im in model.images.values() if im.has_pose}
         dataset_sources = {sources[n] for n in names}
         assert len(dataset_sources) == 1, f"{model_dir.name} mixes {dataset_sources}"
         found.append(dataset_sources.pop())
@@ -2058,52 +2058,6 @@ def pipeline63():
     print(f"{name_example}: ALL ASSERTIONS PASSED")
 
 
-def pipeline64():
-    name_example = inspect.currentframe().f_code.co_name
-    print("\n \n")
-    print("=" * 50)
-    print(f"Running: {name_example}")
-
-    torch.manual_seed(0)
-    centers = torch.nn.functional.normalize(torch.randn(3, 32), dim=1)
-    descs = {}
-    for c in range(3):
-        for i in range(10):
-            descs[f'/x/scene{c}_{i:02d}.jpg'] = centers[c] + 0.1 * torch.randn(32)
-
-    imgs = sorted(descs)
-    table = {}
-    for i, a in enumerate(imgs):
-        for b in imgs[i + 1:]:
-            table[(a, b)] = torch.nn.functional.cosine_similarity(descs[a], descs[b], dim=0).item()
-
-    def scenes(groups):
-        return sorted(sorted({os.path.basename(img).split('_')[0] for img in g}) for g in groups)
-
-    expected = [['scene0'], ['scene1'], ['scene2']]
-
-    groups = kfc_module.split_datasets(table, cut_ratio=1.0, sep_ratio=0.8, min_size=3)
-    assert scenes(groups) == expected, f"automatic split: {scenes(groups)}"
-
-    groups = kfc_module.split_datasets(table, min_size=3, n_datasets=3)
-    assert scenes(groups) == expected, f"split with n_datasets=3: {scenes(groups)}"
-
-    datasets = []
-    pairs = []
-    kfc = kfc_module(pairs=pairs, datasets=datasets, sim_db=None, out_path=None, n_mst=2, multi_dataset=True, cut_ratio=1.0)
-    for (a, b), sim in table.items():
-        kfc.run(img=[a, b], pair_sim=sim)
-    kfc.finalize()
-
-    assert len(datasets) == 3, f"{len(datasets)} datasets instead of 3"
-    for d in datasets:
-        assert len(d) > 0, "empty seed pair list"
-        assert len({os.path.basename(img).split('_')[0] for pair in d for img in pair}) == 1, "seed pairs cross datasets"
-    assert len(pairs) == sum(len(d) for d in datasets), "'pairs' should hold all the datasets' pairs"
-
-    print(f"{name_example}: ALL ASSERTIONS PASSED")
-
-
 def pipeline65():
     name_example = inspect.currentframe().f_code.co_name
     print("\n \n")
@@ -2198,6 +2152,155 @@ def pipeline67():
     imgs = '../data/ET'
     name_db = os.path.join(OUTPUT_DIR, f"database_{name_example}.hdf5")
     run_pairs(pipeline, imgs, db_name=name_db)
+
+
+def pipeline68(output_folder=OUTPUT_DIR):
+    # Joining the clusters of a pair graph: only the KFC seed pairs (one
+    # spanning tree) are matched, so pair_clusters finds clusters tied by a
+    # single pair; join_pairs proposes new pairs between them, which are
+    # matched in turn, and reconstruct_clusters reconstructs each cluster on
+    # its own.
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    imgs_dir = '../data/ET'
+    global_db = str(output_path / 'global.hdf5')
+    match_db = str(output_path / 'match.db')
+
+    seed_pairs = []
+    kfc = kfc_module(pairs=seed_pairs, sim_db=global_db, out_path=None, n_mst=1)
+    run_pairs([salad_module(), cosine_similarity_module(), kfc], imgs_dir, db_name=global_db)
+    sim_table = kfc._table
+    path_of = {os.path.basename(img): img for pair in sim_table for img in pair}
+
+    # a new pipeline for each run: to_colmap_module closes its db in finalize()
+    def match_pipeline():
+        return [
+            dog_module(),
+            sift_module(),
+            smnn_module(),
+            magsac_module(),
+            to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+        ]
+
+    run_pairs(match_pipeline(), seed_pairs, db_name=str(output_path / 'match.hdf5'))
+
+    graph, tried = _db_pair_graph(match_db, path_of=path_of)
+    clusters = pair_clusters(graph)
+    print(f"{name_example}: {len(clusters)} clusters, sizes {sorted(map(len, clusters), reverse=True)}")
+    assert len(clusters) > 1, "the seed pairs make a single cluster, nothing to join"
+
+    new_pairs = join_pairs(graph, clusters, sim_table, tried)
+    assert new_pairs, "join_pairs proposed no pair"
+    cluster_of = {img: i for i, cluster in enumerate(clusters) for img in cluster}
+    for a, b in new_pairs:
+        assert cluster_of[a] != cluster_of[b], f"{a} and {b} are in the same cluster"
+        assert frozenset((a, b)) not in tried, f"{a} - {b} was already tried"
+
+    run_pairs(match_pipeline(), new_pairs, db_name=str(output_path / 'match.hdf5'))
+    joined, _ = _db_pair_graph(match_db, path_of=path_of)
+    print(f"{name_example}: {joined.number_of_edges() - graph.number_of_edges()} of {len(new_pairs)} new pairs confirmed")
+    assert joined.number_of_edges() >= graph.number_of_edges()
+
+    names = [{os.path.basename(img) for img in cluster} for cluster in clusters]
+    results = reconstruct_clusters(match_db, imgs_dir, str(output_path / 'clusters_model'), names, min_size=2)
+    assert results, "no cluster reconstructed"
+    for i in range(len(results)):
+        assert os.path.isfile(output_path / 'clusters_model' / str(i) / 'images.txt'), f"no image list for cluster {i}"
+
+    print(f"{name_example}: ALL ASSERTIONS PASSED")
+
+
+def pipeline69(n_pairs=10, output_folder=OUTPUT_DIR):
+    # Matches of three matchers on MegaDepth-1500 pairs: SIFT alone, SIFT
+    # combined with DINOv2 features before matching (product of their
+    # similarity matrices) and RoMaV2; the inliers of each are drawn in
+    # their own folder, to compare them side by side.
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    pairs, _, to_add_path = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+    pairs = pairs[:n_pairs]
+
+    matchers = {
+        'sift': [
+            dog_module(),
+            sift_module(),
+            smnn_module(),
+            magsac_module(),
+        ],
+        'sift_dino': [
+            dog_module(),
+            pipeline_muxer_module(pipe_gather=pipe_sm_product, add_to_cache=False, pipeline=[
+                [
+                    sift_module(),
+                    similarity_matrix_module(metric='l2'),
+                ],
+                [
+                    dino_descriptor_module(),
+                    similarity_matrix_module(metric='cosine'),
+                ],
+            ]),
+            smnn_extended_module(),
+            magsac_module(),
+        ],
+        'romav2': [
+            romav2_module(),
+            magsac_module(),
+        ],
+    }
+
+    for method, pipeline in matchers.items():
+        show_dir = str(output_path / method)
+        pipeline = pipeline + [show_matches_module(id_more=method, img_prefix=f'{method}_', mask_idx=[1], cache_path=show_dir)]
+        run_pairs(pipeline, pairs, add_path=to_add_path, db_name=str(output_path / f'database_{method}.hdf5'))
+        print(f"{name_example}: {method} matches drawn in {show_dir}")
+
+
+def pipeline70(output_folder=OUTPUT_DIR):
+    # ET matched quickly (ALIKED + LightGlue + MAGSAC), reconstructed with
+    # COLMAP and turned into Gaussians by fastgs_module.
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    imgs_dir = '../data/ET'
+    match_db = str(output_path / 'match.db')
+
+    reconstruct = reconstruct_module(db=match_db, images=imgs_dir, output=str(output_path / 'model'))
+    fastgs = fastgs_module(model=reconstruct, images=imgs_dir, output=str(output_path / 'splats'))
+    run_pairs([
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        to_colmap_module(db=match_db),
+        reconstruct,
+        fastgs,
+    ], imgs_dir, db_name=str(output_path / 'match.hdf5'))
+
+    model = pycolmap.Reconstruction(str(output_path / 'model'))
+    assert model.num_reg_images() >= 3, f"only {model.num_reg_images()} images in the model"
+    assert fastgs.ply is not None and os.path.isfile(fastgs.ply), f"{fastgs.ply} not written"
+    print(f"{name_example}: {model.num_reg_images()} images, {model.num_points3D()} points, Gaussians in {fastgs.ply}")
+
+    print(f"{name_example}: ALL ASSERTIONS PASSED")
 
 
 def pipeline_ssma_transitive(
@@ -2554,6 +2657,7 @@ def full_pipeline_ssma_hierarchical_dino(
     sim_quantile=0.75,
     sim_th=None,
     global_db=None,
+    fix=True,
 ):
     # global_db: path to an existing global-similarity hdf5 (e.g. the
     # full_ssma_global_sim.hdf5 written by full_pipeline_ssma) to reuse its
@@ -2571,12 +2675,8 @@ def full_pipeline_ssma_hierarchical_dino(
     current_pairs = []
     if global_db is None:
         global_db = str(output_path / 'full_ssma_hierarchical_dino_global_sim.hdf5')
-    global_pipeline = [
-        salad_module(),
-        cosine_similarity_module(),
-        kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th),
-    ]
-    run_pairs(global_pipeline, images_folder, db_name=global_db)
+    kfc = kfc_module(pairs=current_pairs, sim_db=global_db, out_path=None, n_mst=n_mst, sim_quantile=sim_quantile, sim_th=sim_th)
+    run_pairs([salad_module(), cosine_similarity_module(), kfc], images_folder, db_name=global_db)
 
     print(f"full_pipeline_ssma_hierarchical_dino: {len(current_pairs)} seed pairs selected")
 
@@ -2591,14 +2691,7 @@ def full_pipeline_ssma_hierarchical_dino(
         out_path=transitive_pairs_path,
     )
 
-    hierarchical = hierarchical_reconstruct_module(
-        db=match_db,
-        images=images_folder,
-        output=str(output_path / 'full_ssma_hierarchical_dino_model'),
-        worklist=current_pairs,
-    )
-
-    match_pipeline = [
+    matchers = [
         pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
             [
                 deep_joined_module(what='aliked'),
@@ -2621,14 +2714,360 @@ def full_pipeline_ssma_hierarchical_dino(
         segformer_module(stage='matches'),
         dino_filter_module(),
         magsac_module(),
+    ]
+
+    cache_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.hdf5')
+    hierarchical = hierarchical_reconstruct_module(
+        db=match_db,
+        images=images_folder,
+        output=str(output_path / 'full_ssma_hierarchical_dino_model'),
+        worklist=current_pairs,
+    )
+
+    match_pipeline = matchers + [
         transitive,
         to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
         hierarchical,
     ]
 
     while current_pairs:
-        run_pairs(match_pipeline, current_pairs, db_name=str(output_path / 'full_ssma_hierarchical_dino_transitive.hdf5'))
+        run_pairs(match_pipeline, current_pairs, db_name=cache_db)
+
+    if fix:
+        louvain = louvain_module(
+            db=match_db,
+            images=images_folder,
+            model=hierarchical,
+            out_path=str(output_path / 'full_ssma_hierarchical_dino_louvain.hdf5'),
+            sim_table=kfc._table,
+        )
+        louvain.finalize()
+        repair = louvain.output
+
+        if repair['pairs']:
+            run_pairs(matchers + [
+                to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+                repair_reconstruction_module(
+                    db=match_db,
+                    images=images_folder,
+                    model=repair['model'],
+                    clusters=repair['clusters'],
+                    output=str(output_path / 'full_ssma_hierarchical_dino_model_fixed'),
+                ),
+            ], repair['pairs'], db_name=cache_db)
 
     print(f"full_pipeline_ssma_hierarchical_dino: {transitive._graph.number_of_edges()} pairs matched via transitive closure")
     print(f"full_pipeline_ssma_hierarchical_dino: {hierarchical.n_models_built} models built, {hierarchical.n_merges} merges performed")
 
+
+def _db_pair_graph(db, min_inliers=1, path_of={}):
+    imgs, pairs = read_db_pairs(db)
+    graph = nx.Graph()
+    graph.add_nodes_from(path_of.get(img, img) for img in imgs)
+    for (img_a, img_b), (_, n_inliers) in pairs.items():
+        if (n_inliers or 0) >= min_inliers:
+            graph.add_edge(path_of.get(img_a, img_a), path_of.get(img_b, img_b))
+    tried = {frozenset((path_of.get(img_a, img_a), path_of.get(img_b, img_b))) for img_a, img_b in pairs}
+    return graph, tried
+
+
+def full_pipeline_ssma_clusters(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/full_ssma_hierarchical_dino',
+    match_db=None,
+    min_inliers=1,
+    min_size=3,
+):
+    # match_db: COLMAP database written by full_pipeline_ssma_hierarchical_dino,
+    # defaults to the one in output_folder. Each cluster of its pair graph
+    # (the groups of the pair graph viewer) is reconstructed on its own in
+    # output_folder/clusters_model/<i>.
+    print("\n \n")
+    print("=" * 50)
+    print("Running: full_pipeline_ssma_clusters")
+
+    output_path = Path(output_folder)
+    if match_db is None:
+        match_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.db')
+
+    graph, _ = _db_pair_graph(match_db, min_inliers)
+    clusters = pair_clusters(graph)
+    print(f"full_pipeline_ssma_clusters: {len(clusters)} clusters, sizes {sorted(map(len, clusters), reverse=True)}")
+
+    reconstruct_clusters(match_db, images_folder, str(output_path / 'clusters_model'), clusters, min_size=min_size)
+
+
+def full_pipeline_ssma_join_clusters(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/full_ssma_hierarchical_dino',
+    match_db=None,
+    global_db=None,
+    min_inliers=1,
+    min_links=3,
+    per_link=5,
+    max_rounds=10,
+    model_folder=None,
+    input_folder=None,
+    per_image=10,
+    fix_images=(),
+    fix_output=None,
+):
+    # input_folder: an existing full_pipeline_ssma_hierarchical_dino output
+    # to start from without modifying it: its COLMAP database is copied into
+    # output_folder, its model is the default model_folder and its hdf5
+    # cache is read only, the new entries going to a fresh cache in
+    # output_folder.
+    # Adds to match_db (from full_pipeline_ssma_hierarchical_dino, default the
+    # one in output_folder) the fewest new pairs that join its clusters: each
+    # round join_pairs proposes the most similar pairs, by the global
+    # similarity cached in global_db, between the closest clusters not joined
+    # yet, and they are matched with the same pipeline. A copy of the largest
+    # model in model_folder (default: the hierarchical reconstruction in
+    # output_folder; a single model folder works too) is then repaired and
+    # written to fix_output (default: output_folder/full_ssma_join_clusters_model).
+    print("\n \n")
+    print("=" * 50)
+    print("Running: full_pipeline_ssma_join_clusters")
+
+    output_path = Path(output_folder)
+    cache_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.hdf5')
+    cache_base = None
+    if input_folder is not None:
+        input_path = Path(input_folder)
+        output_path.mkdir(parents=True, exist_ok=True)
+        if match_db is None:
+            match_db = str(output_path / 'full_ssma_join_clusters.db')
+            if not os.path.exists(match_db):
+                shutil.copyfile(input_path / 'full_ssma_hierarchical_dino_transitive.db', match_db)
+        if model_folder is None:
+            model_folder = str(input_path / 'full_ssma_hierarchical_dino_model')
+        cache_db = str(output_path / 'full_ssma_join_clusters.hdf5')
+        cache_base = str(input_path / 'full_ssma_hierarchical_dino_transitive.hdf5')
+    if match_db is None:
+        match_db = str(output_path / 'full_ssma_hierarchical_dino_transitive.db')
+    if global_db is None:
+        global_db = str(output_path / 'full_ssma_hierarchical_dino_global_sim.hdf5')
+    if model_folder is None:
+        model_folder = str(output_path / 'full_ssma_hierarchical_dino_model')
+
+    db = pickled_hdf5.pickled_hdf5(global_db, mode='r')
+    sim_table, _ = db.get('/sim_table')
+    db.close()
+    path_of = {os.path.basename(img): img for pair in sim_table for img in pair}
+
+    graph, tried = _db_pair_graph(match_db, min_inliers, path_of)
+    clusters = pair_clusters(graph)
+    print(f"full_pipeline_ssma_join_clusters: {len(clusters)} clusters, sizes {sorted(map(len, clusters), reverse=True)}")
+
+    matchers = [
+        pipeline_muxer_module(pipe_gather=pipe_union, pipeline=[
+            [
+                deep_joined_module(what='aliked'),
+                lightglue_module(what='aliked'),
+            ],
+            [
+                deep_joined_module(what='superpoint'),
+                lightglue_module(what='superpoint'),
+            ],
+            [
+                dog_module(),
+                patch_module(),
+                deep_descriptor_module(),
+                smnn_module(),
+            ],
+            [
+                loma_module(),
+            ],
+        ]),
+        segformer_module(stage='matches'),
+        dino_filter_module(),
+        magsac_module(),
+    ]
+
+    for n_round in range(max_rounds):
+        new_pairs = join_pairs(graph, clusters, sim_table, tried, min_links=min_links, per_link=per_link)
+        if not new_pairs:
+            break
+        tried |= {frozenset(pair) for pair in new_pairs}
+
+        match_pipeline = matchers + [to_colmap_module(db=match_db, no_unmatched=False, only_matched=True)]
+        run_pairs(match_pipeline, new_pairs, db_name=cache_db, db_base=cache_base)
+
+        n_edges = graph.number_of_edges()
+        graph, done = _db_pair_graph(match_db, min_inliers, path_of)
+        tried |= done
+        print(f"full_pipeline_ssma_join_clusters: round {n_round + 1}, "
+              f"{graph.number_of_edges() - n_edges} of {len(new_pairs)} new pairs confirmed")
+
+    louvain = louvain_module(
+        db=match_db,
+        images=images_folder,
+        model=model_folder,
+        out_path=str(output_path / 'full_ssma_join_clusters_louvain.hdf5'),
+        sim_table=sim_table,
+        per_image=per_image,
+        images_to_fix=list(fix_images),
+    )
+    louvain.finalize()
+    repair = louvain.output
+
+    if repair['pairs']:
+        run_pairs(matchers + [
+            to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+            repair_reconstruction_module(
+                db=match_db,
+                images=images_folder,
+                model=repair['model'],
+                clusters=repair['clusters'],
+                output=fix_output or str(output_path / 'full_ssma_join_clusters_model'),
+            ),
+        ], repair['pairs'], db_name=cache_db, db_base=cache_base)
+
+
+def full_pipeline_ssma_fix_romav2(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/full_ssma_hierarchical_joined_clusters',
+    match_db=None,
+    global_db=None,
+    model_folder=None,
+    fix_output=None,
+    fix_images=(),
+    min_dist=0.2,
+    per_image=10,
+):
+    print("\n \n")
+    print("=" * 50)
+    print("Running: full_pipeline_ssma_fix_romav2")
+
+    output_path = Path(output_folder)
+    if match_db is None:
+        match_db = str(output_path / 'full_ssma_join_clusters.db')
+
+    db = pickled_hdf5.pickled_hdf5(global_db, mode='r')
+    sim_table, _ = db.get('/sim_table')
+    db.close()
+
+    louvain = louvain_module(
+        db=match_db,
+        images=images_folder,
+        model=model_folder,
+        out_path=str(output_path / 'full_ssma_fix_romav2_louvain.hdf5'),
+        sim_table=sim_table,
+        per_image=per_image,
+        images_to_fix=list(fix_images),
+        auto=False,
+        min_dist=min_dist,
+        skip_matched=False,
+    )
+    louvain.finalize()
+    repair = louvain.output
+
+    if repair['pairs']:
+        run_pairs([
+            romav2_module(),
+            magsac_module(),
+            to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+            repair_reconstruction_module(
+                db=match_db,
+                images=images_folder,
+                model=repair['model'],
+                clusters=repair['clusters'],
+                output=fix_output,
+            ),
+        ], repair['pairs'], db_name=str(output_path / 'full_ssma_fix_romav2.hdf5'))
+
+
+
+def ssma_fast(
+    images_folder='/home/colombo/Shared/imgs',
+    output_folder='/media/dati/ssma_fast2',
+    min_inliers=10,
+    max_iterations=2,
+):
+    # A sequence of pipelines, from the fastest to the most robust:
+    #   1. SALAD global similarity + kfc_module seed pairs;
+    #   2. transitive closure matched with DoG + SIFT + SMNN: only the pairs
+    #      with more than min_inliers MAGSAC inliers spawn transitive
+    #      candidates, and max_iterations=2 is the kfc seed pairs plus a
+    #      single transitive round; the model is reconstructed round by
+    #      round and at the end louvain_module finds the clusters to repair
+    #      and the pairs to match;
+    #   3. those pairs matched with ALIKED + LightGlue and the model repaired;
+    #      louvain_module looks again at the repaired model;
+    #   4. the pairs still to repair matched with LoMa and the model repaired;
+    #      louvain_module looks again at the repaired model;
+    #   5. the pairs still to repair matched with RoMaV2 and the model
+    #      repaired again.
+    # Every matcher writes into the same COLMAP database; at the end of each
+    # block louvain_3d_module draws the model it produced, with its Louvain
+    # communities, to <model>_louvain_3d.html.
+    print("\n \n")
+    print("=" * 50)
+    print("Running: ssma_fast")
+
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    match_db = str(output_path / 'ssma_fast.db')
+    global_db = str(output_path / 'ssma_fast_global_sim.hdf5')
+    model = str(output_path / 'ssma_fast_model')
+    aliked_model = str(output_path / 'ssma_fast_aliked_model')
+    loma_model = str(output_path / 'ssma_fast_loma_model')
+    romav2_model = str(output_path / 'ssma_fast_romav2_model')
+
+    # 1. seed pairs
+    current_pairs = []
+    kfc = kfc_module(pairs=current_pairs, sim_db=global_db)
+    run_pairs([salad_module(), cosine_similarity_module(), kfc], images_folder, db_name=global_db)
+    sim_table = kfc._table
+
+    # 2. transitive closure with SIFT, then the clusters to repair
+    repair = {}
+    initial_pipeline = [
+        dog_module(),
+        sift_module(),
+        smnn_module(),
+        magsac_module(),
+        transitive_module(pairs=current_pairs, threshold=min_inliers, max_iterations=max_iterations),
+        to_colmap_module(db=match_db, worklist=current_pairs, no_unmatched=False, only_matched=True),
+        reconstruct_module(db=match_db, images=images_folder, output=model, worklist=current_pairs),
+        louvain_module(db=match_db, images=images_folder, model=model, sim_table=sim_table, output=repair, worklist=current_pairs),
+        louvain_3d_module(model=model, save_to=model + '_louvain_3d.html', worklist=current_pairs),
+    ]
+    while current_pairs:
+        run_pairs(initial_pipeline, current_pairs, db_name=str(output_path / 'ssma_fast_sift.hdf5'))
+
+    # 3. first repair with ALIKED, then the clusters still to repair
+    repair_aliked = {}
+    fix_aliked = [
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+        repair_reconstruction_module(db=match_db, images=images_folder, model=repair['model'], clusters=repair['clusters'], output=aliked_model),
+        louvain_module(db=match_db, images=images_folder, model=aliked_model, sim_table=sim_table, output=repair_aliked),
+        louvain_3d_module(model=aliked_model, compare=model, highlight=repair['clusters'], save_to=aliked_model + '_louvain_3d.html'),
+    ]
+    run_pairs(fix_aliked, repair['pairs'], db_name=str(output_path / 'ssma_fast_aliked.hdf5'))
+
+    # 4. second repair with LoMa, then the clusters still to repair
+    repair_loma = {}
+    fix_loma = [
+        loma_module(),
+        magsac_module(),
+        to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+        repair_reconstruction_module(db=match_db, images=images_folder, model=repair_aliked['model'], clusters=repair_aliked['clusters'], output=loma_model),
+        louvain_module(db=match_db, images=images_folder, model=loma_model, sim_table=sim_table, output=repair_loma),
+        louvain_3d_module(model=loma_model, compare=aliked_model, highlight=repair_aliked['clusters'], save_to=loma_model + '_louvain_3d.html'),
+    ]
+    run_pairs(fix_loma, repair_aliked['pairs'], db_name=str(output_path / 'ssma_fast_loma.hdf5'))
+
+    # 5. third repair with RoMaV2
+    fix_roma = [
+        romav2_module(),
+        magsac_module(),
+        to_colmap_module(db=match_db, no_unmatched=False, only_matched=True),
+        repair_reconstruction_module(db=match_db, images=images_folder, model=repair_loma['model'], clusters=repair_loma['clusters'], output=romav2_model),
+        louvain_3d_module(model=romav2_model, compare=loma_model, highlight=repair_loma['clusters'], save_to=romav2_model + '_louvain_3d.html'),
+    ]
+    run_pairs(fix_roma, repair_loma['pairs'], db_name=str(output_path / 'ssma_fast_romav2.hdf5'))
