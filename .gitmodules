@@ -55,3 +55,9 @@
 [submodule "external/fastgs"]
 	path = external/fastgs
 	url = https://github.com/fastgs/FastGS.git
+[submodule "external/superansac"]
+	path = external/superansac
+	url = https://github.com/danini/superansac.git
+[submodule "external/mip-splatting"]
+	path = external/mip-splatting
+	url = https://github.com/autonomousvision/mip-splatting.git

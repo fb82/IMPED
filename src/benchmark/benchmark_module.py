@@ -637,7 +637,7 @@ class pairwise_benchmark_module:
                 R_error = R_err
                 t_error = t_err
                 
-            out_data = {'R_error': R_error.item(), 't_error': t_error.item(), 'n': nn, 'inliers': inl_sum}
+            out_data = {'R_error': float(R_error), 't_error': float(t_error), 'n': nn, 'inliers': inl_sum}
         else:
             warnings.warn("image pair not in gt data!")            
             out_data = None
@@ -726,7 +726,7 @@ class pairwise_benchmark_module:
                 t_error = t_err
                 inl_sum = inliers.sum()
                 
-            out_data = {'R_error': R_error.item(), 't_error': t_error.item(), 'n': nn, 'inliers': inl_sum}
+            out_data = {'R_error': float(R_error), 't_error': float(t_error), 'n': nn, 'inliers': inl_sum}
         else:
             warnings.warn("image pair not in gt data!")            
             out_data = None

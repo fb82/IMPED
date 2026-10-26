@@ -100,8 +100,8 @@ from ensemble import (
     sampling_module,
 )
 from reconstruct import hierarchical_reconstruct_module, louvain_module, reconstruct_clusters, reconstruct_module, repair_reconstruction_module, split_module
-from gaussian_splatting import fastgs_module
-from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module, oanet_module, dino_filter_module
+from gaussian_splatting import fastgs_module, mip_splatting_module
+from filters import acne_module, dtm_module, magsac_module, mop_miho_ncc_module, oanet_module, dino_filter_module, superansac_module
 from segmentators import segformer_module
 from visualization import (
     db_pair_graph,
@@ -2299,6 +2299,85 @@ def pipeline70(output_folder=OUTPUT_DIR):
     assert model.num_reg_images() >= 3, f"only {model.num_reg_images()} images in the model"
     assert fastgs.ply is not None and os.path.isfile(fastgs.ply), f"{fastgs.ply} not written"
     print(f"{name_example}: {model.num_reg_images()} images, {model.num_points3D()} points, Gaussians in {fastgs.ply}")
+
+    print(f"{name_example}: ALL ASSERTIONS PASSED")
+
+
+def pipeline71(n_pairs=100, output_folder=OUTPUT_DIR):
+    # SupeRANSAC as an alternative to MAGSAC++: the same ALIKED + LightGlue
+    # matches of MegaDepth-1500 pairs are filtered by each, and the benchmark
+    # module prints the pose accuracy of both (essential matrix AUC), to
+    # compare them.
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    pairs, gt, to_add_path = benchmark_setup(bench_path='../bench_data', dataset='megadepth')
+    pairs = pairs[:n_pairs]
+    name_db = str(output_path / 'database.hdf5')
+
+    # the ALIKED + LightGlue matches are computed once and read from the
+    # cache by the second run
+    filters = {'magsac': magsac_module(), 'superansac': superansac_module()}
+    for name, sac in filters.items():
+        print(f"{name_example}: {name}")
+        pipeline = [
+            deep_joined_module(what='aliked'),
+            lightglue_module(what='aliked'),
+            sac,
+            pairwise_benchmark_module(id_more=name, gt=gt, to_add_path=to_add_path, mode='essential', aux_hdf5=str(output_path / f'stats_{name}.hdf5')),
+        ]
+        run_pairs(pipeline, pairs, add_path=to_add_path, db_name=name_db)
+
+    db = pickled_hdf5.pickled_hdf5(name_db, mode='r')
+    keys = [k for k in db.get_keys() if f'/{filters["superansac"].get_id()}/data' in k]
+    inliers = [db.get(k)[0]['m_mask'].sum().item() for k in keys]
+    db.close()
+
+    assert len(keys) == len(pairs), f"superansac_module ran on {len(keys)} of {len(pairs)} pairs"
+    assert max(inliers) > 0, "superansac_module kept no inlier on any pair"
+    print(f"{name_example}: superansac_module kept {sum(inliers)} inliers over {len(keys)} pairs")
+    print(f"{name_example}: ALL ASSERTIONS PASSED")
+
+
+def pipeline72(output_folder=OUTPUT_DIR):
+    # ET matched quickly (ALIKED + LightGlue + MAGSAC), reconstructed with
+    # COLMAP and turned into Gaussians by mip_splatting_module, the
+    # alias-free alternative to fastgs_module (7000 iterations, to keep the
+    # test short).
+    name_example = inspect.currentframe().f_code.co_name
+    print("\n \n")
+    print("=" * 50)
+    print(f"Running: {name_example}")
+
+    output_path = Path(output_folder) / name_example
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True)
+
+    imgs_dir = '../data/ET'
+    match_db = str(output_path / 'match.db')
+
+    reconstruct = reconstruct_module(db=match_db, images=imgs_dir, output=str(output_path / 'model'))
+    mip = mip_splatting_module(model=reconstruct, images=imgs_dir, output=str(output_path / 'splats'), iterations=7000)
+    run_pairs([
+        deep_joined_module(what='aliked'),
+        lightglue_module(what='aliked'),
+        magsac_module(),
+        to_colmap_module(db=match_db),
+        reconstruct,
+        mip,
+    ], imgs_dir, db_name=str(output_path / 'match.hdf5'))
+
+    model = pycolmap.Reconstruction(str(output_path / 'model'))
+    assert model.num_reg_images() >= 3, f"only {model.num_reg_images()} images in the model"
+    assert mip.raw_ply is not None and os.path.isfile(mip.raw_ply), f"{mip.raw_ply} not written"
+    assert mip.ply is not None and os.path.isfile(mip.ply), f"fused {mip.ply} not written"
+    print(f"{name_example}: {model.num_reg_images()} images, {model.num_points3D()} points, Gaussians in {mip.ply}")
 
     print(f"{name_example}: ALL ASSERTIONS PASSED")
 

@@ -127,5 +127,7 @@ if __name__ == '__main__':
         test_pipelines.pipeline68()
         test_pipelines.pipeline69()
         test_pipelines.pipeline70()
+        test_pipelines.pipeline71()
+        test_pipelines.pipeline72()
 
     print('done!')

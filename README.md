@@ -54,13 +54,24 @@ pip install -r src/requirements.txt
 
 Model weights (DINOv2, SALAD, SegFormer, VGGT-Omega, MapAnything, ...) are downloaded automatically on first use.
 
-Gaussian splatting (`fastgs_module`) also needs the CUDA extensions of FastGS, compiled against the environment's PyTorch (a CUDA toolkit with `nvcc` matching PyTorch's CUDA version is required):
+`superansac_module` needs the SupeRANSAC Python bindings, built from the `external/superansac` submodule (C++ with OpenCV, Eigen, Boost and pybind11):
 
 ```bash
-pip install plyfile websockets
+sudo apt-get install libopencv-dev libopencv-contrib-dev libarpack++2-dev libarpack2-dev libsuperlu-dev \
+    cmake build-essential libboost-all-dev libeigen3-dev
+pip install external/superansac
+```
+
+Gaussian splatting (`fastgs_module`, `mip_splatting_module`) also needs the CUDA extensions of FastGS and Mip-Splatting, compiled against the environment's PyTorch (a CUDA toolkit with `nvcc` matching PyTorch's CUDA version is required):
+
+```bash
+pip install plyfile websockets open3d
 pip install --no-build-isolation external/fastgs/submodules/diff-gaussian-rasterization_fastgs \
     external/fastgs/submodules/simple-knn external/fastgs/submodules/fused-ssim
+pip install --no-build-isolation external/mip-splatting/submodules/diff-gaussian-rasterization
 ```
+
+The two methods share the same `simple-knn` extension, so it is installed once.
 
 ---
 
@@ -564,6 +575,8 @@ fastgs_module(model='model_fixed', images=images_folder, output='splats').finali
 | `train_args` | any other `train.py` argument, e.g. `['--mult', '0.7']` as FastGS uses on Tanks&Temples |
 | `worklist` | wait until this list is empty |
 
+**Mip-Splatting** (`mip_splatting_module`, from the `external/mip-splatting` submodule; Yu et al., "Mip-Splatting: Alias-free 3D Gaussian Splatting", CVPR 2024) is an alternative to FastGS: slower, but alias-free, i.e. without the artifacts of 3DGS when the scene is rendered at a different resolution or distance than the training images. It is used like `fastgs_module`: it takes the same `model`, `images`, `output`, `iterations`, `resolution`, `data_device`, `train_args` and `worklist`, and undistorts the model the same way, plus `kernel_size` (size of its 2D Mip filter, default `0.1`) and `port` (of its network viewer, which its `train.py` always opens: two trainings running together need different ports). Its Gaussians carry a 3D smoothing filter that only Mip-Splatting's renderer applies, so it is fused into them afterwards: `mip.ply` (`output/model/fused.ply`) opens in any 3DGS viewer, while `mip.raw_ply` is the training output, for Mip-Splatting's own `render.py`. See `pipeline72()`.
+
 ### Distributed / multi-machine processing
 
 Split the image set across machines with `split_images(imgs, n_chunks, chunk_idx)`: it divides the images themselves into `n_chunks` disjoint groups; run each group through `run_pairs()` independently (each worker only ever sees pairs within its own group), copying the same script and images to each machine and giving every worker its own `chunk_idx`, then merge the resulting per-worker HDF5 databases afterwards with `merge_hdf5([db_chunk0, db_chunk1, ...], merged_db)`.
@@ -584,7 +597,7 @@ See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example o
 `smnn_module` · `smnn_extended_module` · `similarity_matrix_module` · `lightglue_module` · `loftr_module` · `roma_module` ·  `romav2_module` ·  `loma_module` · `vggt_omega_module` · `mapanything_module` · `mast3r_module` · `dust3r_module` · `matchformer_module` · `aspanformer_module`
 
 ### Filters
-`magsac_module` · `poselib_module` · `adalam_module` · `gms_module` · `lpm_module` · `dtm_module` · `fcgnn_module` · `oanet_module` · `acne_module` · `mop_miho_ncc_module` · `dino_filter_module`
+`magsac_module` · `superansac_module` · `poselib_module` · `adalam_module` · `gms_module` · `lpm_module` · `dtm_module` · `fcgnn_module` · `oanet_module` · `acne_module` · `mop_miho_ncc_module` · `dino_filter_module`
 
 ### Segmentation
 `segformer_module`: SegFormer semantic segmentation (Cityscapes labels), flags matches falling on specific classes or gives each keypoint its class as a descriptor
@@ -605,7 +618,7 @@ See `pipeline44()` in `src/imped_tests/test_pipelines.py` for a worked example o
 `to_colmap_module` · `from_colmap_module` · `merge_colmap_db` · `filter_colmap_reconstruction` · `align_colmap_models`
 
 ### Gaussian Splatting
-`gaussian_splatting.fastgs_module`
+`gaussian_splatting.fastgs_module` · `gaussian_splatting.mip_splatting_module`
 
 ### 3D Reconstruction
 `reconstruct.reconstruct_module` · `reconstruct.hierarchical_reconstruct_module` · `reconstruct.reconstruct_clusters` · `reconstruct.louvain_module` · `reconstruct.repair_reconstruction_module` · `reconstruct.split_module`
@@ -655,6 +668,7 @@ src/
 │
 ├── filters/
 │   ├── magsac_module.py
+│   ├── superansac_module.py   # SupeRANSAC (external/superansac), alternative to MAGSAC++
 │   ├── poselib_module.py
 │   ├── lpm_module.py
 │   ├── gms_module.py
@@ -704,7 +718,8 @@ src/
 │   └── split_module.py         # separates the scenes of a mixed reconstruction; one reconstruction per group of images
 │
 ├── gaussian_splatting/
-│   └── fastgs_module.py       # 3D Gaussian Splatting with FastGS (external/fastgs)
+│   ├── fastgs_module.py       # 3D Gaussian Splatting with FastGS (external/fastgs)
+│   └── mip_splatting_module.py   # alias-free alternative with Mip-Splatting (external/mip-splatting)
 │
 ├── benchmark/
 │   ├── datasets.py            # MegaDepth, ScanNet, IMC, planar dataset setup

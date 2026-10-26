@@ -5,6 +5,7 @@ from .fcgnn_module import fcgnn_module
 from .gms_module import gms_module
 from .lpm_module import lpm_module
 from .magsac_module import magsac_module
+from .superansac_module import superansac_module
 from .mop_miho_ncc_module import mop_miho_ncc_module
 from .oanet_module import oanet_module
 from .poselib_module import poselib_module
