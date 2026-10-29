@@ -18,6 +18,13 @@ if str(modified_root) not in sys.path:
 
 import warnings
 
+# before any import: TensorFlow (ACNe) reads its log level when it is
+# loaded, and the deprecation warnings of timm and dust3r are emitted at
+# import time
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+warnings.filterwarnings('ignore')
+
 import torch
 
 from core import enable_quadtree
@@ -46,8 +53,7 @@ if enable_quadtree:
 
 from imped_tests import test_pipelines
 
-warnings.filterwarnings('ignore')
-torch.backends.cudnn.enabled = False
+# torch.backends.cudnn.enabled = False
 
 if __name__ == '__main__':
     with torch.inference_mode():
